@@ -17,3 +17,10 @@ def loads(jsonstr):
         nt = make(**d)
         ret[nt.type] = nt
     return ret
+
+
+def to_dots(desc):
+    '''
+    Return a dot string representation of the description of node types.
+    '''
+    

@@ -1,4 +1,4 @@
-from wirecell.dfp import graph, nodetype
+from wirecell.dfp import graph, nodetype, dot
 
 # $ wire-cell -p WireCellGen -p WireCellApps -a NodeDumper
 node_desc_json = '''
@@ -32,8 +32,8 @@ def test_make():
     desc = nodetype.loads(node_desc_json)
     graph.validate(g, desc)
 
-    dots = graph.to_dots(g)
-    print dots
+    gvgraph = dot.gvgraph_nodetypes(g, desc)
+    print gvgraph.string()
 
     # dot = g.dumps_dot()
     # print dot
