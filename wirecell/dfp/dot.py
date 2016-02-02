@@ -61,9 +61,9 @@ def gvgraph_nodetypes(nxgraph, nodetypes):
     
 
 def edge_port_string(letter, edges):
-    port_key = "head_port"
+    port_key = "tail_port"
     if letter == "i":
-        port_key = "tail_port"
+        port_key = "head_port"
 
     ports = dict()
     for t,h,dat in edges:
@@ -94,7 +94,7 @@ def edgetype_label(nxnode, inedges, outedges):
 def gvgraph(nxgraph):
     '''Return a GraphViz graph made from the NX graph.'''
     
-    ag = pgv.AGraph(directed=True, strict=False)
+    ag = pgv.AGraph(directed=True, strict=False, overlap='false', splines='true')
     ag.node_attr['shape'] = 'record'
 
     for nn in nxgraph.nodes():
