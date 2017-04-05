@@ -14,21 +14,28 @@ def cli(ctx):
 
 
 @cli.command("convert-garfield")
+@click.option("-o", "--origin", default=100.0,
+              help="Set drift origin in units of mm.")
+@click.option("-s", "--speed", default=1.114,
+              help="Set nominal drift speed in units of mm/us.")
 @click.argument("garfield-fileset")
 @click.argument("wirecell-field-response-file")
 @click.pass_context
-def convert_garfield(ctx, garfield_fileset, wirecell_field_response_file):
+def convert_garfield(ctx, origin, speed, garfield_fileset, wirecell_field_response_file):
     '''
     Convert an archive of a Garfield fileset (zip, tar, tgz) into a
     Wire Cell field response file (.json with optional .gz or .bz2
     compression).
     '''
-    import wirecell.sigproc.garfield as gar
-    import wirecell.sigproc.response as res
-    import wirecell.sigproc.response.persist as per
+    from .. import units
+    import garfield as gar
+    import response as res
+    import response.persist as per
 
+    origin *= units.mm
+    speed *= units.mm/units.us
     rflist = gar.load(garfield_fileset)
-    fr = res.rf1dtoschema(rflist)
+    fr = res.rf1dtoschema(rflist, origin, speed)
     per.dump(wirecell_field_response_file, fr)
 
 
