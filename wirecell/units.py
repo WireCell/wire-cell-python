@@ -2,8 +2,8 @@
 '''
 Provide Python access to Wire Cell system of units.
 
-It is made from WireCellUtil/Units.h by one time Emacs hackery.
-
+It is made from WireCellUtil/Units.h by one time Emacs hackery and a
+few extra added for convenience.
 '''
   #
   #
@@ -268,4 +268,5 @@ perMillion  = 0.000001
 clight = 2.99792458e8*meter/second
 
 
-
+# extra added in Python:
+femtocoulomb = fC = 1.e-15*coulomb

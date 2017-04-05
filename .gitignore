@@ -1,3 +1,6 @@
 *~
 *.pyc
 cut.*
+*.egg-info
+*.pdf
+*.bz2

@@ -3,7 +3,7 @@
 A simple drift simulation using response functions.   No diffusion.
 '''
 
-import units
+from .. import units
 import numpy
 import collections
 from math import radians, sin, cos

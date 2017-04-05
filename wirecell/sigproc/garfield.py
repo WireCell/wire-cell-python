@@ -20,8 +20,8 @@ These quantities must be given explicitly:
     - speed :: the nominal drift speed
 
 '''
-from wirecell.util import units
-from wirecell.sigproc import response
+from .. import units
+import response
 
 import numpy
 import tarfile
@@ -102,7 +102,7 @@ def parse_text_record(text):
 
     yscale = 1.0 # float(lines[8].split("=")[1]);
     if "micro Ampere" in yunit[1]:
-        yscale = units.microamp
+        yscale = units.microampere
 
     ret['xlabel'] = xunit[0]
     ret['ylabel'] = yunit[0]

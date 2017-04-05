@@ -32,19 +32,9 @@ def convert_garfield(ctx, garfield_fileset, wirecell_field_response_file):
     per.dump(wirecell_field_response_file, fr)
 
 
-@cli.command("plot-field-response")
-@click.argument("wcfrfile")
-@click.argument("pdffile")
-@click.pass_context
-def plot_field_response(ctx, wcfrfile, pdffile):
-    import wirecell.sigproc.response.persist as per
-    import wirecell.sigproc.response.plots as plt
-
-    fr = per.load(wcfrfile)
-    # ...
 
 
-@cli.command("plot-track-response")
+@cli.command("plot-garfield-track-response")
 @click.option("-o", "--output", default=None,
               help="Set output data file")
 @click.option("-g", "--gain", default=14.0,
@@ -58,16 +48,16 @@ def plot_field_response(ctx, wcfrfile, pdffile):
 @click.argument("garfield-fileset")
 @click.argument("pdffile")
 @click.pass_context
-def plot_track_response(ctx, output, gain, shaping, tick, norm,
-                            garfield_fileset, pdffile):
+def plot_garfield_track_response(ctx, output, gain, shaping, tick, norm,
+                                     garfield_fileset, pdffile):
     import wirecell.sigproc.garfield as gar
     import wirecell.sigproc.response as res
     import wirecell.sigproc.plots as plots
-    from wirecell.sigproc import units
+    from wirecell import units
 
     shaping *= units.us
     tick *= units.us
-    norm *= units.electron_charge
+    norm *= units.eplus
 
     dat = gar.load(garfield_fileset)
 

@@ -2,7 +2,7 @@
 '''
 Functions related to responses.
 '''
-from wirecell.util import units
+from wirecell import units
 
 import schema
 
@@ -630,7 +630,7 @@ def write(rflist, outputfile = "wire-cell-garfield-response.json.bz2"):
     raise ValueError("unknown file format: %s" % outputfile)
 # fixme: implement read()
 
-def line(rflist, normalization=13700*units.electron_charge):
+def line(rflist, normalization=13700*units.eplus):
     '''
     Assuming an infinite track of `normalization` ionization electrons
     per pitch which runs along the starting points of the response

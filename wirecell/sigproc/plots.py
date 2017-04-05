@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import units
+from .. import units
 import response
 
 import numpy
@@ -355,7 +355,7 @@ def plot_digitized_line(uvw_rfs, gain_mVfC=14.0, shaping=2.0*units.us, tick=0.5*
 
     data = list()
     for ind, rf in enumerate(uvw_rfs):
-        print legends[ind], numpy.sum(rf.response)/units.electron_charge
+        print legends[ind], numpy.sum(rf.response)/units.eplus
 
         if shaping:
             sig = rf.shaped(gain_mVfC, shaping)

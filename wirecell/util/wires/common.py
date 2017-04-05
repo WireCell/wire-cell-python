@@ -9,7 +9,7 @@ from collections import namedtuple
 
 # The general wire object.  beg/end are tail/head of a vector pointing in
 # direction signal travels to electronics.  They must be in Wire Cell Toolkit
-# system of units (aka mm).
+# system of units (aka mm).  See wirecell.units.
 Wire = namedtuple("Wire","plane ch wip seg beg end")
 
 def bounding_box(wires):

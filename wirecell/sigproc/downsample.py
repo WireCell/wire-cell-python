@@ -3,7 +3,7 @@
 downsampling
 '''
 import response
-import units
+from .. import units
 
 import numpy
 #import scipy.signal

@@ -5,7 +5,8 @@ $ PYTHONPATH=`pwd`/sigproc/python python sigproc/python/wirecell/sigproc/paper/n
 
 '''
 
-from wirecell.sigproc import units, garfield, response, plots
+from wirecell import units
+from .. import garfield, response, plots
 import numpy
 
 garfield_tarball = "/home/bviren/projects/wire-cell/garfield-data/ub_10.tar.gz"
@@ -23,10 +24,10 @@ def figure_adc(dat, regions=None, outname='paper-noise-figure-adc-%dwires'):
     if regions is not None:
         nwires = max(regions)
 
-    norm = 16000*units.electron_charge    # was 13700
+    norm = 16000*units.eplus                               # was 13700
     uvw = response.line(dat, norm)
 
-    gain = 1.2                            # was 1.1 for a while
+    gain = 1.2                                   # was 1.1 for a while
     adc_bin_range = 4096.0
     adc_volt_range = 2000.0
     adc_per_mv = gain*adc_bin_range/adc_volt_range
