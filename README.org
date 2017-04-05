@@ -1,0 +1,40 @@
+#+TITLE: Wire Cell Toolkit Python
+
+* What's here.
+
+This package holds some Python modules that support Wire Cell Toolkit.  Currently this is a stand-alone package that does not depend directly on the C++ packages.  
+
+Some of the main functionality is provides is converters and generators of major WCT input data files including:
+
+- field response functions
+- wire geometry
+
+* Installation
+
+This package is somewhat experts only but does install in the "usual Python way".  For example, most developers will want to do something like:
+
+#+BEGIN_EXAMPLE
+  $ virtualenv venv
+  $ source venv/bin/activate
+  $ python setup.py develop
+#+END_EXAMPLE
+
+* Command line interfaces
+
+Some functionality is available from the command line, with a command
+typically named after the module that provides the CLI.  For example:
+
+#+BEGIN_EXAMPLE
+  $ wirecell-sigproc --help
+  Usage: wirecell-sigproc [OPTIONS] COMMAND [ARGS]...
+
+    Wire Cell Signal Processing Features
+
+  Options:
+    --help  Show this message and exit.
+
+  Commands:
+    convert-garfield              Convert an archive of a Garfield fileset...
+    plot-garfield-track-response
+#+END_EXAMPLE
+
