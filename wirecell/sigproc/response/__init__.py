@@ -40,7 +40,7 @@ def electronics_no_gain_scale(time, gain, shaping=2.0*units.us):
     ret *= gain
     return ret
 
-def electronics(time, peak_gain=14*1e-3/1e-15, shaping=2.0*units.us):
+def electronics(time, peak_gain=14*units.mV/units.fC, shaping=2.0*units.us):
     '''
     Electronics response function.
 
@@ -132,7 +132,7 @@ class ResponseFunction(object):
                     domainls=self.domainls, response=self.response.tolist(),
                     impact=self.impact)
 
-    def shaped(self, gain_mVfC=14, shaping=2.0*units.us, nbins=None):
+    def shaped(self, gain=14*units.mV/units.fC, shaping=2.0*units.us, nbins=None):
         '''
         Convolve electronics shaping/peaking response, returning a new
         ResponseFunction.
@@ -143,7 +143,10 @@ class ResponseFunction(object):
             newfr = self.dup()
         else:
             newfr = self.resample(nbins)
-        elecr = electronics(newfr.times, gain_mVfC, shaping)
+        # integrate the current over the sample to get charge
+        dt = newfr.times[1]-newfr.times[0]
+        newfr.response = [r*dt for r in newfr.response]
+        elecr = electronics(newfr.times, gain, shaping)
         newfr.response = convolve(elecr, newfr.response)
         return newfr
 
@@ -635,7 +638,9 @@ def line(rflist, normalization=13700*units.eplus):
     Assuming an infinite track of `normalization` ionization electrons
     per pitch which runs along the starting points of the response
     function paths, calculate the average response on the central wire
-    of each plane.  
+    of each plane.  The returned responses will be normalized such
+    that the collection response integrates to the given normalization
+    value if nonzero.
     '''
     impacts = set([rf.impact for rf in rflist])
     if len(impacts) > 1:
@@ -643,6 +648,9 @@ def line(rflist, normalization=13700*units.eplus):
 
     byplane = group_by(rflist, 'plane')
     
+    # sum across all impact positions assuming a single point source is
+    # equivalent to summing across a perpendicular line source for a single,
+    # central wire.
     ret = list()
     for inplane in byplane:
         first = inplane[0]
@@ -654,11 +662,14 @@ def line(rflist, normalization=13700*units.eplus):
             tot.response += rf.response * factor
         ret.append(tot)
 
-    # central collection response function
-    w = ret[-1]
-    rawtot = numpy.sum(w.response)
-    scale = normalization/rawtot
-    for rf in ret:
-        rf.response *= scale
+    # normalize central collection response function
+    if normalization > 0.0:
+        w = ret[-1]
+        dt = w.times[1] - w.times[0]
+        qtot = numpy.sum(w.response)*dt
+        scale = normalization/qtot
+        for ind, rf in enumerate(ret):
+            print ind, sum(rf.response)
+            rf.response *= scale
     return ret
 

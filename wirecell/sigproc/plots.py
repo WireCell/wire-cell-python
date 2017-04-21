@@ -69,6 +69,27 @@ def average_shaping(rflist_avg, gain_mVfC=14, shaping=2.0*units.us, nbins=5000):
     
     
 
+def one_electronics(gain, shaping, tick=0.1*units.us):
+    '''
+    Plot one electronics response function
+    '''
+    tmax = 10*units.us
+    nticks = tmax/tick
+    times = numpy.linspace(0, tmax, nticks)
+    res = response.electronics(times, gain, shaping)
+    fig, axes = plt.subplots(1, 1)
+
+    x = times/units.us
+    y = res/(units.mV/units.fC)
+
+    axes.plot(x, y)
+    axes.set_title('Electronics response for gain=%.1f mV/fC, peaking=%.1f us' % \
+                    (gain/(units.mV/units.fC), shaping/units.us))
+    axes.set_xlabel('Sample time [$\mu$s]')
+    axes.set_ylabel('Response')
+    return fig
+
+
 
 def electronics():
     '''
@@ -104,7 +125,7 @@ def electronics():
             ax.text(p,g, "%.2f"%g, verticalalignment='bottom', horizontalalignment='center')
             ax.text(250,10, "%f slope" % slope, verticalalignment='top', horizontalalignment='center')
             ax.text(250,10, "%f mV/fC/par" % (1.0/slope,), verticalalignment='bottom', horizontalalignment='center')
-
+    return fig
 
 
 def field_response_spectra(frses):
@@ -329,7 +350,11 @@ def response_averages_colz(avgtriple, time):
 
 
 
-def plot_digitized_line(uvw_rfs, gain_mVfC=14.0, shaping=2.0*units.us, tick=0.5*units.us, adc_per_mv = 1.2*4096/2000.0):
+def plot_digitized_line(uvw_rfs,
+                        gain=14.0*units.mV/units.fC,
+                        shaping=2.0*units.us,
+                        tick=0.5*units.us,
+                        adc_per_voltage = 1.2*4096/(2.0*units.volt)):
     '''
     Make plot of shaped and digitized response functions.
 
@@ -337,7 +362,9 @@ def plot_digitized_line(uvw_rfs, gain_mVfC=14.0, shaping=2.0*units.us, tick=0.5*
     >>> uvw = response.line.responses(dat)
     >>> plots.plot_digitized_line(uvw)
 
-    See also wirecell.sigproc.paper.noise
+    See also wirecell.sigproc.paper.noise.
+
+    See also `wirecell-sigproc plot-garfield-track-response` command line.
     '''
     u, v, w = uvw_rfs
     time_offset = 50*units.us
@@ -355,23 +382,36 @@ def plot_digitized_line(uvw_rfs, gain_mVfC=14.0, shaping=2.0*units.us, tick=0.5*
 
     data = list()
     for ind, rf in enumerate(uvw_rfs):
-        print legends[ind], numpy.sum(rf.response)/units.eplus
+        print rf.plane, legends[ind], numpy.sum(rf.response)*dt_hi/units.eplus, " electrons"
 
         if shaping:
-            sig = rf.shaped(gain_mVfC, shaping)
+            sig = rf.shaped(gain, shaping)
         else:
             print 'No shaping'
             sig = rf
         samp = sig.resample(n_lo)
         x = (samp.times-time_offset)/units.us
 
+        lstype = 'default'
+
+        # figure out what to plot
         if shaping:
-            adcf = (samp.response / units.fC) * adc_per_mv
-            y = numpy.array(adcf, dtype=int)
-            lstype = 'steps'
-        else:
-            y = samp.response
-            lstype = 'default'
+            print 'Shaped:', ind, sum(samp.response)
+            if adc_per_voltage:           # full shaping + ADC
+                adcf = samp.response * adc_per_voltage
+                y = numpy.array(adcf, dtype=int)   #digitize
+                lstype = 'steps'
+            else:              # magic ADC, directly measuring voltage
+                y = samp.response/units.mV
+        else:                             # measure input current
+            nonzero = [q for q in samp.response if q>0]
+            itot = sum(nonzero)
+            dt = len(nonzero)*tick
+            qtot = itot*dt
+            print "qtot=%e C, itot=%e uA, dt=%d us, nele=%f" % \
+              (qtot/units.coulomb,itot/units.microampere,dt/units.us,qtot/units.eplus)
+
+            y = samp.response/units.nanoampere
 
         axes.plot(x, y,
                   ls=lstype,
@@ -381,23 +421,30 @@ def plot_digitized_line(uvw_rfs, gain_mVfC=14.0, shaping=2.0*units.us, tick=0.5*
             data.append(x)
         data.append(y)
 
-    if shaping:
-        axes.set_title('ADC Waveform with 2D MicroBooNE Wire Plane Model')
-    else:
-        axes.set_title('Induced Current with 2D MicroBooNE Wire Plane Model')
-    if shaping:
-        axes.set_xlabel('Sample time [$\mu$s]')
-    else:
-        axes.set_xlabel('Time [$\mu$s]')
-    if shaping:
-        axes.set_ylabel('ADC (baseline subtracted)')
-    else:
-        axes.set_ylabel('Instantaneous current')
     axes.legend(loc="upper left")
     xmmymm = list(axes.axis())
+
+    # limit time
     xmmymm[0] = 0.0
     xmmymm[1] = 50.0
-    xmmymm[3] = 65.0
+
+    # fixme: this plotter should work on other response functions than Garfield
+    # 2D with MB-style 3mm pitch.  This titling is for the MB noise paper.  
+    if shaping:
+        axes.set_xlabel('Sample time [$\mu$s]')
+        if adc_per_voltage:               
+            axes.set_title('ADC Waveform with 2D MicroBooNE Wire Plane Model')
+            axes.set_ylabel('ADC (baseline subtracted)')
+            xmmymm[3] = 65.0
+        else:
+            axes.set_title('Voltage Waveform')
+            axes.set_ylabel('Voltage Sample (baseline subtracted) [mV]')
+    else:
+        axes.set_title('Induced Current')
+        axes.set_xlabel('Time [$\mu$s]')
+        axes.set_ylabel('Instantaneous current (nanoamp)')
+
+
     axes.axis(xmmymm)
     axes.text(5,20, "   Garfield 2D calculation\n(perpendicular line source)")
     return fig, numpy.vstack(data).T

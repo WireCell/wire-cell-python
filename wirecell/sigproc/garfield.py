@@ -141,6 +141,12 @@ def load(source):
     Load Garfield data source (eg, tarball).
 
     Return list of response.ResponseFunction objects.
+
+    The responses are normalized to give the sampled current assuming
+    a single electron was drifted along the path.  It does this by a
+    normalization such that the mean integrated currents over each
+    path that ends on the central collection wire equals the charge of
+    one electron.
     '''
     source = asgenerator(source)
 
@@ -156,10 +162,13 @@ def load(source):
             dat = parse_text_record(rec)
 
             key = tuple([filename] + [dat[k] for k in ['group', 'wire_region', 'label']])
-            # print key, dat['signal'], sum(dat['y'])
 
             old = uniq.get(key, None)
-            if old:             # sum up all signal types
+            if old:             # sum up both signal types
+                ### debugging: central collection wire has both records but one is miniscule
+                #oldtot = sum(old['y'])
+                #if abs(oldtot) > 0.0: 
+                #    print 'found key already: "%s", sum=%e+%e"' %(key, sum(dat['y']), sum(old['y']))
                 old['y'] += dat['y']
                 continue
 
@@ -191,6 +200,14 @@ def load(source):
             this_plane.append(rf)
         this_plane.sort(key=lambda x: x.region * 10000 + x.impact)
         ret += this_plane
+
+    w0 = [r for r in ret if r.region == 0 and r.plane == 'w']
+    dt = (w0[0].times[1]-w0[0].times[0])
+    qtot = sum([sum(w.response)*dt for w in w0])/len(w0)
+    norm = units.eplus/qtot
+    for r in ret:
+        r.response *= norm
+
     return ret
 
 
