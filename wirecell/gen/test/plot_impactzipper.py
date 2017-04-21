@@ -78,9 +78,9 @@ for (p,h),lim,lmin in zip(sorted(hists.items()), limits, lmins):
     set_palette()
     h.Draw("colz")
     h.SetTitle(h.GetTitle() + " point source")
-    h.GetXaxis().SetRangeUser(3800, 3990)
+    h.GetXaxis().SetRangeUser(3900, 4000)
     h.GetYaxis().SetRangeUser(989, 1012)
-    h.GetZaxis().SetRangeUser(-lim, lim)
+#    h.GetZaxis().SetRangeUser(-lim, lim)
     c.Print("test_impactzipper.pdf","pdf")
 
     set_palette(ROOT.kRainBow)

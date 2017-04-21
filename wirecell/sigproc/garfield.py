@@ -203,8 +203,15 @@ def load(source):
 
     w0 = [r for r in ret if r.region == 0 and r.plane == 'w']
     dt = (w0[0].times[1]-w0[0].times[0])
-    qtot = sum([sum(w.response)*dt for w in w0])/len(w0)
+    itot = sum([sum(w.response) for w in w0])/len(w0)
+    qtot = itot*dt
     norm = units.eplus/qtot
+
+    # imin = min([min(w.response) for w in w0])
+    # imax = max([max(w.response) for w in w0])
+    # print 'nw0=%d, dt=%e us, itot=%e nAmp, imm=%e,%e nAmp, qtot=%e ele norm=%e' % \
+    #   (len(w0), dt/units.us, itot, imin/units.nanoampere, imax/units.nanoampere, qtot/units.eplus, norm)
+
     for r in ret:
         r.response *= norm
 

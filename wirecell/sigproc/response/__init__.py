@@ -179,12 +179,11 @@ def total_charge(rf):
     '''
     Integrate total charge in a current response.
     '''
-    tbin_seconds = (rf.times[1] - rf.times[0])/units.second
-    if tbin_seconds == 0.0:
+    dt = (rf.times[1] - rf.times[0])
+    if dt == 0.0:
         raise ValueError("Corrupt response function for plane %s, region %d" % (rf.plane, rf.region))
-    amp_integ = numpy.sum(rf.response) # assume response is current samples in amps
-    qtot = amp_integ * tbin_seconds
-    return qtot
+    itot = numpy.sum(rf.response)
+    return dt*itot
 
 def normalize(rflist, plane='w', region=0, impact=None):
     '''
@@ -209,7 +208,7 @@ def normalize(rflist, plane='w', region=0, impact=None):
 
     qtot = sum([total_charge(rf) for rf in toaverage])
     qavg = qtot/num
-    scale = -1.60217662e-19/qavg # put into Coulombs.
+    scale = -units.eplus/qavg
 
     out = list()
     for rf in rflist:
