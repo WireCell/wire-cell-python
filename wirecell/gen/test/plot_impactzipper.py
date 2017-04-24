@@ -63,12 +63,14 @@ def set_palette(which = "custom"):
 
 fp = ROOT.TFile.Open("build/gen/test_impactzipper-uvw.root")
 hists = {u:fp.Get("h%d"%n) for n,u in enumerate("uvw")}
-limits = [6.0e-12, 6.0e-12, 15e-12]
-lmins = [-15, -15, -15]
+limits = [1,1,2]
+lmins = [-3, -3, -3]
+
+pdffile="plot_impactzipper.pdf"
 
 c = ROOT.TCanvas()
 c.SetRightMargin(0.15)
-c.Print("test_impactzipper.pdf[","pdf")
+c.Print(pdffile+"[","pdf")
 c.SetGridx()
 c.SetGridy()
 
@@ -80,16 +82,17 @@ for (p,h),lim,lmin in zip(sorted(hists.items()), limits, lmins):
     h.SetTitle(h.GetTitle() + " point source")
     h.GetXaxis().SetRangeUser(3900, 4000)
     h.GetYaxis().SetRangeUser(989, 1012)
-#    h.GetZaxis().SetRangeUser(-lim, lim)
-    c.Print("test_impactzipper.pdf","pdf")
+    h.GetZaxis().SetRangeUser(-lim, lim)
+    c.Print(pdffile,"pdf")
 
     set_palette(ROOT.kRainBow)
     lminout = bilogify(h, lmin)
     title = h.GetTitle()
     title += " [sign(z)(log10(abs(z)) %d)]" % lminout
     h.SetTitle(title)
+    h.SetZTitle("")
     h.Draw("colz")
-    c.Print("test_impactzipper.pdf","pdf")
+    c.Print(pdffile,"pdf")
 
 
-c.Print("test_impactzipper.pdf]","pdf")
+c.Print(pdffile+"]","pdf")
