@@ -85,8 +85,15 @@ def plot_garfield_track_response(ctx, output, gain, shaping, tick, norm,
     dat = gar.load(garfield_fileset)
     uvw = res.line(dat, norm)
 
+    detector = ""
+    if "/ub_" in garfield_fileset:
+        detector = "MicroBooNE"
+    if "/dune_" in garfield_fileset:
+        detector = "DUNE"
+
     fig,data = plots.plot_digitized_line(uvw, gain, shaping,
-                                         adc_per_voltage = adc_per_voltage)
+                                             adc_per_voltage = adc_per_voltage,
+                                             detector = detector)
     fig.savefig(pdffile)
 
 

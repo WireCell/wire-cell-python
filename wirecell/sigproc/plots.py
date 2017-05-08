@@ -351,10 +351,11 @@ def response_averages_colz(avgtriple, time):
 
 
 def plot_digitized_line(uvw_rfs,
-                        gain=14.0*units.mV/units.fC,
-                        shaping=2.0*units.us,
-                        tick=0.5*units.us,
-                        adc_per_voltage = 1.2*4096/(2.0*units.volt)):
+                            gain=14.0*units.mV/units.fC,
+                            shaping=2.0*units.us,
+                            tick=0.5*units.us,
+                            adc_per_voltage = 1.2*4096/(2.0*units.volt),
+                            detector = "MicroBooNE"):
     '''
     Make plot of shaped and digitized response functions.
 
@@ -427,13 +428,15 @@ def plot_digitized_line(uvw_rfs,
     # limit time
     xmmymm[0] = 0.0
     xmmymm[1] = 50.0
+    if "dune" in detector.lower():
+        xmmymm[1] = 25.0
 
     # fixme: this plotter should work on other response functions than Garfield
     # 2D with MB-style 3mm pitch.  This titling is for the MB noise paper.  
     if shaping:
         axes.set_xlabel('Sample time [$\mu$s]')
         if adc_per_voltage:               
-            axes.set_title('ADC Waveform with 2D MicroBooNE Wire Plane Model')
+            axes.set_title('ADC Waveform with 2D %s Wire Plane Model' % detector)
             axes.set_ylabel('ADC (baseline subtracted)')
             xmmymm[3] = 65.0
         else:
@@ -446,5 +449,9 @@ def plot_digitized_line(uvw_rfs,
 
 
     axes.axis(xmmymm)
-    axes.text(5,20, "   Garfield 2D calculation\n(perpendicular line source)")
+    if "microboone" in detector.lower():
+        axes.text(5,20, "   Garfield 2D calculation\n(perpendicular line source)")
+    if "dune" in detector.lower():
+        axes.text(15,40, "   Garfield 2D calculation\n(perpendicular line source)")
+
     return fig, numpy.vstack(data).T
