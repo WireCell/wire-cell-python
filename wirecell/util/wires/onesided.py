@@ -17,8 +17,8 @@ def wire_plane_id(plane, face, apa):
     apa_shift = 4
     return (plane&layer_mask) | (face << face_shift) | (apa << apa_shift)
 
-def load_celltree_geometry(filename):
-    '''Load a "celltree geometry file".
+def load(filename):
+    '''Load a "celltree wire geometry file".
 
     Return a list of schema.Wire objects.
 

@@ -17,6 +17,7 @@ setup(
     entry_points = dict(
         console_scripts = [
             'wirecell-sigproc = wirecell.sigproc.main:main',
+            'wirecell-util = wirecell.util.main:main',
         ]
     )
 )
