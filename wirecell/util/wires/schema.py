@@ -136,3 +136,52 @@ def classes():
             ret.append(obj)
     return ret
 
+def maker():
+    '''
+    Return a schema instance maker.
+    '''
+    import sys, inspect
+    class SchemaMaker(object):
+
+        def __init__(self):
+            self._makers = dict()
+            for klass in classes():
+                lname = klass.__name__.lower()
+                self.__dict__[lname+'s'] = list()
+                self._makers[lname] = klass
+
+        def make(self, what, *args):
+            klass = self._makers[what]
+            collection = self.__dict__[what+'s']
+            nthings = len(collection)
+            thing = klass(*args)
+            collection.append(thing)
+            return nthings
+
+        def get(self, what, ind):
+            collection = self.__dict__[what+'s']
+            return collection[ind]
+
+        def wire_ypos(self, ind):
+            wire = self.get("wire", ind)
+            p1 = self.get("point", wire.tail)
+            p2 = self.get("point", wire.head)
+            return 0.5*(p1.y + p2.y)
+        def wire_zpos(self, ind):
+            wire = self.get("wire", ind)
+            p1 = self.get("point", wire.tail)
+            p2 = self.get("point", wire.head)
+            return 0.5*(p1.z + p2.z)
+
+        def schema(self):
+            'Return self as a schema.Store'
+            return Store(self.anodes, self.faces, self.planes, self.wires, self.points)
+    return SchemaMaker()
+    
+    
+def wire_plane_id(plane, face, apa):
+    'See WireCellIface/WirePlaneId.h'
+    layer_mask = 0x7
+    face_shift = 3
+    apa_shift = 4
+    return (plane&layer_mask) | (face << face_shift) | (apa << apa_shift)

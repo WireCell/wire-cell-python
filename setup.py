@@ -18,6 +18,7 @@ setup(
         console_scripts = [
             'wirecell-sigproc = wirecell.sigproc.main:main',
             'wirecell-util = wirecell.util.main:main',
+            'wirecell-gen = wirecell.gen.main:main',
         ]
     )
 )

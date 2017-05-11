@@ -9,13 +9,6 @@ import numpy
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
-    
-def wire_plane_id(plane, face, apa):
-    'See WireCellIface/WirePlaneId.h'
-    layer_mask = 0x7
-    face_shift = 3
-    apa_shift = 4
-    return (plane&layer_mask) | (face << face_shift) | (apa << apa_shift)
 
 def load(filename):
     '''Load a "celltree wire geometry file".
@@ -56,33 +49,7 @@ def load(filename):
 
     '''
 
-    class MetaStore(object):
-
-        things = "points wires planes faces anodes".split()
-
-        def __init__(self):
-            for thing in self.things:
-                self.__dict__[thing] = list()
-            
-        def make(self, what, *args):
-            klass = getattr(schema, what.capitalize())
-            collection = self.__dict__[what+'s']
-            nthings = len(collection)
-            thing = klass(*args)
-            collection.append(thing)
-            return nthings
-
-        def get(self, what, ind):
-            collection = self.__dict__[what+'s']
-            return collection[ind]
-
-        def schema(self):
-            'Return self as a schema.Store'
-            return schema.Store(self.anodes, self.faces, self.planes, self.wires, self.points)
-
-
-        pass
-    store = MetaStore()
+    store = schema.maker()
 
     # microboone is single-sided, no wrapping
     segment = 0
@@ -113,7 +80,7 @@ def load(filename):
 
             begind = store.make("point", *beg)
             endind = store.make("point", *end)
-            wpid = wire_plane_id(plane, face, apa)
+            wpid = schema.wire_plane_id(plane, face, apa)
             wireind = store.make("wire", wpid, ch, segment, begind, endind)
             planes[plane].append(wireind)
 
