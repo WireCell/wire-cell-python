@@ -18,22 +18,25 @@ def cli(ctx):
                   help="Set the unit of time assumed in the input file (for t).")
 @click.option("-e", "--energy_unit", default='MeV',
                   help="Set the unit of energy assumed in the input file (for q).")
+@click.option("-s", "--step_unit", default=None,
+                  help="Set the unit of step, if different than distance (for s).")
 @click.argument("input-file")
 @click.argument("output-file")
 @click.pass_context
 def unitify_depos(ctx, json_path,
-                      distance_unit, time_unit, energy_unit,
+                      distance_unit, time_unit, energy_unit, step_unit,
                       input_file, output_file):
     '''
     Set units for a WCT JSON deposition file.
 
     The units given are what the input file should be assumed to
     follow.  The output file will then be in WCT's system of units.
+
     '''
 
     import depos as deposmod
     depos = deposmod.load(input_file)
-    depos = deposmod.apply_units(depos, distance_unit, time_unit, energy_unit);
+    depos = deposmod.apply_units(depos, distance_unit, time_unit, energy_unit, step_unit);
     deposmod.dump(output_file, depos)
 
 

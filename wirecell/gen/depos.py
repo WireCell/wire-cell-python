@@ -12,6 +12,25 @@ import bz2
 #        0123456
 columns="xyzqtsn"
 
+def todict(depos):
+    'Return a dictionary of arrays instead of a 2D array.'
+    ret = dict()
+    for ind, letter in enumerate(columns):
+        ret[letter] = depos[:,ind]
+    return ret
+
+def remove_zero_steps(depos):
+    '''
+    For some reason sometimes zero steps are taken.  This removes them
+    '''
+    ret = list()
+    for depo in depos:
+        if depo[5] == 0.0:
+            continue
+        ret.append(depo)
+    return numpy.asarray(ret)
+
+
 def load(filename, jpath="depos"):
     '''
     Load a CWT JSON depo file and return numpy array of depo info.
@@ -34,17 +53,23 @@ def load(filename, jpath="depos"):
     return numpy.asarray(depos)
 
 
-def apply_units(depos, distance_unit, time_unit, energy_unit, electrons_unit="1.0"):
+def apply_units(depos, distance_unit, time_unit, energy_unit, step_unit=None, electrons_unit="1.0"):
     'Apply units to a deposition array, return a new one'
+
+    print "dtese=", distance_unit, time_unit, energy_unit, step_unit, electrons_unit,
 
     depos = numpy.copy(depos)
 
     dunit = eval(distance_unit, units.__dict__)
     tunit = eval(time_unit, units.__dict__)
     eunit = eval(energy_unit, units.__dict__)
+    if step_unit is None:
+        sunit = dunit
+    else:
+        sunit = eval(step_unit, units.__dict__)
     nunit = eval(electrons_unit, units.__dict__)
 
-    theunits = [dunit]*3 + [eunit] + [tunit] + [dunit] + [nunit]
+    theunits = [dunit]*3 + [eunit] + [tunit] + [sunit] + [nunit]
     for ind,unit in enumerate(theunits):
         depos[:,ind] *= unit
     return depos
@@ -102,33 +127,48 @@ def center(depos, point):
     return move(depos, offset)
 
 
-
-def plot_dedx(depos, output):
-    dE = depos[:,3]
-    dX = depos[:,5]
-    dEdX = dE/dX
-    h = numpy.histogram(dEdX, 1000, (0,10))
-    plt.clf(); plt.plot(h[1][:-1], h[0])
-    plt.savefig(output)
-    pass
-
-def plot_dndx(depos, output):
-    dN = depos[:,4]
-    dX = depos[:,5]
-    dNdX = dN/dX
-    print dNdX[0]
-    h = numpy.histogram(dNdX, 150, (5.0e4,2.0e5))
-    plt.clf(); plt.semilogy(h[1][:-1], h[0])
-    plt.savefig(output)
-    pass
-
-def plot_nxz(depos, output):
-    "Plot colz number as X vs Z (transverse)"
-    x = depos[:,0]
-    z = depos[:,2]
-    n = depos[:,4]
+#          0123456
+# columns="xyzqtsn"
+def plot_hist(h, xlab, output):
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.set_xlabel(xlab)
+    ax.semilogy(h[1][:-1], h[0])
+    fig.savefig(output)
     
-    
+
+def plot_s(depos, output):
+    depos = todict(depos)
+    s = depos["s"]/units.cm
+    h = numpy.histogram(s, 1000, (0, 0.05))
+    plot_hist(h, "step [cm]", output)
+def plot_q(depos, output):
+    depos = todict(depos)
+    q = depos["q"]/units.MeV
+    h = numpy.histogram(q, 1000, (0, 0.2))
+    plot_hist(h, "deposit [MeV]", output)
+def plot_n(depos, output):
+    depos = todict(depos)
+    n = depos["n"]
+    h = numpy.histogram(n, 1000, (0, 10000))
+    plot_hist(h, "number [electrons]", output)
+def plot_deds(depos, output):
+    depos = todict(remove_zero_steps(depos))
+    q = depos["q"]/units.MeV
+    s = depos["s"]/units.cm
+    h = numpy.histogram(q/s, 1000, (0,10))
+    plot_hist(h, "q/s [MeV/cm]", output)
+def plot_dnds(depos, output):
+    depos = todict(remove_zero_steps(depos))
+    s = depos["s"]/units.cm
+    n = depos["n"]
+    h = numpy.histogram(n/s, 500, (0,5.0e5))
+    plot_hist(h, "n/s [#/cm]", output)
+
+
+def plot_xz_weighted(x, z, w, title, output):
+    x = x/units.mm
+    z = z/units.mm
     xmm = (numpy.min(x), numpy.max(x))
     zmm = (numpy.min(z), numpy.max(z))
 
@@ -140,18 +180,63 @@ def plot_nxz(depos, output):
     xedges = numpy.linspace(xmm[0], xmm[1], nx)
     zedges = numpy.linspace(zmm[0], zmm[1], nz)
 
-    #H, xedg, zedg = numpy.histogram2d(z, x, bins=(xedges, zedges), weights=n)
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    ax.set_title("Electrons per mm$^2$")
-    #X, Z = numpy.meshgrid(xedges, zedges)
-    #cax = ax.pcolormesh(X, Z, H)
-    #cax = ax.imshow(H)#, interpolation='nearest', origin='low',
-    #                   # extent=[xedg[0], xedg[-1], zedg[0], zedg[-1]])
-    h = ax.hist2d(x,z,bins=(xedges, zedges), weights=n)
+    ax.set_title(title)
+
+    h = ax.hist2d(x,z,bins=(xedges, zedges), weights=w)
     ax.set_xlabel("X [mm]")
     ax.set_ylabel("Z [mm]")
     plt.colorbar(h[3], ax=ax)
     fig.savefig(output)
 
 
+def plot_qxz(depos, output):
+    'Plot colz q as X vs Z'
+    depos = todict(remove_zero_steps(depos))
+    x = depos["x"]
+    z = depos["z"]
+    q = depos["q"]/units.MeV
+    plot_xz_weighted(x, z, q, "q [MeV] per mm$^2$", output)
+
+
+def plot_qsxz(depos, output):
+    'Plot colz q/s as X vs Z'
+    depos = todict(remove_zero_steps(depos))
+    x = depos["x"]
+    z = depos["z"]
+    q = depos["q"]/units.MeV
+    s = depos["s"]/units.cm
+    plot_xz_weighted(x, z, q/s, "q/s [MeV/cm] per mm$^2$", output)
+    
+
+def plot_nxz(depos, output):
+    "Plot colz number as X vs Z (transverse)"
+    depos = todict(remove_zero_steps(depos))
+    x = depos["x"]
+    z = depos["z"]
+    n = depos["n"]
+    plot_xz_weighted(x, z, n, "number e- per mm$^2$", output)
+
+def plot_nscat(depos, output):
+    'Plot number as scatter plot'
+    depos = todict(remove_zero_steps(depos))
+    x = depos["x"]/units.mm
+    z = depos["z"]/units.mm
+    n = depos["n"]
+
+    nmax = float(numpy.max(n))
+    cmap = plt.get_cmap('seismic')
+
+    sizes = [20.0*nv/nmax for nv in n]
+    colors = [cmap(nv/nmax) for nv in n]
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.set_title("electrons")
+
+    ax.set_xlabel("X [mm]")
+    ax.set_ylabel("Z [mm]")
+    #plt.colorbar(h[3], ax=ax)
+    ax.scatter(x, z, c=colors, edgecolor=colors, s=sizes)
+    fig.savefig(output)
