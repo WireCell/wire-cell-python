@@ -42,6 +42,19 @@ def convert_garfield(ctx, origin, speed, garfield_fileset, wirecell_field_respon
 
 
 
+@cli.command("plot-garfield-exhaustive")
+@click.argument("garfield-fileset")
+@click.argument("pdffile")
+@click.pass_context
+def plot_garfield_exhaustive(ctx, garfield_fileset, pdffile):
+    '''
+    Plot all the Garfield current responses.
+    '''
+    import wirecell.sigproc.garfield as gar
+    dat = gar.load(garfield_fileset)
+    import wirecell.sigproc.plots as plots
+    plots.garfield_exhaustive(dat, pdffile)
+
 @cli.command("plot-garfield-track-response")
 @click.option("-o", "--output", default=None,
               help="Set output data file")

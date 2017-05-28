@@ -462,3 +462,48 @@ def plot_digitized_line(uvw_rfs,
         axes.text(15,40, "   Garfield 2D calculation\n(perpendicular line source)")
 
     return fig, numpy.vstack(data).T
+
+
+
+def garfield_exhaustive(rflist, pdffile):
+    '''
+    Make detailed plots of all the Garfield current responses. 
+    '''
+    from matplotlib.backends.backend_pdf import PdfPages
+
+    uvw = list()
+    for letter in "uvw":
+        byplane = [rf for rf in rflist if rf.plane == letter]
+        uvw.append(byplane)
+     
+    impacts = set()
+    for rf in rflist:
+        impacts.add(rf.impact)
+
+    with PdfPages(pdffile) as pdf:
+
+        for impact in sorted(impacts):
+
+            fig, axes = plt.subplots(nrows=3, ncols=1)
+
+            for letter, byplane, ax in zip("uvw", uvw, axes):
+                byimpact = [rf for rf in byplane if rf.impact == impact]
+
+                ax.set_title("%s impact %.1f" % (letter.upper(), impact))
+                ax.set_xlabel("time [$\mu$s]")
+                ax.set_ylabel("current [pAmp]")
+
+                for rf in byimpact:
+                    ax.plot(rf.times/units.us, rf.response/units.picoampere,
+                                label="wire:%d" % (rf.region))
+                xmmymm = list(ax.axis())
+                xmmymm[0] = 70
+                xmmymm[1] = 85
+                ax.axis(xmmymm)
+                #ax.legend(loc="center left")
+            plt.tight_layout()
+            pdf.savefig(fig)
+            plt.close()
+
+
+
