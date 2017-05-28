@@ -381,6 +381,8 @@ def plot_digitized_line(uvw_rfs,
 
     fig, axes = plt.subplots(1, 1)
 
+    ymaxs=list()
+    ymins=list()
     data = list()
     for ind, rf in enumerate(uvw_rfs):
         print rf.plane, legends[ind], numpy.sum(rf.response)*dt_hi/units.eplus, " electrons"
@@ -414,6 +416,9 @@ def plot_digitized_line(uvw_rfs,
 
             y = samp.response/units.nanoampere
 
+        ymins.append(numpy.min(y))
+        ymaxs.append(numpy.max(y))
+
         axes.plot(x, y,
                   ls=lstype,
                   color=colors[ind],
@@ -438,7 +443,9 @@ def plot_digitized_line(uvw_rfs,
         if adc_per_voltage:               
             axes.set_title('ADC Waveform with 2D %s Wire Plane Model' % detector)
             axes.set_ylabel('ADC (baseline subtracted)')
-            xmmymm[3] = 65.0
+            #xmmymm[3] = 65.0
+            xmmymm[3] = max(ymaxs)
+            xmmymm[2] = min(ymins)
         else:
             axes.set_title('Voltage Waveform')
             axes.set_ylabel('Voltage Sample (baseline subtracted) [mV]')

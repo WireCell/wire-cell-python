@@ -16,10 +16,10 @@ def cli(ctx):
 
 
 @cli.command("convert-garfield")
-@click.option("-o", "--origin", default=100.0,
-              help="Set drift origin in units of mm.")
-@click.option("-s", "--speed", default=1.114,
-              help="Set nominal drift speed in units of mm/us.")
+@click.option("-o", "--origin", default="10.0*cm",
+              help="Set drift origin (give units, eg '10*cm').")
+@click.option("-s", "--speed", default="1.114*mm/us",
+              help="Set nominal drift speed (give untis, eg '1.114*mm/us').")
 @click.argument("garfield-fileset")
 @click.argument("wirecell-field-response-file")
 @click.pass_context
@@ -33,8 +33,8 @@ def convert_garfield(ctx, origin, speed, garfield_fileset, wirecell_field_respon
     import response as res
     import response.persist as per
 
-    origin *= units.mm
-    speed *= units.mm/units.us
+    origin = eval(origin, units.__dict__)
+    speed = eval(speed, units.__dict__)
     rflist = gar.load(garfield_fileset)
     fr = res.rf1dtoschema(rflist, origin, speed)
     per.dump(wirecell_field_response_file, fr)
