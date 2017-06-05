@@ -94,6 +94,8 @@ picosecond = 1.e-12*second
 hertz = 1./second
 kilohertz = 1.e+3*hertz
 megahertz = 1.e+6*hertz
+kHz = kilohertz
+MHz = megahertz
 
 # symbols
 ns = nanosecond
