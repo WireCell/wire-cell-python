@@ -3,6 +3,7 @@
 Export wirecell.sigproc functionality to a main Click program.
 '''
 
+import sys
 import click
 
 from wirecell import units
@@ -129,6 +130,45 @@ def plot_electronics_response(ctx, gain, shaping, tick, plotfile):
     import wirecell.sigproc.plots as plots
     fig = plots.one_electronics(gain, shaping, tick)
     fig.savefig(plotfile)
+
+
+@cli.command("convert-noise-spectra")
+@click.option("-f","--format", default="microboonev1",
+                  help="Format of input file")
+@click.argument("inputfile")
+@click.argument("outputfile")
+@click.pass_context
+def convert_noise_spectra(ctx, format, inputfile, outputfile):
+    '''
+    Convert an file of noise spectra in some external format into WCT format.
+    '''
+    loader = None
+    if format == "microboonev1":
+        from wirecell.sigproc.noise.microboone import load_noise_spectra_v1
+        loader = load_noise_spectra_v1
+    #elif:...
+
+    if not loader:
+        click.echo('Unknown format: "%s"' % format)
+        sys.exit(1)
+
+    spectra = loader(inputfile)
+
+    from wirecell.sigproc.noise import persist
+    persist.dump(outputfile, spectra)
+
+@cli.command("plot-noise-spectra")
+@click.argument("spectrafile")
+@click.argument("plotfile")
+@click.pass_context
+def plot_noise_spectra(ctx, spectrafile, plotfile):
+    '''
+    Plot contents of a WCT noise spectra file such as produced by
+    the convert-noise-spectra subcommand.
+    '''
+    from wirecell.sigproc.noise import persist, plots
+    spectra = persist.load(spectrafile)
+    plots.plot_many(spectra, plotfile)
 
 
 def main():

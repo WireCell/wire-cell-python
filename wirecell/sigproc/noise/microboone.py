@@ -51,6 +51,6 @@ def load_noise_spectra_v1(filename):
     for iwire in range(nwires):
         ns = schema.NoiseSpectrum(period, nsamples, gain, shaping,
                                       planes[iwire], wirelens[iwire],
-                                      consts[iwire], freq, amps[iwire])
+                                      consts[iwire], list(freq), list(amps[iwire]))
         noises.append(ns)
     return noises
