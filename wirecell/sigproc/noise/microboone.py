@@ -53,4 +53,11 @@ def load_noise_spectra_v1(filename):
                                       planes[iwire], wirelens[iwire],
                                       consts[iwire], list(freq), list(amps[iwire]))
         noises.append(ns)
+        if planes[iwire] == 1:            # v1 implicitly equates U and V planes but only provides plane=1 data
+            ns0 = schema.NoiseSpectrum(period, nsamples, gain, shaping,
+                                           0, wirelens[iwire],
+                                           consts[iwire], list(freq), list(amps[iwire]))
+
+            noises.append(ns0)
+    noises.sort(key = lambda s: 100*(s.plane+1) + s.wirelen/units.meter)
     return noises
