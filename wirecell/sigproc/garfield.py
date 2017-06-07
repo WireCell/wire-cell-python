@@ -136,7 +136,7 @@ def parse_filename(filename):
         plane = 'w'
     return dict(impact=float(dist), plane=plane, filename=filename)
 
-def load(source):
+def load(source, normalize = True):
     '''
     Load Garfield data source (eg, tarball).
 
@@ -212,8 +212,11 @@ def load(source):
     # print 'nw0=%d, dt=%e us, itot=%e nAmp, imm=%e,%e nAmp, qtot=%e ele norm=%e' % \
     #   (len(w0), dt/units.us, itot, imin/units.nanoampere, imax/units.nanoampere, qtot/units.eplus, norm)
 
-    for r in ret:
-        r.response *= norm
+    if normalize:
+        print ("Normalizing over %d paths is %f (dt=%.2f us, Qavg=%f fC = %f electrons)" % \
+                   (len(w0), norm, dt/units.microsecond, qtot/units.femtocoulomb, -qtot/units.eplus))
+        for r in ret:
+            r.response *= norm
 
     return ret
 

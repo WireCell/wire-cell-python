@@ -73,11 +73,15 @@ def plot_garfield_exhaustive(ctx, garfield_fileset, pdffile):
               help="Set ADC voltage range in Volt.")
 @click.option("--adc-resolution", default=12,
               help="Set ADC resolution in bits.")
+@click.option("--normalize/--no-normalize", default=True,
+              help="Normalize responses so central collection wire gets 1 e-.")
+
 @click.argument("garfield-fileset")
 @click.argument("pdffile")
 @click.pass_context
 def plot_garfield_track_response(ctx, output, gain, shaping, tick, norm,
                                      adc_gain, adc_voltage, adc_resolution,
+                                     normalize,
                                      garfield_fileset, pdffile):
     '''
     Plot Garfield response assuming a perpendicular track.
@@ -96,7 +100,7 @@ def plot_garfield_track_response(ctx, output, gain, shaping, tick, norm,
     adc_resolution = 1<<adc_resolution
     adc_per_voltage = adc_gain*adc_resolution/adc_voltage
 
-    dat = gar.load(garfield_fileset)
+    dat = gar.load(garfield_fileset, normalize)
     uvw = res.line(dat, norm)
 
     detector = ""
