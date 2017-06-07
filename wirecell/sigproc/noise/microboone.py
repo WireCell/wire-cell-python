@@ -39,13 +39,13 @@ def load_noise_spectra_v1(filename):
     shaping = util.unitify(meta[6], meta[7])
     wirelens = [float(v)*units.cm for v in lines[1].split()[1:]]
     planes = [int(v) for v in lines[2].split()[1:]]
-    consts = [float(v) for v in lines[3].split()[1:]]
+    consts = [float(v)*units.mV for v in lines[3].split()[1:]]
     data = list()
     for line in lines[4:]:
         data.append([float(v) for v in line.split()])
     data = numpy.asarray(data)
-    freq = data[:,0]
-    amps = data[:,1:].T
+    freq = data[:,0]*util.unitify("1.0", meta[1])
+    amps = data[:,1:].T*units.mV
     nwires = len(wirelens)
     noises = list ()
     for iwire in range(nwires):
