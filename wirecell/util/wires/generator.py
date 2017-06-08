@@ -221,6 +221,21 @@ def wrapped_from_top(offset, angle, pitch, rect):
     return wires
         
 
+# https://www-microboone.fnal.gov/publications/TDRCD3.pdf
+microboone_params = dict(
+    # drift is 2.5604*units.meter
+    width = 10.368*units.meter,                       # in Z
+    height = 2.325*units.meter,                       # in Y
+    pitches = [3*units.mm, 3*units.mm, 3*units.mm ],
+    # guess at left/right ambiguity
+    angles = [+60*units.deg, -60*units.deg,  0.0],
+    # 
+    offsets = [0.0*units.mm, 0.0*units.mm, 0.0*units.mm],
+    # fixme: this is surely wrong
+    planex = [9*units.mm, 6*units.mm, 3*units.mm],
+    maxchanperplane = 3000,
+
+
 protodune_params = dict(
     width = 2295*units.mm,
     height = 5920*units.mm,

@@ -31,13 +31,26 @@ def convert_oneside_wires(ctx, input_file, output_file):
     persist.dump(output_file, store)
 
 
+@cli.command("plot-wires")
+@click.argument("json-file")
+@click.argument("pdf-file")
+@click.pass_context
+def plot_wires(ctx, json_file, pdf_file):
+    '''
+    Plot wires from a WCT JSON(.bz2) wire file
+    '''
+    import wirecell.util.wires.persist as wpersist
+    import wirecell.util.wires.plot as wplot
+    wires = wpersist.load(json_file)
+    wplot.allplanes(wires, pdf_file)
+
 
 @cli.command("gen-plot-wires")
 @click.argument("output-file")
 @click.pass_context
 def gen_plot_wires(ctx, output_file):
     '''
-    Generate a WCT wires file.
+    Generate wires and plot them.
     '''
     import wirecell.util.wires.plot as wplot
     import wirecell.util.wires.generator as wgen
@@ -64,7 +77,7 @@ def make_wires(ctx, output_file):
 @click.pass_context
 def wire_channel_map(ctx, input_file):
     '''
-    Generate a WCT wires file.
+    Generate a WCT channel map wires file.
     '''
     from collections import defaultdict
     import wirecell.util.wires.persist as wpersist

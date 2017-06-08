@@ -4,6 +4,7 @@ This holds MicroBooNE specific routines related to wire geometry.
 '''
 
 import schema
+from wirecell import units
 
 import numpy
 import matplotlib.pyplot as plt
@@ -68,8 +69,8 @@ def load(filename):
                 continue
             chunks = line.split()
             ch, plane, wip = [int(x) for x in chunks[:3]]
-            beg = [float(x) for x in chunks[3:6]]
-            end = [float(x) for x in chunks[6:9]]
+            beg = [float(x)*units.cm for x in chunks[3:6]]
+            end = [float(x)*units.cm for x in chunks[6:9]]
             for ind in range(3):                  # some zeros are not
                 if abs(beg[ind]) < 1e-13:
                     beg[ind] = 0.0

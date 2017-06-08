@@ -1,3 +1,4 @@
+from wirecell import units
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import numpy
@@ -14,6 +15,9 @@ def plot_polyline(pts):
 
 
 def oneplane(store, iplane, iface=0, segments=None):
+    '''
+    Plot one plane of wires.
+    '''
     fig = plt.figure()
     ax = fig.add_subplot(111)
 
@@ -30,10 +34,46 @@ def oneplane(store, iplane, iface=0, segments=None):
         p1 = store.points[wire.tail]
         p2 = store.points[wire.head]
         width = wire.segment + 1
-        ax.plot((p1.z, p2.z), (p1.y, p2.y), linewidth = width)
+        ax.plot((p1.z/units.meter, p2.z/units.meter), (p1.y/units.meter, p2.y/units.meter), linewidth = width)
+
+    ax.set_xlabel("Z [meter]")
+    ax.set_ylabel("Y [meter]")
+    ax.set_title("Wires for plane %d face %d" % (iplane,iface))
+
     return fig,ax
 
-def allplanes(store, iface=0, segments=None):
+def allplanes(store, pdffile):
+    '''
+    Plot each plane of wires on a page of a PDF file.
+    '''
+    wire_step = 10                            # how many wires to skip
+    from matplotlib.backends.backend_pdf import PdfPages
+    with PdfPages(pdffile) as pdf:
+        for anode in store.anodes:
+            for iface in anode.faces:
+                print anode.ident, iface
+                face = store.faces[iface]
+                for iplane in face.planes:
+                    plane = store.planes[iplane]
+
+                    fig, ax = plt.subplots(nrows=1, ncols=1)
+
+                    for wind in plane.wires[::wire_step]:
+                        wire = store.wires[wind]
+
+                        p1 = store.points[wire.tail]
+                        p2 = store.points[wire.head]
+                        width = wire.segment + 1
+                        ax.plot((p1.z/units.meter, p2.z/units.meter), (p1.y/units.meter, p2.y/units.meter), linewidth = width)
+
+                    ax.set_xlabel("Z [meter]")
+                    ax.set_ylabel("Y [meter]")
+                    ax.set_title("Anode %d, Face %d, Plane %d every %dth wire" % (anode.ident, face.ident, plane.ident, wire_step))
+                    pdf.savefig(fig)
+                    plt.close()
+
+
+def face_in_allplanes(store, iface=0, segments=None):
     fig = plt.figure()
     ax = fig.add_subplot(111)
 
