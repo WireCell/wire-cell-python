@@ -14,31 +14,55 @@ def plot_polyline(pts):
     
 
 
-def oneplane(store, iplane, iface=0, segments=None):
+def oneplane(store, iplane, segments=None):
     '''
     Plot one plane of wires.
     '''
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
+    fig,axes = plt.subplots(nrows=1, ncols=3)
 
+    uvw = "UVW"
+
+    widths = [1, 2, 3]
+    wire_stride=20;
+
+    iface = 0
     face = store.faces[iface]
-    planeid = face.planes[iplane]
-    plane = store.planes[planeid]
 
-    print segments
-    for wind in plane.wires[::10]:
-        wire = store.wires[wind]
-        if segments and not wire.segment in segments:
-            continue
+    cmap = plt.get_cmap('rainbow')
 
-        p1 = store.points[wire.tail]
-        p2 = store.points[wire.head]
-        width = wire.segment + 1
-        ax.plot((p1.z/units.meter, p2.z/units.meter), (p1.y/units.meter, p2.y/units.meter), linewidth = width)
+    for iplane in range(3):
+        ax = axes[iplane]
 
-    ax.set_xlabel("Z [meter]")
-    ax.set_ylabel("Y [meter]")
-    ax.set_title("Wires for plane %d face %d" % (iplane,iface))
+        planeid = face.planes[iplane]
+        plane = store.planes[planeid]
+
+        wires = [w for w in plane.wires[::wire_stride]]
+
+        nwires = len(wires)
+        colors = [cmap(i) for i in numpy.linspace(0, 1, nwires)]
+
+        for wcount, wind in enumerate(wires):
+
+            wire = store.wires[wind]
+            if segments and not wire.segment in segments:
+                continue
+
+            color = colors[wcount]
+            if not iplane:
+                color = colors[nwires-wcount-1]
+
+            p1 = store.points[wire.tail]
+            p2 = store.points[wire.head]
+            width = widths[wire.segment]
+            ax.plot((p1.z/units.meter, p2.z/units.meter), (p1.y/units.meter, p2.y/units.meter),
+                        linewidth = width, color=color)
+
+            ax.locator_params(axis='x', nbins=5)
+            ax.set_aspect('equal', 'box')
+            ax.set_xlabel("Z [meter]")
+            if not iplane:
+                ax.set_ylabel("Y [meter]")
+            ax.set_title("plane %d/%s" % (iplane,uvw[iplane]))
 
     return fig,ax
 

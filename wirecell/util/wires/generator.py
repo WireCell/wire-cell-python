@@ -234,7 +234,7 @@ microboone_params = dict(
     # fixme: this is surely wrong
     planex = [9*units.mm, 6*units.mm, 3*units.mm],
     maxchanperplane = 3000,
-
+)
 
 protodune_params = dict(
     width = 2295*units.mm,
