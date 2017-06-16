@@ -17,6 +17,8 @@ def plot_polyline(pts):
 def oneplane(store, iplane, segments=None):
     '''
     Plot one plane of wires.
+
+    This plot is in protodune-numbers document.
     '''
     fig,axes = plt.subplots(nrows=1, ncols=3)
 
