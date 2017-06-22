@@ -136,17 +136,23 @@ def parse_filename(filename):
         plane = 'w'
     return dict(impact=float(dist), plane=plane, filename=filename)
 
-def load(source, normalize = True):
+def load(source, normalization = None):
     '''
     Load Garfield data source (eg, tarball).
 
     Return list of response.ResponseFunction objects.
 
-    The responses are normalized to give the sampled current assuming
-    a single electron was drifted along the path.  It does this by a
-    normalization such that the mean integrated currents over each
-    path that ends on the central collection wire equals the charge of
-    one electron.
+    The responses will be normalized according to the value of
+    `normalization`:
+
+    none or 0: no normalization, take Garfield as absolutely
+    normalized
+
+    less than 0: normalize such that the average of the integrals
+    along an impact position of the central collection wire is this
+    many electrons.
+
+    greater than 0: simply multiply the responses by this number.
     '''
     source = asgenerator(source)
 
@@ -205,18 +211,26 @@ def load(source, normalize = True):
     dt = (w0[0].times[1]-w0[0].times[0])
     itot = sum([sum(w.response) for w in w0])/len(w0)
     qtot = itot*dt
-    norm = units.eplus/qtot
 
     # imin = min([min(w.response) for w in w0])
     # imax = max([max(w.response) for w in w0])
     # print 'nw0=%d, dt=%e us, itot=%e nAmp, imm=%e,%e nAmp, qtot=%e ele norm=%e' % \
     #   (len(w0), dt/units.us, itot, imin/units.nanoampere, imax/units.nanoampere, qtot/units.eplus, norm)
 
-    if normalize:
+    if normalization is None or normalization == 0:
+        return ret
+
+    if normalization < 0:
+        norm = normalization*units.eplus/qtot
         print ("Normalizing over %d paths is %f (dt=%.2f us, Qavg=%f fC = %f electrons)" % \
                    (len(w0), norm, dt/units.microsecond, qtot/units.femtocoulomb, -qtot/units.eplus))
-        for r in ret:
-            r.response *= norm
+    else:
+        norm = normalization
+        print ("Normalization by scaling with: %f" % norm)
+
+
+    for r in ret:
+        r.response *= norm
 
     return ret
 

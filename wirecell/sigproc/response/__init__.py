@@ -663,12 +663,15 @@ def line(rflist, normalization=13700*units.eplus):
 
     # normalize central collection response function
     if normalization > 0.0:
-        w = ret[-1]
-        dt = w.times[1] - w.times[0]
-        qtot = numpy.sum(w.response)*dt
-        scale = normalization/qtot
-        for ind, rf in enumerate(ret):
-            print ind, sum(rf.response)
-            rf.response *= scale
+        for rf in ret:
+            rf.response *= normalization
+        #### this normalizes based on collection wires.
+        # w = ret[-1]
+        # dt = w.times[1] - w.times[0]
+        # qtot = numpy.sum(w.response)*dt
+        # scale = normalization/qtot
+        # for ind, rf in enumerate(ret):
+        #     print ind, sum(rf.response)
+        #     rf.response *= scale
     return ret
 

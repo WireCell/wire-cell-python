@@ -21,10 +21,13 @@ def cli(ctx):
               help="Set drift origin (give units, eg '10*cm').")
 @click.option("-s", "--speed", default="1.114*mm/us",
               help="Set nominal drift speed (give untis, eg '1.114*mm/us').")
+@click.option("-n", "--normalization", default=0.0,
+              help="Set normalization: 0:none, <0:electrons, >0:multiplicative scale.  def=0")
 @click.argument("garfield-fileset")
 @click.argument("wirecell-field-response-file")
 @click.pass_context
-def convert_garfield(ctx, origin, speed, garfield_fileset, wirecell_field_response_file):
+def convert_garfield(ctx, origin, speed, normalization,
+                         garfield_fileset, wirecell_field_response_file):
     '''
     Convert an archive of a Garfield fileset (zip, tar, tgz) into a
     Wire Cell field response file (.json with optional .gz or .bz2
@@ -36,7 +39,7 @@ def convert_garfield(ctx, origin, speed, garfield_fileset, wirecell_field_respon
 
     origin = eval(origin, units.__dict__)
     speed = eval(speed, units.__dict__)
-    rflist = gar.load(garfield_fileset)
+    rflist = gar.load(garfield_fileset, normalization)
     fr = res.rf1dtoschema(rflist, origin, speed)
     per.dump(wirecell_field_response_file, fr)
 
@@ -44,28 +47,31 @@ def convert_garfield(ctx, origin, speed, garfield_fileset, wirecell_field_respon
 
 
 @cli.command("plot-garfield-exhaustive")
+@click.option("-n", "--normalization", default=0.0,
+              help="Set normalization: 0:none, <0:electrons, >0:multiplicative scale.  def=0")
 @click.argument("garfield-fileset")
 @click.argument("pdffile")
 @click.pass_context
-def plot_garfield_exhaustive(ctx, garfield_fileset, pdffile):
+def plot_garfield_exhaustive(ctx, normalization,
+                                 garfield_fileset, pdffile):
     '''
     Plot all the Garfield current responses.
     '''
     import wirecell.sigproc.garfield as gar
-    dat = gar.load(garfield_fileset)
+    dat = gar.load(garfield_fileset, normalization)
     import wirecell.sigproc.plots as plots
     plots.garfield_exhaustive(dat, pdffile)
 
 @cli.command("plot-garfield-track-response")
 @click.option("-o", "--output", default=None,
               help="Set output data file")
-@click.option("-g", "--gain", default=14.0,
+@click.option("-g", "--gain", default=-14.0,
               help="Set gain in mV/fC.")
 @click.option("-s", "--shaping", default=2.0,
               help="Set shaping time in us.")
 @click.option("-t", "--tick", default=0.5,
               help="Set tick time in us (0.1 is good for no shaping).")
-@click.option("-n", "--norm", default=16000,
+@click.option("-e", "--electrons", default=16000,
               help="Set normalization in units of electron charge.")
 @click.option("-a", "--adc-gain", default=1.2,
               help="Set ADC gain (unitless).")
@@ -73,15 +79,14 @@ def plot_garfield_exhaustive(ctx, garfield_fileset, pdffile):
               help="Set ADC voltage range in Volt.")
 @click.option("--adc-resolution", default=12,
               help="Set ADC resolution in bits.")
-@click.option("--normalize/--no-normalize", default=True,
-              help="Normalize responses so central collection wire gets 1 e-.")
-
+@click.option("-n", "--normalization", default=0.0,
+              help="Set normalization: 0:none, <0:electrons, >0:multiplicative scale.  def=0")
 @click.argument("garfield-fileset")
 @click.argument("pdffile")
 @click.pass_context
-def plot_garfield_track_response(ctx, output, gain, shaping, tick, norm,
+def plot_garfield_track_response(ctx, output, gain, shaping, tick, electrons,
                                      adc_gain, adc_voltage, adc_resolution,
-                                     normalize,
+                                     normalization,
                                      garfield_fileset, pdffile):
     '''
     Plot Garfield response assuming a perpendicular track.
@@ -93,15 +98,15 @@ def plot_garfield_track_response(ctx, output, gain, shaping, tick, norm,
     gain *= units.mV/units.fC
     shaping *= units.us
     tick *= units.us
-    norm *= units.eplus
+    electrons *= units.eplus
     
     adc_gain *= 1.0                       # unitless
     adc_voltage *= units.volt
     adc_resolution = 1<<adc_resolution
     adc_per_voltage = adc_gain*adc_resolution/adc_voltage
 
-    dat = gar.load(garfield_fileset, normalize)
-    uvw = res.line(dat, norm)
+    dat = gar.load(garfield_fileset, normalization)
+    uvw = res.line(dat, electrons)
 
     detector = ""
     if "/ub_" in garfield_fileset:
