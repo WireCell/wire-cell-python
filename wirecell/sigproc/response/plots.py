@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from .. import units
+from wirecell import units
 
 import numpy
 import matplotlib.pyplot as plt
@@ -13,12 +13,12 @@ def get_plane(fr, planeid, reflect=True):
     period = fr.period
 
     ntbins = pr.paths[0].current.size
-    tmin = fr.tstart*units.us
+    tmin = fr.tstart
     tmax = tmin + ntbins*period
     tdelta = (tmax-tmin)/ntbins
     print 'TBINS:', ntbins, tmin, tmax, tdelta, period
 
-    pitches = [path.pitchpos*units.mm for path in pr.paths]
+    pitches = [path.pitchpos for path in pr.paths]
     pdelta = pitches[1] - pitches[0]
     pmax = max(map(abs, pitches)) + 0.5*pdelta   # bin centered
     pmin = -pmax
@@ -35,7 +35,7 @@ def get_plane(fr, planeid, reflect=True):
     currents = numpy.zeros((npbins, ntbins))
 
     for path in pr.paths:
-        pitch = path.pitchpos*units.mm
+        pitch = path.pitchpos
         pind = int(round((pitch - pmin)/pdelta))
         pind = max(0, pind)
         pind = min(npbins, pind)
@@ -84,7 +84,7 @@ def plot_planes(fr, filename=None):
 
     fig.subplots_adjust(left=0.05, right=1.0, top=0.95, bottom=0.05)
 
-    vlims = [.5e-13, .5e-13, 2.5e-13]
+    vlims = [0.1, 0.1, 0.1]
 
     for planeid in range(3):
         vlim = vlims[planeid]
@@ -95,7 +95,9 @@ def plot_planes(fr, filename=None):
         ax.set_title('Induced Current %s-plane' % 'UVW'[planeid])
         ax.set_ylabel('Pitch [mm]')
         ax.set_xlabel('Time [us]')
-        im = ax.pcolormesh(t, p, c, vmin=-vlim, vmax=vlim, cmap='seismic')
+        im = ax.pcolormesh(t/units.us, p/units.mm, c/units.picoampere,
+                               vmin=-vlim, vmax=vlim,
+                               cmap='seismic')
         fig.colorbar(im, ax=[ax], shrink=0.9, pad=0.05)
 
         for iwire in range(10):
@@ -107,4 +109,8 @@ def plot_planes(fr, filename=None):
                        linestyle='dashed')
 
     if filename:
+        print ("Saving to %s" % filename)
+        if filename.endswith(".pdf"):
+            print ("warning: saving to PDF takes an awfully long time.  Try PNG.")
+
         fig.savefig(filename)

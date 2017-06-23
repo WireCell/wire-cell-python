@@ -218,6 +218,9 @@ def load(source, normalization = None):
     #   (len(w0), dt/units.us, itot, imin/units.nanoampere, imax/units.nanoampere, qtot/units.eplus, norm)
 
     if normalization is None or normalization == 0:
+        print ("No normalizing. But, %d paths (Qavg=%f fC = %f electrons)" % \
+                   (len(w0), qtot/units.femtocoulomb, -qtot/units.eplus))
+
         return ret
 
     if normalization < 0:

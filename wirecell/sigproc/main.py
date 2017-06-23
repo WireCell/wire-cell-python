@@ -120,6 +120,18 @@ def plot_garfield_track_response(ctx, output, gain, shaping, tick, electrons,
     fig.savefig(pdffile)
 
 
+@cli.command("plot-response")
+@click.argument("responsefile")
+@click.argument("pdffile")
+@click.pass_context
+def plot_response(ctx, responsefile, pdffile):
+    import response.persist as per
+    import response.plots as plots
+
+    fr = per.load(responsefile)
+    plots.plot_planes(fr, pdffile)
+
+
 @cli.command("plot-electronics-response")
 @click.option("-g", "--gain", default=14.0,
               help="Set gain in mV/fC.")

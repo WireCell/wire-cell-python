@@ -569,6 +569,26 @@ def deconvolve(Mct, Rpf, Ff, Fp):
     return Sct
 
 
+def schematorf1d(fr):
+    '''
+    Convert response.schema objects to 1D ResponseFunction objects.
+
+    Fixme: this has not yet been validated.
+    '''
+    ret = list()
+    for pr in fr.planes:
+        for path in pr.paths:
+            region = int(round(path.pitchpos/pr.pitch))
+            pos = (pr.wirepos, pr.pitchpos)
+            nsamples = len(path.current)
+            times = (fr.tstart, nsamples*fr.period, nsamples)
+            impact = pathc.pitchpos - region*pr.pitch
+            rf = ResponseFunction(pr.planeid, region, pos, times, path.current, impact)
+            ret.append(rf)
+    return ret
+                                      
+
+
 def rf1dtoschema(rflist, origin=10*units.cm, speed = 1.114*units.mm/units.us):
     '''
     Convert the list of 1D ResponseFunction objects into
@@ -578,7 +598,7 @@ def rf1dtoschema(rflist, origin=10*units.cm, speed = 1.114*units.mm/units.us):
 
     Because it is 1D, all the pitch and wire directions are the same.
     '''
-    rflist = normalize(rflist)
+    #rflist = normalize(rflist)
 
     anti_drift_axis = (1.0, 0.0, 0.0)
     one = rflist[0]             # get sample times
