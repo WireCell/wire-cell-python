@@ -185,3 +185,4 @@ def wire_plane_id(plane, face, apa):
     face_shift = 3
     apa_shift = 4
     return (plane&layer_mask) | (face << face_shift) | (apa << apa_shift)
+

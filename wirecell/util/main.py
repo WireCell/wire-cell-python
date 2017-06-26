@@ -31,19 +31,22 @@ def convert_oneside_wires(ctx, input_file, output_file):
     persist.dump(output_file, store)
 
 
-@cli.command("convert-wire-regions")
+@cli.command("convert-uboone-wire-regions")
+@click.argument("wire-json-file")
 @click.argument("csvfile")
-@click.argument("jsonfile")
+@click.argument("region-json-file")
 @click.pass_context
-def convert_wire_regions(ctx, csvfile, jsonfile):
+def convert_uboon_wire_regions(ctx, wire_json_file, csvfile, region_json_file):
     '''
     Convert CSV file to WCT format for wire regions.  Example is one
     as saved from MicroBooNE_ShortedWireList.xlsx.
     '''
+    import wirecell.util.wires.persist as wpersist
     import wirecell.util.wires.regions as reg
-    ubs = reg.uboone_shorted(csvfile)
+    store = wpersist.load(wire_json_file)
+    ubs = reg.uboone_shorted(store, csvfile)
+    wpersist.dump(region_json_file, ubs)
     
-
 
 @cli.command("plot-wires")
 @click.argument("json-file")

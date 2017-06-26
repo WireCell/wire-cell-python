@@ -68,11 +68,42 @@ def oneplane(store, iplane, segments=None):
 
     return fig,ax
 
+def select_channels(store, pdffile, channels):
+    '''
+    Plot wires for select channels.
+    '''
+    channels = set(channels)
+    bychan = defaultdict(list)
+    for wire in store.wires:
+        if not wire.channel in channels:
+            continue
+        bychan[wire.channel].append(wire)
+
+    fig, ax = plt.subplots(nrows=1, ncols=1)
+
+    for ch,wires in sorted(bychan.items()):
+        wires.sort(key=lambda w: w.segment)
+        for wire in wires:
+            p1 = store.points[wire.tail]
+            p2 = store.points[wire.head]
+            width = wire.segment + 1
+            ax.plot((p1.z/units.meter, p2.z/units.meter), (p1.y/units.meter, p2.y/units.meter), linewidth = width)
+            x = p2.z/units.meter
+            y = p2.y/units.meter
+            t='wip:%d ch:%d' %(wire.ident, wire.channel)
+            ax.text(x, y, t,
+                        horizontalalignment=hal,
+                        bbox=dict(facecolor='yellow', alpha=0.5, pad=10))
+    fig.savefig(pdffile)
+
+    
+
 def allplanes(store, pdffile):
     '''
     Plot each plane of wires on a page of a PDF file.
     '''
     wire_step = 10                            # how many wires to skip
+
     from matplotlib.backends.backend_pdf import PdfPages
     with PdfPages(pdffile) as pdf:
         for anode in store.anodes:
@@ -91,6 +122,21 @@ def allplanes(store, pdffile):
                         p2 = store.points[wire.head]
                         width = wire.segment + 1
                         ax.plot((p1.z/units.meter, p2.z/units.meter), (p1.y/units.meter, p2.y/units.meter), linewidth = width)
+
+                    for wcount, wind in enumerate([plane.wires[0], plane.wires[-1]]):
+                        wire = store.wires[wind]
+                        p1 = store.points[wire.tail]
+                        p2 = store.points[wire.head]
+                        x = p2.z/units.meter
+                        y = p2.y/units.meter
+                        hal = "right"
+                        if not wcount:
+                            hal="left"
+                        t='wip:%d ch:%d' %(wire.ident, wire.channel)
+                        ax.text(x, y, t,
+                                    horizontalalignment=hal,
+                                    bbox=dict(facecolor='yellow', alpha=0.5, pad=10))
+
 
                     ax.set_xlabel("Z [meter]")
                     ax.set_ylabel("Y [meter]")

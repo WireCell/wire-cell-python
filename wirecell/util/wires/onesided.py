@@ -10,6 +10,7 @@ import numpy
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
+from collections import defaultdict
 
 def load(filename):
     '''Load a "celltree wire geometry file".
@@ -58,8 +59,8 @@ def load(filename):
     apa = 0
 
     # temporary per-plane lists of wires to allow sorting before tuplizing.
-    planes = [list(), list(), list()]
-
+    #planes = [list(), list(), list()]
+    planes = defaultdict(list)
     with open(filename) as fp:
         for line in fp.readlines():
             if line.startswith("#"):
@@ -82,8 +83,8 @@ def load(filename):
             begind = store.make("point", *beg)
             endind = store.make("point", *end)
             wpid = schema.wire_plane_id(plane, face, apa)
-            wireind = store.make("wire", wpid, ch, segment, begind, endind)
-            planes[plane].append(wireind)
+            wireind = store.make("wire", wip, ch, segment, begind, endind)
+            planes[wpid].append(wireind)
 
     def wire_pos(ind):
         wire = store.get("wire", ind)
@@ -92,7 +93,7 @@ def load(filename):
         return 0.5*(p1.z + p2.z)
 
     wire_plane_indices = list()
-    for plane, wire_list in enumerate(planes):
+    for plane, wire_list in sorted(planes.items()):
         wire_list.sort(key = wire_pos)
         index = store.make("plane", plane, wire_list)
         wire_plane_indices.append(index)   
@@ -103,4 +104,3 @@ def load(filename):
         
 
 
-        

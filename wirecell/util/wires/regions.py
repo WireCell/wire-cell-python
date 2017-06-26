@@ -35,11 +35,15 @@ def lsborder(vals):
                       Point(*coords[0:3]), Point(*coords[3:6]))
     
 
-def uboone_shorted(filename):
+def uboone_shorted(store, filename):
     '''
     Load in the CSV file holding description of shorted wires in
-    microboone.  Eg, one saved from Brooke's
-    MicroBooNE_ShortedWireList.xlsx
+    microboone.  Confirm data is consistent with given
+    wires.schema.Store object.
+
+    Example file is the CSV saved from MicroBooNE_ShortedWireList.xlsx.
+
+    Return data structure describing the shorted wires.
     '''
 
     #### wirecell numbers:
@@ -49,9 +53,9 @@ def uboone_shorted(filename):
     # Channel,Plane,Wire,Start X,Start Y,Start Z,End X,End Y,End Z,
     # Channel,Plane,Wire,Start X,Start Y,Start Z,End X,End Y,End Z
 
-
-    regions = dict()
-    current = None
+    
+    ret = list()
+    current_plane = None
     for lineno, line in enumerate(open(filename).readlines()):
         line=line.strip()
 
@@ -61,17 +65,32 @@ def uboone_shorted(filename):
         if not vals[0]:
             continue
 
-        if "region" in vals[0].lower():
-            rname = vals[0]
-            print ("new region set: %s" % rname)
-            current = regions[rname] = list()
+        maybe = vals[0].lower();
+        if "shorted region" in maybe:
+            letter = maybe[maybe.find("shorted region")-2]
+            #print 'Starting plane "%s"' % letter
+            current_plane = "uvy".index(letter)
             continue
 
         if vals[0].lower() == "plane":
             continue                      # column names
 
-        wc = Region(wcborder(vals[0:8]), wcborder(vals[8:16]))
-        ls = Region(lsborder(vals[16:25]), lsborder(vals[25:34]))
-        current.append(WCLS(wc,ls))
-    return regions
+        plane = int(vals[17])
+        if plane != current_plane:
+            continue;
+        ch1 = int(vals[16])
+        w1 = int(vals[18])
+        ch2 = int(vals[25])
+        w2 = int(vals[27])
+
+        chw1 = [w.ident for w in store.wires if w.channel == ch1]
+        chw2 = [w.ident for w in store.wires if w.channel == ch2]
+        assert w1 in chw1, "w1 %s %s"%(w1,chw1)
+        assert w2 in chw2, "w2 %s %s"%(w2,chw2)
+
+        ret.append(dict(plane=plane, wire1=w1, wire2=w2))
+    return ret
+
+        
+
 
