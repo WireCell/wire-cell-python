@@ -63,15 +63,13 @@ def plot_garfield_exhaustive(ctx, normalization,
     plots.garfield_exhaustive(dat, pdffile)
 
 @cli.command("plot-garfield-track-response")
-@click.option("-o", "--output", default=None,
-              help="Set output data file")
 @click.option("-g", "--gain", default=-14.0,
               help="Set gain in mV/fC.")
 @click.option("-s", "--shaping", default=2.0,
               help="Set shaping time in us.")
 @click.option("-t", "--tick", default=0.5,
               help="Set tick time in us (0.1 is good for no shaping).")
-@click.option("-e", "--electrons", default=16000,
+@click.option("-e", "--electrons", default=13300,
               help="Set normalization in units of electron charge.")
 @click.option("-a", "--adc-gain", default=1.2,
               help="Set ADC gain (unitless).")
@@ -79,17 +77,25 @@ def plot_garfield_exhaustive(ctx, normalization,
               help="Set ADC voltage range in Volt.")
 @click.option("--adc-resolution", default=12,
               help="Set ADC resolution in bits.")
-@click.option("-n", "--normalization", default=0.0,
+@click.option("-n", "--normalization", default=-0.5,
               help="Set normalization: 0:none, <0:electrons, >0:multiplicative scale.  def=0")
+@click.option("--ymin", default=-40.0,
+              help="Set Y min")
+@click.option("--ymax", default=60.0,
+              help="Set Y max")
 @click.argument("garfield-fileset")
 @click.argument("pdffile")
 @click.pass_context
-def plot_garfield_track_response(ctx, output, gain, shaping, tick, electrons,
+def plot_garfield_track_response(ctx, gain, shaping, tick, electrons,
                                      adc_gain, adc_voltage, adc_resolution,
                                      normalization,
+                                     ymin, ymax,
                                      garfield_fileset, pdffile):
     '''
     Plot Garfield response assuming a perpendicular track.
+
+    Note, defaults are chosen to reproduce the "ADC Waveform with 2D
+    MicroBooNE Wire Plane Model" plot for the MicroBooNE noise paper.
     '''
     import wirecell.sigproc.garfield as gar
     import wirecell.sigproc.response as res
@@ -116,7 +122,8 @@ def plot_garfield_track_response(ctx, output, gain, shaping, tick, electrons,
 
     fig,data = plots.plot_digitized_line(uvw, gain, shaping,
                                              adc_per_voltage = adc_per_voltage,
-                                             detector = detector)
+                                             detector = detector,
+                                             ymin=ymin, ymax=ymax)
     fig.savefig(pdffile)
 
 

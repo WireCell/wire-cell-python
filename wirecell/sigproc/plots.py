@@ -355,7 +355,8 @@ def plot_digitized_line(uvw_rfs,
                             shaping=2.0*units.us,
                             tick=0.5*units.us,
                             adc_per_voltage = 1.2*4096/(2.0*units.volt),
-                            detector = "MicroBooNE"):
+                            detector = "MicroBooNE",
+                            ymin=None, ymax=None):
     '''
     Make plot of shaped and digitized response functions.
 
@@ -454,6 +455,10 @@ def plot_digitized_line(uvw_rfs,
         axes.set_xlabel('Time [$\mu$s]')
         axes.set_ylabel('Instantaneous current (nanoamp)')
 
+    if ymin is not None:
+        xmmymm[2] = ymin
+    if ymax is not None:
+        xmmymm[3] = ymax
 
     axes.axis(xmmymm)
     if "microboone" in detector.lower():
