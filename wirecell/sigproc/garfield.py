@@ -212,10 +212,10 @@ def load(source, normalization = None):
     itot = sum([sum(w.response) for w in w0])/len(w0)
     qtot = itot*dt
 
-    # imin = min([min(w.response) for w in w0])
-    # imax = max([max(w.response) for w in w0])
-    # print 'nw0=%d, dt=%e us, itot=%e nAmp, imm=%e,%e nAmp, qtot=%e ele norm=%e' % \
-    #   (len(w0), dt/units.us, itot, imin/units.nanoampere, imax/units.nanoampere, qtot/units.eplus, norm)
+    #imin = min([min(w.response) for w in w0])
+    #imax = max([max(w.response) for w in w0])
+    #print 'nw0=%d, dt=%e us, itot=%e nAmp, imm=%e,%e nAmp, qtot=%e ele' % \
+    #  (len(w0), dt/units.us, itot, imin/units.nanoampere, imax/units.nanoampere, qtot/units.eplus)
 
     if normalization is None or normalization == 0:
         print ("No normalizing. But, %d paths (Qavg=%f fC = %f electrons)" % \

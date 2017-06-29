@@ -77,19 +77,21 @@ def plot_garfield_exhaustive(ctx, normalization,
               help="Set ADC voltage range in Volt.")
 @click.option("--adc-resolution", default=12,
               help="Set ADC resolution in bits.")
-@click.option("-n", "--normalization", default=-0.5,
+@click.option("-n", "--normalization", default=-1,
               help="Set normalization: 0:none, <0:electrons, >0:multiplicative scale.  def=0")
 @click.option("--ymin", default=-40.0,
               help="Set Y min")
 @click.option("--ymax", default=60.0,
               help="Set Y max")
+@click.option("--regions", default=0, type=int,
+              help="Set how many wire regions to use, default to all")
 @click.argument("garfield-fileset")
 @click.argument("pdffile")
 @click.pass_context
 def plot_garfield_track_response(ctx, gain, shaping, tick, electrons,
                                      adc_gain, adc_voltage, adc_resolution,
                                      normalization,
-                                     ymin, ymax,
+                                     ymin, ymax, regions,
                                      garfield_fileset, pdffile):
     '''
     Plot Garfield response assuming a perpendicular track.
@@ -112,18 +114,28 @@ def plot_garfield_track_response(ctx, gain, shaping, tick, electrons,
     adc_per_voltage = adc_gain*adc_resolution/adc_voltage
 
     dat = gar.load(garfield_fileset, normalization)
+
+    if regions:
+        print "Limiting to %d regions" % regions
+        dat = [r for r in dat if abs(r.region) in range(regions)]
+
     uvw = res.line(dat, electrons)
 
     detector = ""
-    if "/ub_" in garfield_fileset:
+    if "ub_" in garfield_fileset:
         detector = "MicroBooNE"
-    if "/dune_" in garfield_fileset:
+    if "dune_" in garfield_fileset:
         detector = "DUNE"
+    print 'Using detector hints: "%s"' % detector
+
+    nwires = len(set([abs(r.region) for r in dat])) - 1
+    #msg = "%d electrons, +/- %d wires" % (electrons, nwires)
+    msg=""
 
     fig,data = plots.plot_digitized_line(uvw, gain, shaping,
                                              adc_per_voltage = adc_per_voltage,
                                              detector = detector,
-                                             ymin=ymin, ymax=ymax)
+                                             ymin=ymin, ymax=ymax, msg=msg)
     fig.savefig(pdffile)
 
 

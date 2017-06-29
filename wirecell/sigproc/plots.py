@@ -356,7 +356,7 @@ def plot_digitized_line(uvw_rfs,
                             tick=0.5*units.us,
                             adc_per_voltage = 1.2*4096/(2.0*units.volt),
                             detector = "MicroBooNE",
-                            ymin=None, ymax=None):
+                            ymin=None, ymax=None, msg=""):
     '''
     Make plot of shaped and digitized response functions.
 
@@ -463,8 +463,12 @@ def plot_digitized_line(uvw_rfs,
     axes.axis(xmmymm)
     if "microboone" in detector.lower():
         axes.text(5,20, "   Garfield 2D calculation\n(perpendicular line source)")
+        if msg:
+            axes.text(5,-20, msg)
+
     if "dune" in detector.lower():
         axes.text(15,40, "   Garfield 2D calculation\n(perpendicular line source)")
+
 
     return fig, numpy.vstack(data).T
 

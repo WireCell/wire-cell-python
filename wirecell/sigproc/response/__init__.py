@@ -217,7 +217,7 @@ def normalize(rflist, plane='w', region=0, impact=None):
     return out
 
 
-def average(fine):
+def _average(fine):
     '''
     Average fine-grained response functions over multiple impact
     positions in the same plane and wire region.
@@ -231,28 +231,76 @@ def average(fine):
         noigeryb = list(byregion)
         noigeryb.reverse()
 
-        center = max([rflist[0].region for rflist in byregion])
+        regions = [rflist[0].region for rflist in byregion]
+        center = max(regions)
 
         # warning: this makes detailed assumptions about where the impact points are!
         for regp,regm in zip(byregion[center:], noigeryb[center:]):
             regp.sort(key=lambda x: x.impact)
             regm.sort(key=lambda x: x.impact)
+
             tot = numpy.zeros_like(regp[0].response)
             count = 0
-            for one in regp + regm:
+            for one in regp + regm:       # sums 2 regions!
                 tot += one.response
                 count += 1
-            tot *= 2.0                                 # reflect 
+            tot *= 2.0                                 # reflect across wire region
             count *= 2
-            tot -= regp[0].response + regm[0].response # don't double count impact=0
+            tot -= regp[0].response + regm[0].response # share region boundary path
             count -= 2
-            tot -= regp[-1].response + regm[-1].response # share region boundary path
+            tot -= regp[-1].response + regm[-1].response # don't double count impact=0
             count -= 2
             tot /= count
             dat = regp[0].dup(response=tot, impact=None)
             ret.append(dat)
         continue
     return ret
+
+def average(fine):
+    '''
+    Average fine-grained response functions over multiple impact
+    positions in the same plane and wire region.  It assumes an odd
+    number of regions and a half-populated impact positions per region
+    such that the first impact is exactly on a wire and the impact is
+    exactly on a half-way line between neighboring wires.
+
+    Return list of new response.ResponseFunction objects ordered by
+    plane, region which cover the same regions.
+    '''
+    coarse = list()
+    for inplane in group_by(fine, 'plane'):
+        byregion = group_by(inplane, 'region')
+
+        # for each region, we need to take impacts from the region on the other
+        # side of center.  So march down the reverse while we march up the
+        # original.
+        noigeryb = list(byregion)
+        noigeryb.reverse()
+
+        for regp, regm in zip(byregion, noigeryb):
+            # Assure each region is sorted so first is impact=0
+            regp.sort(key=lambda x: abs(x.impact))
+            regm.sort(key=lambda x: abs(x.impact))
+
+            tot = numpy.zeros_like(regp[0].response)
+
+            nimpacts = len(regp)
+            binsize = [1.0]*nimpacts      # unit impact bin size
+            binsize[0] = 0.5;             # each center impact only covers 1/2 impact bin
+            binsize[-1] = 0.5;            # same for the edge impacts 
+
+            for impact in range(nimpacts):
+                rp = regp[impact]
+                rm = regm[impact]
+                tot += binsize[impact]*(rp.response + rm.response)
+
+            # normalize by total number of impact bins
+            tot /= 2*(nimpacts-1)
+            dat = regp[0].dup(response=tot, impact=None)
+            coarse.append(dat)
+        continue
+    return coarse
+
 
 
 
@@ -661,10 +709,12 @@ def line(rflist, normalization=13700*units.eplus):
     that the collection response integrates to the given normalization
     value if nonzero.
     '''
+
     impacts = set([rf.impact for rf in rflist])
     if len(impacts) > 1:
+        print "Averaging",len(rflist),"=3*",len(rflist)/3
         rflist = average(rflist)
-
+        print "got back",len(rflist),"=3*",len(rflist)/3
     byplane = group_by(rflist, 'plane')
     
     # sum across all impact positions assuming a single point source is
@@ -673,25 +723,16 @@ def line(rflist, normalization=13700*units.eplus):
     ret = list()
     for inplane in byplane:
         first = inplane[0]
-        tot = first.dup()
+        tot = numpy.zeros_like(first.response)
         for rf in inplane:
-            factor = 1.0
-            if rf.region > 0:
-                factor = 2.0
-            tot.response += rf.response * factor
-        ret.append(tot)
+            tot += rf.response
+        dat = first.dup(response=tot, impact=None, region=None)
+        ret.append(dat)
 
-    # normalize central collection response function
+    # normalize to user's amount of charge
     if normalization > 0.0:
         for rf in ret:
             rf.response *= normalization
-        #### this normalizes based on collection wires.
-        # w = ret[-1]
-        # dt = w.times[1] - w.times[0]
-        # qtot = numpy.sum(w.response)*dt
-        # scale = normalization/qtot
-        # for ind, rf in enumerate(ret):
-        #     print ind, sum(rf.response)
-        #     rf.response *= scale
+
     return ret
 
