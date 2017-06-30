@@ -19,6 +19,14 @@ This package is somewhat experts only but does install in the "usual Python way"
   $ python setup.py develop
 #+END_EXAMPLE
 
+In the future, when creating fresh shells, one only needs
+
+#+BEGIN_EXAMPLE
+  $ source venv/bin/activate
+#+END_EXAMPLE
+
+Any =git pull= or editing of the code will be reflected in your environment.
+
 * Command line interfaces
 
 Some functionality is available from the command line, with a command
