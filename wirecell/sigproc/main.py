@@ -86,7 +86,7 @@ def plot_garfield_exhaustive(ctx, normalization,
 @click.option("--regions", default=0, type=int,
                   help="Set how many wire regions to use, default to all")
 @click.option("--dump-data", default="", type=str,
-                  help="Dump the plotted data in format given by extension (.json, .txt or .npz)")
+                  help="Dump the plotted data in format given by extension (.json, .txt or .npz/.npy)")
 @click.argument("garfield-fileset")
 @click.argument("pdffile")
 @click.pass_context
