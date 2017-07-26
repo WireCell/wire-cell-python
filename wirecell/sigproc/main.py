@@ -64,27 +64,29 @@ def plot_garfield_exhaustive(ctx, normalization,
 
 @cli.command("plot-garfield-track-response")
 @click.option("-g", "--gain", default=-14.0,
-              help="Set gain in mV/fC.")
+                  help="Set gain in mV/fC.")
 @click.option("-s", "--shaping", default=2.0,
-              help="Set shaping time in us.")
+                  help="Set shaping time in us.")
 @click.option("-t", "--tick", default=0.5,
-              help="Set tick time in us (0.1 is good for no shaping).")
+                  help="Set tick time in us (0.1 is good for no shaping).")
 @click.option("-e", "--electrons", default=13300,
-              help="Set normalization in units of electron charge.")
+                help="Set normalization in units of electron charge.")
 @click.option("-a", "--adc-gain", default=1.2,
-              help="Set ADC gain (unitless).")
+                  help="Set ADC gain (unitless).")
 @click.option("--adc-voltage", default=2.0,
-              help="Set ADC voltage range in Volt.")
+                  help="Set ADC voltage range in Volt.")
 @click.option("--adc-resolution", default=12,
-              help="Set ADC resolution in bits.")
+                  help="Set ADC resolution in bits.")
 @click.option("-n", "--normalization", default=-1,
-              help="Set normalization: 0:none, <0:electrons, >0:multiplicative scale.  def=0")
+                  help="Set normalization: 0:none, <0:electrons, >0:multiplicative scale.  def=0")
 @click.option("--ymin", default=-40.0,
-              help="Set Y min")
+                  help="Set Y min")
 @click.option("--ymax", default=60.0,
-              help="Set Y max")
+                  help="Set Y max")
 @click.option("--regions", default=0, type=int,
-              help="Set how many wire regions to use, default to all")
+                  help="Set how many wire regions to use, default to all")
+@click.option("--dump-data", default="", type=str,
+                  help="Dump the plotted data in format given by extension (.json, .txt or .npz)")
 @click.argument("garfield-fileset")
 @click.argument("pdffile")
 @click.pass_context
@@ -92,6 +94,7 @@ def plot_garfield_track_response(ctx, gain, shaping, tick, electrons,
                                      adc_gain, adc_voltage, adc_resolution,
                                      normalization,
                                      ymin, ymax, regions,
+                                     dump_data,
                                      garfield_fileset, pdffile):
     '''
     Plot Garfield response assuming a perpendicular track.
@@ -136,7 +139,28 @@ def plot_garfield_track_response(ctx, gain, shaping, tick, electrons,
                                              adc_per_voltage = adc_per_voltage,
                                              detector = detector,
                                              ymin=ymin, ymax=ymax, msg=msg)
+    print ("plotting to %s" % pdffile)
     fig.savefig(pdffile)
+
+    if dump_data:
+        print ("dumping data to %s" % dump_data)
+
+        if dump_data.endswith(".npz"):
+            import numpy
+            numpy.savez(dump_data, data);
+        if dump_data.endswith(".npy"):
+            import numpy
+            numpy.save(dump_data, data);
+        if dump_data.endswith(".txt"):
+            with open(dump_data,"wt") as fp:
+                for line in data:
+                    line = '\t'.join(map(str, line))
+                    fp.write(line+'\n')
+        if dump_data.endswith(".json"):
+            import json
+            open(dump_data,"wt").write(json.dumps(data.tolist(), indent=4))
+                    
+
 
 
 @cli.command("plot-response")
