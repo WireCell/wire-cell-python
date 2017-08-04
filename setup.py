@@ -19,6 +19,7 @@ setup(
             'wirecell-sigproc = wirecell.sigproc.main:main',
             'wirecell-util = wirecell.util.main:main',
             'wirecell-gen = wirecell.gen.main:main',
+            'wirecell-validate = wirecell.validate.main:main',
         ]
     )
 )
