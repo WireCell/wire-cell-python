@@ -78,7 +78,7 @@ def plot_garfield_exhaustive(ctx, normalization,
 @click.option("--adc-resolution", default=12,
                   help="Set ADC resolution in bits.")
 @click.option("-n", "--normalization", default=-1,
-                  help="Set normalization: 0:none, <0:electrons, >0:multiplicative scale.  def=0")
+                  help="Set normalization: 0:none, <0:electrons, >0:multiplicative scale.  def=-1")
 @click.option("--ymin", default=-40.0,
                   help="Set Y min")
 @click.option("--ymax", default=60.0,
