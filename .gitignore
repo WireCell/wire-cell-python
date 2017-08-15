@@ -4,3 +4,5 @@ cut.*
 *.egg-info
 *.pdf
 *.bz2
+venv
+*.gz

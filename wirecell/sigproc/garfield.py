@@ -136,9 +136,8 @@ def parse_filename(filename):
         plane = 'w'
     return dict(impact=float(dist), plane=plane, filename=filename)
 
-def load(source, normalization = None):
-    '''
-    Load Garfield data source (eg, tarball).
+def load(source, normalization = None, zero_wire_loc = 0.0):
+    '''Load Garfield data source (eg, tarball).
 
     Return list of response.ResponseFunction objects.
 
@@ -153,6 +152,10 @@ def load(source, normalization = None):
     many electrons.
 
     greater than 0: simply multiply the responses by this number.
+
+    The `zero_wire_loc` is the transverse location of the wire to be
+    considered the central wire.
+
     '''
     source = asgenerator(source)
 
@@ -183,11 +186,13 @@ def load(source, normalization = None):
             uniq[key] = dat
 
     ret = list()
-    for plane in 'uvw':
+    for plane, zwl in zip('uvw', zero_wire_loc):
         byplane = [one for one in uniq.values() if one['plane'] == plane]
-        zeros = [one for one in byplane if one['wire_region_pos'][0] == 0.0 and one['impact'] == 0.0]
+        zeros = [one for one in byplane if one['wire_region_pos'][0] == zwl and one['impact'] == 0.0]
         if len(zeros) != 1:
-            raise ValueError("got too many zeros: %d" % len(zeros))
+            for one in sorted(byplane, key=lambda x: (x['wire_region_pos'][0], x['impact'])):
+                print "region=%s impact=%s" % (one['wire_region_pos'], one['impact'])
+            raise ValueError("%s-plane, failed to find exactly one zero wire (at %f).  Found: %s wires" % (plane.upper(), zwl, zeros))
         zero_wire_region = zeros[0]['wire_region']
         this_plane = list()
         for one in byplane:

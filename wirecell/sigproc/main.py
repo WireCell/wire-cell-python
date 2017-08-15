@@ -23,10 +23,12 @@ def cli(ctx):
               help="Set nominal drift speed (give untis, eg '1.114*mm/us').")
 @click.option("-n", "--normalization", default=0.0,
               help="Set normalization: 0:none, <0:electrons, >0:multiplicative scale.  def=0")
+@click.option("-z", "--zero-wire-locs", default=[0.0,0.0,0.0], nargs=3, type=float,
+              help="Set location of zero wires.  def: 0 0 0")
 @click.argument("garfield-fileset")
 @click.argument("wirecell-field-response-file")
 @click.pass_context
-def convert_garfield(ctx, origin, speed, normalization,
+def convert_garfield(ctx, origin, speed, normalization, zero_wire_locs,
                          garfield_fileset, wirecell_field_response_file):
     '''
     Convert an archive of a Garfield fileset (zip, tar, tgz) into a
@@ -39,7 +41,7 @@ def convert_garfield(ctx, origin, speed, normalization,
 
     origin = eval(origin, units.__dict__)
     speed = eval(speed, units.__dict__)
-    rflist = gar.load(garfield_fileset, normalization)
+    rflist = gar.load(garfield_fileset, normalization, zero_wire_locs)
     fr = res.rf1dtoschema(rflist, origin, speed)
     per.dump(wirecell_field_response_file, fr)
 
@@ -49,16 +51,18 @@ def convert_garfield(ctx, origin, speed, normalization,
 @cli.command("plot-garfield-exhaustive")
 @click.option("-n", "--normalization", default=0.0,
               help="Set normalization: 0:none, <0:electrons, >0:multiplicative scale.  def=0")
+@click.option("-z", "--zero-wire-locs", default=[0.0,0.0,0.0], nargs=3, type=float,
+              help="Set location of zero wires.  def: 0 0 0")
 @click.argument("garfield-fileset")
 @click.argument("pdffile")
 @click.pass_context
-def plot_garfield_exhaustive(ctx, normalization,
+def plot_garfield_exhaustive(ctx, normalization, zero_wire_locs,
                                  garfield_fileset, pdffile):
     '''
     Plot all the Garfield current responses.
     '''
     import wirecell.sigproc.garfield as gar
-    dat = gar.load(garfield_fileset, normalization)
+    dat = gar.load(garfield_fileset, normalization, zero_wire_locs)
     import wirecell.sigproc.plots as plots
     plots.garfield_exhaustive(dat, pdffile)
 
@@ -79,6 +83,8 @@ def plot_garfield_exhaustive(ctx, normalization,
                   help="Set ADC resolution in bits.")
 @click.option("-n", "--normalization", default=-1,
                   help="Set normalization: 0:none, <0:electrons, >0:multiplicative scale.  def=-1")
+@click.option("-z", "--zero-wire-locs", default=[0.0, 0.0, 0.0], nargs=3, type=float,
+              help="Set location of zero wires.  def: 0 0 0")
 @click.option("--ymin", default=-40.0,
                   help="Set Y min")
 @click.option("--ymax", default=60.0,
@@ -92,7 +98,7 @@ def plot_garfield_exhaustive(ctx, normalization,
 @click.pass_context
 def plot_garfield_track_response(ctx, gain, shaping, tick, electrons,
                                      adc_gain, adc_voltage, adc_resolution,
-                                     normalization,
+                                     normalization, zero_wire_locs,
                                      ymin, ymax, regions,
                                      dump_data,
                                      garfield_fileset, pdffile):
@@ -116,7 +122,7 @@ def plot_garfield_track_response(ctx, gain, shaping, tick, electrons,
     adc_resolution = 1<<adc_resolution
     adc_per_voltage = adc_gain*adc_resolution/adc_voltage
 
-    dat = gar.load(garfield_fileset, normalization)
+    dat = gar.load(garfield_fileset, normalization, zero_wire_locs)
 
     if regions:
         print "Limiting to %d regions" % regions
