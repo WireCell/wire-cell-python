@@ -61,8 +61,8 @@ def three_horiz(arrs, extents, name, baselines):
 
     dpi = 100.0                 # nothing to do with actual DPI
 
-    hpix = sum([a.shape[0] for a in arrs])
-    vpix = a.shape[1]
+    hpix = sum([a.shape[1] for a in arrs])
+    vpix = a.shape[0]
 
     tpix = 60                   # title pix
     bpix = 60                   # border pix
@@ -94,15 +94,20 @@ def three_horiz(arrs, extents, name, baselines):
     vmm = max([abs(vmin), abs(vmax)])
     vmin = -vmax
     vmax =  vmax
+
+    x_axes = list()
+
     for letter, arr, ext in zip("UVW", arrs, extents):
-        tit = "(%d x %d)" % (arr.shape[0], arr.shape[1])
+        tit = "%d ticks x %d ch grps" % (arr.shape[0], arr.shape[1])
 
-        relaxis = ((left_pix+bpix)/float(width_pix), # left
-                   bot_pix/float(height_pix),           # bottom
-                   arr.shape[0]/float(width_pix),    # width
-                   arr.shape[1]/float(height_pix))   # height
+        xa = (left_pix+bpix)/float(width_pix) # left
+        ya = bot_pix/float(height_pix)        # bottom
+        dxa = arr.shape[1]/float(width_pix)   # width
+        dya = arr.shape[0]/float(height_pix)  # height
+        relaxis = (xa,ya,dxa,dya)
+        x_axes.append((xa,dxa))
 
-        left_pix += 2*bpix + arr.shape[0] # move for next time
+        left_pix += 2*bpix + arr.shape[1] # move for next time
 
         #print "axis=",relaxis
         ax = fig.add_axes(relaxis)
@@ -118,7 +123,7 @@ def three_horiz(arrs, extents, name, baselines):
     relaxis = [(left_pix)/float(width_pix),
                bot_pix/float(height_pix),
                (cpix-cibpix)/float(width_pix),
-               (arrs[0].shape[1])/float(height_pix)]
+               (arrs[0].shape[0])/float(height_pix)]
     cbar_ax = fig.add_axes(relaxis)
     fig.colorbar(ims[0], ax=axes[0], cmap=cmap, cax=cbar_ax, label=zlabel)
             
@@ -128,14 +133,14 @@ def three_horiz(arrs, extents, name, baselines):
     
     blaxes = list()
     left_pix = 0
-    for letter, blarr, ext in zip("UVW", baselines, extents):
+    for letter, blarr, ext, (xa,dxa) in zip("UVW", baselines, extents, x_axes):
 
-        relaxis = ((left_pix+bpix)/float(width_pix), # left
+        relaxis = (xa,
                    bpix/float(height_pix),           # bottom
-                   blarr.size/float(width_pix),    # width
-                   blpix/float(height_pix))   # height
+                   dxa,
+                   blpix/float(height_pix))          # height
 
-        left_pix += 2*bpix + blarr.shape[0] # move for next time
+        left_pix += 2*bpix + blarr.size/float(width_pix) # move for next time
             
         ax = fig.add_axes(relaxis)
         blaxes.append(ax)

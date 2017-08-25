@@ -212,6 +212,7 @@ def magnify_plot_reduce(ctx, name, out, filename):
         ("min", numpy.min),
         ("max", numpy.max),
         ("sum", numpy.sum),
+        ("rms", lambda a: numpy.sqrt(numpy.mean(numpy.square(a)))),
         ("absmin", lambda a: numpy.min(numpy.abs(a))),
         ("absmax", lambda a: numpy.max(numpy.abs(a))),
         ("abssum", lambda a: numpy.sum(numpy.abs(a))),
@@ -225,11 +226,11 @@ def magnify_plot_reduce(ctx, name, out, filename):
     extents = [(e[0][0],e[0][-1]) for e in edges]
     #print extents
 
-    arrs = dict()
+    arrs_by_name = dict()
     for mname, meth in methods:
-        arrs[mname] = [numpy.apply_along_axis(meth, 1, ae[0]) for ae in aes]
+        arrs_by_name[mname] = [numpy.apply_along_axis(meth, 1, ae[0]) for ae in aes]
 
-    fig = plotter(name, arrs, extents)
+    fig = plotter(name, arrs_by_name, extents)
     #fig.suptitle('Channel Summaries for "%s"' % name)
     fig.savefig(out)
     
@@ -271,12 +272,28 @@ def magnify_plot(ctx, name, trebin, crebin, baseline, threshold, saturate, out, 
     # loading from ROOT takes the most time.
 
     aes = [h2a(h,return_edges=True) for h in hists]
-    arrs = [ae[0] for ae in aes]
-    edges = [ae[1] for ae in aes]
+    arrs = list()
+    extents = list()
+    for h,(a,e) in zip(hists,aes):
+        xa,ya = [getattr(h,"Get"+l+"axis")() for l in "XY"]
+        nx,ny = [getattr(h,"GetNbins"+l)() for l in "XY"]
+        
+        # h2a returns tick-major shape (nchan,ntick).
+        ce,te = e
+        ext = ((ce[0],ce[-1]), (te[0],te[-1]))
+
+        print "%s: X:%d in [%.0f %.0f] Y:%d in [%.0f %.0f]" % \
+            (h.GetName(),
+             nx, xa.GetBinLowEdge(1), xa.GetBinUpEdge(nx),
+             ny, ya.GetBinLowEdge(1), ya.GetBinUpEdge(ny),)
+        print "\t shape=%s ext=%s" % (a.shape, ext)
+
+        arrs.append(numpy.fliplr(a))
+        extents.append(ext)
 
 
     norm = 1.0/(crebin*trebin)
-    extents = [(e[0][0],e[0][-1],e[1][0],e[1][-1]) for e in edges]
+
 
     baselines = list()
     if baseline:
@@ -303,7 +320,7 @@ def magnify_plot(ctx, name, trebin, crebin, baseline, threshold, saturate, out, 
     #arrs = [norm*rebin(arr, arr.shape[0]/crebin, arr.shape[1]/trebin) for arr in arrs]
     arrs = [bin_ndarray(arr, (arr.shape[0]/crebin, arr.shape[1]/trebin), "mean") for arr in arrs]
 
-    tit = 'Type "%s" (rebin: %d x %d), file:%s' % (name, crebin, trebin, os.path.basename(filename))
+    tit = 'Type "%s" (rebin: ch=x%d tick=x%d), file:%s' % (name, crebin, trebin, os.path.basename(filename))
     
     if threshold > 0.0:
         #print "thresholding at", threshold
@@ -319,6 +336,13 @@ def magnify_plot(ctx, name, trebin, crebin, baseline, threshold, saturate, out, 
             arr[arr <-saturate] = -saturate
             newarrs.append(arr)
         arrs = newarrs
+
+    # switch from tick-major (nchans, nticks) to chan-major (nticks, nchans)
+    arrs = [a.T for a in arrs]
+    extents = [(e[0][0], e[0][1], e[1][0], e[1][1]) for e in extents]
+
+    for a,e in zip(arrs,extents):
+        print a.shape, e
 
 
     fig = three_horiz(arrs, extents, name, baselines)

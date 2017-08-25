@@ -38,6 +38,7 @@ def bin_ndarray(ndarray, new_shape, operation='sum'):
      [342 350 358 366 374]]
 
     """
+    print "%s -> %s" % (ndarray.shape, new_shape)
     operation = operation.lower()
     if not operation in ['sum', 'mean']:
         raise ValueError("Operation not supported.")
