@@ -241,6 +241,51 @@ def plot_noise_spectra(ctx, spectrafile, plotfile):
     plots.plot_many(spectra, plotfile)
 
 
+@cli.command("calib-resp")
+@click.option("-t","--tick", default="0.5*us",
+                  help="The tick period")
+@click.option("-s","--schema", default="hist",
+                  help="Schema of input file")
+@click.option("-n","--name", default="pResponseVsCh",
+                  help="Data name (eg, the TH2D name if using 'hist' schema")
+@click.argument("infile")
+@click.argument("outfile")
+@click.pass_context
+def calib_resp(ctx, tick, schema, name, infile, outfile):
+    '''Produce the per-channel calibrated response JSON file from the
+    input file provided by the analysis.
+    '''
+    import json
+    import ROOT
+    from root_numpy import hist2array
+
+    if schema != "hist":
+        click.echo('Unknown input file schema: "%s"' % schema)
+        sys.exit(1)
+
+    tf = ROOT.TFile.Open(str(infile))
+    assert(tf)
+    h = tf.Get(str(name))
+    if not h:
+        click.echo('Failed to get histogram "%s" from %s' % (name, infile))
+        sys.exit(1)
+
+    tick = eval(tick, units.__dict__)
+
+    arr,edges = hist2array(h, return_edges=True)
+    print tick/units.us, arr.dtype, arr.shape
+    nchans, nticks = arr.shape
+    channels = list()
+    for ch in range(nchans):
+        # reduce down to ~32 bit float precision to save file space
+        res = [float("%.6g"%x) for x in arr[ch,:].tolist()] 
+        one = [ch, res]
+        channels.append(one)
+
+    dat = dict(tick=tick, channels=channels)
+    json.dump(dat, open(outfile,"w"), indent=4)
+    
+
 def main():
     cli(obj=dict())
 
