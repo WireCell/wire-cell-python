@@ -241,27 +241,40 @@ def plot_noise_spectra(ctx, spectrafile, plotfile):
     plots.plot_many(spectra, plotfile)
 
 
-@cli.command("calib-resp")
-@click.option("-t","--tick", default="0.5*us",
-                  help="The tick period")
-@click.option("-s","--schema", default="hist",
-                  help="Schema of input file")
+
+@cli.command("channel-responses")
+@click.option("-t","--tscale", default="0.5*us", type=str,
+                  help="Scale of time axis in the histogram.")
+@click.option("-s","--scale", default="1e-9*0.5/1.13312", type=str,
+                  help="Scale applied to the samples.")
 @click.option("-n","--name", default="pResponseVsCh",
                   help="Data name (eg, the TH2D name if using 'hist' schema")
 @click.argument("infile")
 @click.argument("outfile")
 @click.pass_context
-def calib_resp(ctx, tick, schema, name, infile, outfile):
-    '''Produce the per-channel calibrated response JSON file from the
-    input file provided by the analysis.
+def channel_responses(ctx, tscale, scale, name, infile, outfile):
+    '''Produce the per-channel calibrated response JSON file from a TH2D
+    of the given name in the input ROOT file provided by the analysis.
+
+    - tscale :: a number to multiply to the time axis of the histogram
+      in order to bring the result into the WCT system of units.  It
+      may be expressed as a string of an algebraic expression which
+      includes symbols, eg "0.5*us".
+
+    - scale :: a number multiplied to all samples in the histogram in
+      order to make the sample value a unitless relative measure.  It
+      may be expressed as a string of an algebraic expression which
+      includes symbols, eg "0.5*us". For uBoone's initial
+      20171006_responseWaveforms.root the appropriate scale is
+      1e-9*0.5/1.13312 = 4.41267e-10
     '''
     import json
     import ROOT
+    import numpy
     from root_numpy import hist2array
 
-    if schema != "hist":
-        click.echo('Unknown input file schema: "%s"' % schema)
-        sys.exit(1)
+    tscale = eval(tscale, units.__dict__)
+    scale = eval(scale, units.__dict__)
 
     tf = ROOT.TFile.Open(str(infile))
     assert(tf)
@@ -270,10 +283,15 @@ def calib_resp(ctx, tick, schema, name, infile, outfile):
         click.echo('Failed to get histogram "%s" from %s' % (name, infile))
         sys.exit(1)
 
-    tick = eval(tick, units.__dict__)
-
     arr,edges = hist2array(h, return_edges=True)
-    print tick/units.us, arr.dtype, arr.shape
+
+    arr *= scale
+    tedges = edges[1]
+    t0,t1 = tscale*(tedges[0:2])
+    tick = t1-t0
+
+    #print tick/units.us, t0/units.us, arr.dtype, arr.shape, numpy.min(arr), numpy.max(arr)
+
     nchans, nticks = arr.shape
     channels = list()
     for ch in range(nchans):
@@ -282,9 +300,21 @@ def calib_resp(ctx, tick, schema, name, infile, outfile):
         one = [ch, res]
         channels.append(one)
 
-    dat = dict(tick=tick, channels=channels)
-    json.dump(dat, open(outfile,"w"), indent=4)
-    
+    dat = dict(tick=tick, t0=t0, channels=channels)
+
+    jtext = json.dumps(dat, indent=4)
+    if outfile.endswith(".json.bz2"):
+        import bz2
+        bz2.BZ2File(outfile, 'w').write(jtext)
+        return
+    if outfile.endswith(".json.gz"):
+        import gzip
+        gzip.open(outfile, 'wb').write(jtext) # wb?
+        return
+
+    open(outfile, 'w').write(jtext)
+    return
+
 
 def main():
     cli(obj=dict())
