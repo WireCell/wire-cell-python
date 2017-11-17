@@ -61,6 +61,20 @@ def plot_wires(ctx, json_file, pdf_file):
     wires = wpersist.load(json_file)
     wplot.allplanes(wires, pdf_file)
 
+@cli.command("plot-select-channels")
+@click.argument("json-file")
+@click.argument("pdf-file")
+@click.argument("channels", nargs=-1, type=int)
+@click.pass_context
+def plot_select_channels(ctx, json_file, pdf_file, channels):
+    '''
+    Plot wires for select channels from a WCT JSON(.bz2) wire file
+    '''
+    import wirecell.util.wires.persist as wpersist
+    import wirecell.util.wires.plot as wplot
+    wires = wpersist.load(json_file)
+    wplot.select_channels(wires, pdf_file, channels)
+
 
 @cli.command("gen-plot-wires")
 @click.argument("output-file")
@@ -82,7 +96,23 @@ def gen_plot_wires(ctx, output_file):
 @click.pass_context
 def make_wires(ctx, output_file):
     '''
-    Generate a WCT wires file.
+    Generate a WCT wires file. 
+
+    (fixme: just DUNE APA now, need to expose options for other wire patterns) 
+    '''
+    import wirecell.util.wires.generator as wgen
+    import wirecell.util.wires.persist as wpersist
+    s = wgen.wrapped()           # fixme, expose different algs to CLI
+    wpersist.dump(output_file, s)
+
+@cli.command("make-wires-onesided")
+@click.argument("output-file")
+@click.pass_context
+def make_wires_onesided(ctx, output_file):
+    '''
+    Generate a WCT wires file. 
+
+    (fixme: just DUNE APA now, need to expose options for other wire patterns) 
     '''
     import wirecell.util.wires.generator as wgen
     import wirecell.util.wires.persist as wpersist

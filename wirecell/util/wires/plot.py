@@ -1,7 +1,9 @@
+
 from wirecell import units
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import numpy
+from collections import defaultdict
 
 def plot_polyline(pts):
     cmap = plt.get_cmap('seismic')
@@ -74,26 +76,40 @@ def select_channels(store, pdffile, channels):
     '''
     channels = set(channels)
     bychan = defaultdict(list)
-    for wire in store.wires:
-        if not wire.channel in channels:
-            continue
-        bychan[wire.channel].append(wire)
+
+    # find selected wires and their wire-in-plane index
+    # fixme: there should be a better way!
+    for anode in store.anodes:
+        for iface in anode.faces:
+            face = store.faces[iface]
+            for iplane in face.planes:
+                plane = store.planes[iplane]
+                for wip,wind in enumerate(plane.wires):
+                    wire = store.wires[wind]
+                    if wire.channel in channels:
+                        bychan[wire.channel].append((wire, wip))
 
     fig, ax = plt.subplots(nrows=1, ncols=1)
 
-    for ch,wires in sorted(bychan.items()):
-        wires.sort(key=lambda w: w.segment)
-        for wire in wires:
+    for ch,wws in sorted(bychan.items()):
+        wws.sort(key=lambda ww: ww[0].segment)
+        for wire, wip in wws:
             p1 = store.points[wire.tail]
             p2 = store.points[wire.head]
             width = wire.segment + 1
             ax.plot((p1.z/units.meter, p2.z/units.meter), (p1.y/units.meter, p2.y/units.meter), linewidth = width)
             x = p2.z/units.meter
             y = p2.y/units.meter
-            t='wip:%d ch:%d' %(wire.ident, wire.channel)
+            t='w:%d ch:%d\nident:%d seg:%d' %(wip, wire.channel, wire.ident, wire.segment)
+            if x > 0:
+                hal="left"
+            else:
+                hal="right"
             ax.text(x, y, t,
                         horizontalalignment=hal,
                         bbox=dict(facecolor='yellow', alpha=0.5, pad=10))
+            ax.set_xlabel("Z [meter]")
+            ax.set_ylabel("Y [meter]")
     fig.savefig(pdffile)
 
     
@@ -108,30 +124,33 @@ def allplanes(store, pdffile):
     with PdfPages(pdffile) as pdf:
         for anode in store.anodes:
             for iface in anode.faces:
-                print anode.ident, iface
                 face = store.faces[iface]
                 for iplane in face.planes:
                     plane = store.planes[iplane]
 
-                    fig, ax = plt.subplots(nrows=1, ncols=1)
+                    print "anode:%d face:%d plane:%d" % (anode.ident, face.ident, plane.ident)
 
+                    fig, ax = plt.subplots(nrows=1, ncols=1)
+                    ax.set_aspect('equal','box')
                     for wind in plane.wires[::wire_step]:
                         wire = store.wires[wind]
-
                         p1 = store.points[wire.tail]
                         p2 = store.points[wire.head]
                         width = wire.segment + 1
-                        ax.plot((p1.z/units.meter, p2.z/units.meter), (p1.y/units.meter, p2.y/units.meter), linewidth = width)
+                        ax.plot((p1.z/units.meter, p2.z/units.meter),
+                                (p1.y/units.meter, p2.y/units.meter), linewidth = width)
 
                     for wcount, wind in enumerate([plane.wires[0], plane.wires[-1]]):
                         wire = store.wires[wind]
+                        print ("\twcount:%d wind:%d wident:%d chan:%d" % (wcount,wind,wire.ident,wire.channel))
                         p1 = store.points[wire.tail]
                         p2 = store.points[wire.head]
                         x = p2.z/units.meter
                         y = p2.y/units.meter
-                        hal = "right"
-                        if not wcount:
-                            hal="left"
+                        hal="center"
+#                        if wcount == 1:
+#                            hal = "right"
+                            
                         t='wip:%d ch:%d' %(wire.ident, wire.channel)
                         ax.text(x, y, t,
                                     horizontalalignment=hal,
@@ -140,7 +159,8 @@ def allplanes(store, pdffile):
 
                     ax.set_xlabel("Z [meter]")
                     ax.set_ylabel("Y [meter]")
-                    ax.set_title("Anode %d, Face %d, Plane %d every %dth wire" % (anode.ident, face.ident, plane.ident, wire_step))
+                    ax.set_title("Anode %d, Face %d, Plane %d every %dth wire" % \
+                                 (anode.ident, face.ident, plane.ident, wire_step))
                     pdf.savefig(fig)
                     plt.close()
 
