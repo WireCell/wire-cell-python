@@ -182,9 +182,11 @@ def wrap_one(start_ray, rect):
     
 
 
+
+
 def wrapped_from_top(offset, angle, pitch, rect):
     '''
-    Cover a rectangle with a plane of wires starting along the top of
+    Wrap a rectangle with a plane of wires starting along the top of
     the given rectangle and starting at given offset from upper-left
     corner of the rectangle and with angle measured from the vertical
     to the wire direction.  Positive angle means the wire starts going
@@ -206,6 +208,7 @@ def wrapped_from_top(offset, angle, pitch, rect):
         - p1 and p2 :: end points of wire assuming the original
           rectangle is centered on the origin.
     '''
+
     cang = math.cos(angle)
     sang = math.sin(angle)
     direc = Point(-sang, -cang)
@@ -235,7 +238,75 @@ def wrapped_from_top(offset, angle, pitch, rect):
             break
         channel += 1
     return wires
-        
+
+def wrapped_from_top_oneside(offset, angle, pitch, rect):
+    '''
+    Wrap a rectangle with a plane of wires starting along the top of
+    the given rectangle and starting at given offset from upper-left
+    corner of the rectangle and with angle measured from the vertical
+    to the wire direction.  Positive angle means the wire starts going
+    down-left from the top of the rectangle.
+
+    Return list of "wires" (wire segments) as tuple:
+
+        - return :: (along_pitch, side, channel, seg, p1, p2)
+
+        - channel :: counts the attachment point at the top of the
+          rectangle from left to right starting from 0
+
+        - side :: identify which side the wire is on, (this value is
+          redundant with "seg").
+
+        - seg :: the segment number, ie, how many times the wire's
+          conductor has wrapped around the rectangle.
+
+        - p1 and p2 :: end points of wire assuming the original
+          rectangle is centered on the origin.
+    '''
+
+    cang = math.cos(angle)
+    sang = math.sin(angle)
+    direc = Point(-sang, -cang)
+    pitchv = Point(cang, -sang)
+
+    start = Point(-0.5*rect.width + offset, 0.5*rect.height) + rect.center
+
+    step = pitch / cang
+    stop = rect.center.x + 0.5*rect.width
+
+    #print -0.5*rect.width, start.x, step, stop
+
+    def swapx(p):
+        return Point(2*rect.center.x - p.x, p.y)
+
+    wires = list()
+
+    channel = 0
+    while True:
+        points = wrap_one(Ray(start, start+direc), rect)
+        side = 1
+        for seg, (p1, p2) in enumerate(zip(points[:-1], points[1:])):
+            if side < 0:
+                p1 = swapx(p1)
+                p2 = swapx(p2)
+            wcenter = (p1+p2)*0.5 - rect.center
+            along_pitch = pitchv.dot(wcenter)
+
+            # The same wire can serve both both faces if the
+            # coordinate system of each face is related by a rotation
+            # of the plane along the x axis.  
+            w = (along_pitch, side, channel, seg, p1, p2)
+
+            wires.append(w)
+
+            side *= -1          # for next time
+        start.x += step
+        if start.x >= stop:
+            break
+        channel += 1
+    return wires
+
+
 
 # https://www-microboone.fnal.gov/publications/TDRCD3.pdf
 microboone_params = dict(
