@@ -267,8 +267,6 @@ Parts = namedtuple("Parts",
                     "wib", "board", "chip", "conductor",
                     "channel", "wire", "point"
                    ])
-
-        
     
 def maker(G, ac, typename):
     try:
