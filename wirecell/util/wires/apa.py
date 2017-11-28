@@ -263,7 +263,7 @@ class Description(object):
 # singular.
 
 Parts = namedtuple("Parts",
-                   ["apa", "anode", "crate", "face", "plane",
+                   ["detector", "apa", "face", "plane",
                     "wib", "board", "chip", "conductor",
                     "channel", "wire", "point"
                    ])
@@ -282,43 +282,6 @@ def maker(G, ac, typename):
         G.add_node(name, type=typename, index=ind)
         ret.append(name)
     return ret
-
-def default_numbering_convention():
-    '''
-    Return a graph that connects type names and with edges holding
-    attributes that map relationship attribute names to an operator
-    which takes the native zero-based identifier number and returns
-    one matching the desired numbering convention.
-
-    This is here just to give an example.  It trivially adds 1 to each
-    identifier in order to take the native zero-based indices to
-    one-based counts.
-    '''
-
-    nc = networkx.DiGraph()
-
-    # fixme: more flexibility would be if the operators returned a
-    # dictionary, each of which gets merged together to form the final
-    # edge attribute set....
-
-    def addone(x):
-        return x+1
-
-    nc.add_edge("apa", "anode")
-    nc.add_edge("apa", "crate")
-    nc.add_edge("crate", "wib", slot=addone)
-    nc.add_edge("wib", "board", connector=addone)
-    nc.add_edge("board", "conductor", layer=addone, slot=addone)
-    nc.add_edge("board", "chip", spot=addone)
-    nc.add_edge("chip", "channel", address=addone)
-    nc.add_edge("channel", "conductor")
-    nc.add_edge("anode", "face", side=addone)
-    nc.add_edge("face", "board", spot=addone)
-    nc.add_edge("face", "plane", plane=addone)
-    nc.add_edge("plane", "wire", wip=addone)
-    nc.add_edge("conductor", "wire", segment=addone)
-    nc.add_edge("wire", "point", endpoint=addone)
-    return nc
 
 
 def graph(desc, maker = maker):
@@ -343,15 +306,19 @@ def graph(desc, maker = maker):
         G.add_edge(n1, n2, relationship="children", **params)
         G.add_edge(n2, n1, relationship="parent", **params)
         
-    join(p.apa, p.anode, anode_lcr = desc.p.anode_loc)
-    join(p.apa, p.crate, crate_address = desc.p.crate_addr)
+    # FIXME: for now hard-code the single apa connection.  This should
+    # be expanded to 6 for protoDUNE or 150 for DUNE SP FD.  But, each
+    # APA is identical up to a translation in global coordinates so it
+    # is not yet obvious that it's necessary to exaustively construct
+    # them all.
+    join(p.detector, p.apa, anode_lcr = desc.p.anode_loc)
 
     # variable name convention below: gi_ = "global index", "i_" just an index.
     # everything else an object
     for gi_wib in range(desc.nwibs):
         wib = p.wib[gi_wib]
 
-        join(p.crate, wib, slot=gi_wib)
+        join(p.apa, wib, slot=gi_wib)
 
 
         for i_wibconn in range(desc.p.daq.nconnperwib):
@@ -389,7 +356,7 @@ def graph(desc, maker = maker):
 
     for gi_face in range(desc.nfaces):
         face = p.face[gi_face]
-        join(p.anode, face, side=gi_face)
+        join(p.apa, face, side=gi_face)
 
         for iboard_in_face in range(desc.p.face.nboards):
             gi_board = desc.iboard_by_face_board[gi_face, iboard_in_face]

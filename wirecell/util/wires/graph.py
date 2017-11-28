@@ -5,6 +5,7 @@ Do fun stuff to a connectivity graph
 
 import networkx
 
+
 def neighbors_by_type(G, seed, typename, radius=1):
     '''
     Return a set of all neighbor nodes withing given radius of seed
@@ -12,6 +13,21 @@ def neighbors_by_type(G, seed, typename, radius=1):
     '''
     return set([n for n in networkx.ego_graph(G, seed, radius) if G.node[n]['type'] == typename])
 
+def neighbors_by_path(G, seed, typenamepath):
+    '''
+    Return all neighbor nodes by following a path of type names from
+    given seed.
+    '''
+    if not typenamepath:
+        return set()
+    nn = neighbors_by_type(G, seed, typenamepath[0])
+    for node in list(nn):
+        nnn = neighbors_by_path(G, node, typenamepath[1:])
+        nn.update(nnn)
+    return nn
+
+
+    
 
 def wires_in_plane(G, plane):
     '''
