@@ -80,13 +80,15 @@ def conductors_graph(G, conductors):
     '''
     newG = networkx.DiGraph()
     pos = dict()
-    for cond in conductors:
+    for icond, cond in enumerate(conductors):
         wires = neighbors_by_type(G, cond, 'wire')
         for wire in wires:
             seg = G[cond][wire]['segment']
             sign = 1
+            style="solid"
             if seg%2:
                 sign = -1
+                style="dashed"
             pt1, pt2 = neighbors_by_type(G, wire, 'point')        
             if G[wire][pt1]['endpoint'] == 2:
                 pt1, pt2 = pt2, pt1
@@ -94,5 +96,6 @@ def conductors_graph(G, conductors):
             pos2 = G.node[pt2]['pos']
             pos[pt1] = (sign*pos1.z, pos1.y)
             pos[pt2] = (sign*pos2.z, pos2.y)
-            newG.add_edge(pt1, pt2)
+            newG.add_edge(pt1, pt2, style=style, icolor=icond)
+
     return newG, pos
