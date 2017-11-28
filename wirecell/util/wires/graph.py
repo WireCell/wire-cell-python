@@ -4,13 +4,16 @@ Do fun stuff to a connectivity graph
 '''
 
 import networkx
-
+from wirecell import units
 
 def neighbors_by_type(G, seed, typename, radius=1):
     '''
     Return a set of all neighbor nodes withing given radius of seed
     which are of the given typename.
     '''
+    if radius == 1:
+        return set([n for n in networkx.neighbors(G, seed) if G.node[n]['type'] == typename])
+
     return set([n for n in networkx.ego_graph(G, seed, radius) if G.node[n]['type'] == typename])
 
 def neighbors_by_path(G, seed, typenamepath):
@@ -26,8 +29,77 @@ def neighbors_by_path(G, seed, typenamepath):
         nn.update(nnn)
     return nn
 
+def parent(G, child, parent_type):
+    '''
+    Return parent node of given type 
+    '''
+    for n in networkx.neighbors(G, child):
+        if G.node[n]['type'] == parent_type:
+            return n
+    return None
+    
+
+def channel_address(G, wire):
+    '''
+    Pull out the edge attributes
+    '''
+
+    conductor = parent(G, wire, 'conductor')
+    channel = parent(G, conductor, 'channel')
+    chip = parent(G, channel, 'chip')
+    board = parent(G, chip, 'board')
+    box = parent(G, board, 'face')
+    wib = parent(G, board, 'wib')
+    apa = parent(G, wib, 'apa')
+    
+    islot = G[apa][wib]['slot']
+    iconn = G[wib][board]['connector']
+    ichip = G[board][chip]['spot']
+    iaddr = G[chip][channel]['address']
+    return (iconn, islot, ichip, iaddr)
+
+def channel_hash(iconn, islot, ichip, iaddr):
+    return int("%d%d%d%02d" % (iconn+1, islot+1, ichip+1, iaddr+1))
+
+def to_celltree_wires(G, face='face0'):
+    '''
+    Return list of tuples: (ch, plane, wip, sx, sy, sz, ex, ey, ez)
+
+    corresponding to rows in the "ChannelWireGeometry" file used by
+
+    https://github.com/bnlif/wire-cell-celltree
+
+    for the wires in the given face.
+
+    Note: this only returns the one face of wires but channel numbers
+    are calculated with full knowledge of wrapped wires.
+    '''
+    ret = list()
+
+    planes = list(neighbors_by_type(G, face, 'plane'))
+    planes.sort(key = lambda p : G[face][p]['plane'])
+    for plane in planes:
+        wires = list(neighbors_by_type(G, plane, 'wire'))
+        wires.sort(key = lambda w : G[plane][w]['wip'])
+        iplane = G[face][plane]['plane']
+        for wire in wires:
+            iwire = G[plane][wire]['wip']
+
+            pts = list(neighbors_by_type(G, wire, 'point'))[:2]
+            head, tail = pts[0:2]
+            if G[wire][head]['endpoint'] == 1:
+                head, tail = pts[1], pts[0]
+            ecm = [r/units.cm for r in G.node[head]['pos']]
+            scm = [r/units.cm for r in G.node[tail]['pos']]
+
+            channel = channel_hash(*channel_address(G, wire))
+            one = [channel, iplane, iwire] + scm + ecm
+            #print one
+            ret.append(tuple(one))
+    return ret
 
     
+        
 
 def wires_in_plane(G, plane):
     '''

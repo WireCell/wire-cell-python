@@ -155,21 +155,21 @@ def test_plot_wib ():
             return (-5 + spot, -3)
         return (4 - spot, +3)
 
-    anode = P.anode
-    crate = P.crate
+    apa = P.apa
+
     for wib in P.wib:
         nwib = "w%d"%(int(wib[3:])+1,)
         newG.add_node(nwib, color="xkcd:white", shape='o')
 
 
-        islot = G[crate][wib]['slot']
+        islot = G[apa][wib]['slot']
         newP[nwib] = wib_pos(islot)
         boards_on_wib = graph.neighbors_by_type(G, wib, 'board')
         for board in boards_on_wib:
             face = list(graph.neighbors_by_type(G, board, 'face'))[0]
             ispot = G[face][board]['spot']
 
-            iside = G[face][anode]['side']
+            iside = G[face][apa]['side']
             nboard = "b%d"%(int(board[5:])+1,)
 
             iconn = G[wib][board]['connector']
