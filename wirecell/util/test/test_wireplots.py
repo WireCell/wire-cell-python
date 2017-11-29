@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+from wirecell import units
 from wirecell.util.wires import apa, graph
 from itertools import chain
 from collections import defaultdict
@@ -65,8 +66,9 @@ def test_plot_board(debug=False):
     if debug:
         penwidth=0.5
     with PdfPages('test_plot_board.pdf') as pdf:
-        for board in P.board:
-            plt.title(board)
+        for iboard, board in enumerate(P.board):
+            
+            plt.title("Board %d" % (iboard+1,))
 
             bg = networkx.DiGraph()
             bpos = dict()
@@ -99,6 +101,9 @@ def test_plot_board(debug=False):
                 plt.xlim(-1300,-700)
                 plt.ylim(2300,3000)
                 return
+            plt.axes().set_aspect('equal', 'box')
+            plt.xlabel('$z_c$ (mm)')
+            plt.ylabel('$y_c$ (mm)')
             pdf.savefig(dpi=900)
             plt.close()
             
