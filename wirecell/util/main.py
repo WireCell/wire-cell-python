@@ -1,5 +1,5 @@
 import click
-
+import sys
 from wirecell import units
 
 @click.group("util")
@@ -59,6 +59,7 @@ def plot_wires(ctx, json_file, pdf_file):
     import wirecell.util.wires.persist as wpersist
     import wirecell.util.wires.plot as wplot
     wires = wpersist.load(json_file)
+    print wires
     wplot.allplanes(wires, pdf_file)
 
 @cli.command("plot-select-channels")
@@ -92,18 +93,29 @@ def gen_plot_wires(ctx, output_file):
     fig.savefig(output_file)
 
 @cli.command("make-wires")
+@click.option('-d','--detector',
+#              type=click.Choice("microboone protodune dune apa".split()),
+              type=click.Choice(['apa']),
+              help="Set the target detector")
+# fixme: give interface to tweak individual parameters
+# fixme: give way to set a graph transformation function
+# fixme: give way to set a template for file generation
 @click.argument("output-file")
 @click.pass_context
-def make_wires(ctx, output_file):
+def make_wires(ctx, detector, output_file):
     '''
-    Generate a WCT wires file. 
-
-    (fixme: just DUNE APA now, need to expose options for other wire patterns) 
+    Generate a WCT "wires" file giving geometry and connectivity of
+    conductor wire segments and channel identifiers.
     '''
-    import wirecell.util.wires.generator as wgen
-    import wirecell.util.wires.persist as wpersist
-    s = wgen.wrapped()           # fixme, expose different algs to CLI
-    wpersist.dump(output_file, s)
+    if detector == "apa":
+        from wirecell.util.wires import apa, graph, persist
+        desc = apa.Description();
+        G,P = apa.graph(desc)
+        store = graph.to_schema(G)
+        persist.dump(output_file, store)
+        return
+    click.echo('Unknown detector type: "%s"' % detector)
+    sys.exit(1)
 
 @cli.command("make-wires-onesided")
 @click.argument("output-file")
@@ -111,8 +123,6 @@ def make_wires(ctx, output_file):
 def make_wires_onesided(ctx, output_file):
     '''
     Generate a WCT wires file. 
-
-    (fixme: just DUNE APA now, need to expose options for other wire patterns) 
     '''
     import wirecell.util.wires.generator as wgen
     import wirecell.util.wires.persist as wpersist

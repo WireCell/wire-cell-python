@@ -46,56 +46,6 @@ class Point(namedtuple("Point", "x y z")):
     __slots__ = ()
 
 
-class Channel(namedtuple("Channel", "ident")):
-    '''
-    A Channel object holds information about one electronics channel.  
-
-    :param int ident: A unique identifier for this channel in the
-        context of the anode plane.
-    '''
-    __slots__ = ()
-    
-
-class Chip(namedtuple("Chip", "ident channels")):
-    '''
-    An Chip object holds information about the channels it provides.  
-
-    In reality a "chip" is a pair of {FE preamp, ADC} ASICs.
-
-    :param int ident: numerical identifier unique to the anode plane.
-    :param list channels: the list of unique channel identifiers
-        associated with this chip in local ordering.
-    '''
-    __slots__ = ()
-
-class Box(namedtuple("Femb", "ident chips")):
-    '''
-    A CE box holing one front end mother board housing some number of Chips.
-    
-    :param int ident: numerical identifier unique to the anode plane.
-    :param list chips: list of Chip.ident in order of their placement on the FEMB.
-    '''
-    __slots__ = ()
-
-class Wib(namedtuple("Wib", "ident fembs")):
-    '''
-    A warm interface board.
-
-    :param int ident: numerical identifier unique to the anode plane.
-    :param list fembs: list of Femb.ident, in order of WIB connector.
-    '''
-    __slots__ = ()
-
-class Crate(namedtuple("Crate", "ident wibs")):
-    '''
-    A crate of WIBs.
-
-    :param int indent: numberical identifier unique to the annode plane.
-    :param list wibs: list of Wib.ident, in order of their slot number.
-    '''
-    ___slots__ = ()
-    
-
 class Wire(namedtuple("Wire","ident channel segment tail head")):
     '''
     A Wire object holds information about one physical wire segment.
@@ -106,7 +56,7 @@ class Wire(namedtuple("Wire","ident channel segment tail head")):
     :param int ident: numerical identifier unique to this wire in the
         anode plane.  This is made available via IWire::ident().
     :param int channel: numerical identifier unique to this conductor
-        in the anode plane.  It matches one Channel.ident.  It is made
+        in the anode plane.  It is made
         available via IWire::channel().
     :param int segment: count the number of wires between this and the
         channel input.
@@ -177,6 +127,9 @@ class Store(namedtuple("Store","anodes faces planes wires points")):
     '''
     __slots__ = ()
 
+    def __repr__(self):
+        return "<Store: %d anodes, %d faces, %d planes, %d wires, %d points>" % \
+            (len(self.anodes), len(self.faces), len(self.planes), len(self.wires), len(self.points))
 
 def classes():
     import sys, inspect
@@ -189,6 +142,15 @@ def classes():
 def maker():
     '''
     Return a schema instance maker.
+
+    >>> m = maker()
+    >>> hid = m.make('Point', x=..., y=..., z=...)
+    >>> tid = m.make('Point', x=..., y=..., z=...)
+    >>> wid = m.make('Wire', ident=0, channel=0, segment=0 tail=tid, head=hid)
+
+    >>> wire = m.get('Wire', wid)
+
+    >>> store = m.schema()
     '''
     import sys, inspect
     class SchemaMaker(object):
