@@ -6,3 +6,7 @@ cut.*
 *.bz2
 venv
 *.gz
+.cache
+venv*
+test_*.png
+test_*.pdf
