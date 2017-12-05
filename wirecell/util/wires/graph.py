@@ -36,6 +36,34 @@ def neighbors_by_path(G, seed, typenamepath):
         nn.update(nnn)
     return nn
 
+def child_by_path(G, seed, edgepath):
+    '''
+    Return a child by walking an "edgepath" from a seed node.
+
+    The edgepath is a list of triples:
+
+    >>> [(typename, attrname, attrval), ...]
+
+    Where `typename` is the node type for the step in the path and
+    `attrname` and `attrval` give a name/value for an edge attribute
+    which must join current node with next node.
+    '''
+    if not edgepath:
+        return seed
+
+    tn, an, av = edgepath.pop(0)
+
+    for nn in neighbors_by_type(G, seed, tn):
+        try:
+            val = G[seed][nn][an]
+        except KeyError:
+            continue
+        if val != av:
+            continue
+        return child_by_path(G, nn, edgepath)
+    return
+            
+
 def parent(G, child, parent_type):
     '''
     Return parent node of given type 
@@ -48,7 +76,7 @@ def parent(G, child, parent_type):
 
 def channel_address(G, wire):
     '''
-    Pull out the edge attributes
+    Return channel address associated with wire.
     '''
 
     conductor = parent(G, wire, 'conductor')
@@ -67,6 +95,76 @@ def channel_address(G, wire):
 
 def channel_hash(iconn, islot, ichip, iaddr):
     return int("%d%d%d%02d" % (iconn+1, islot+1, ichip+1, iaddr+1))
+
+def channel_node(G, addrhash):
+    '''
+    Return channel node associated with address hash
+    '''
+    a = str(addrhash)
+    iconn,islot,ichip,iaddr = [int(n)-1 for n in [a[0], a[1], a[2], a[3:5]]]
+
+    edgepath = [
+        ('wib',         'slot',         islot),
+        ('board',       'connector',    iconn),
+        ('chip',        'spot',         ichip),
+        ('channel',     'address',      iaddr)
+    ]
+
+    # Fixme: should not hardcode a single APA name here!
+    return child_by_path(G, 'apa', edgepath)
+
+
+def flatten_to_conductor(G):
+    '''
+    Flatten the graph to the conductor level
+    '''
+    ret = list()
+    apa = 'apa'
+
+    spots_in_layer = [40,40,48]
+    boxes_in_face = 10
+
+    for wib in neighbors_by_type(G, apa, 'wib'):
+        ind_slot = G[apa][wib]['slot']
+
+        for board in neighbors_by_type(G, wib, 'board'):
+            face = parent(G, board, 'face')
+            ind_connector = G[wib][board]['connector']
+            ind_box = G[face][board]['spot']
+            ind_side = G[apa][face]['side']
+
+            for chip in neighbors_by_type(G, board, 'chip'):
+                ind_chip = G[board][chip]['spot']
+
+                for channel in neighbors_by_type(G, chip, 'channel'):
+                    conductor = parent(G, channel, "conductor")
+
+                    ind_address = G[chip][channel]['address']
+                    ind_layer = G[board][conductor]['layer']
+                    ind_spot = G[board][conductor]['spot']
+
+                    wires = list(neighbors_by_type(G, conductor, 'wire'))
+                    wires.sort(key = lambda w: G[conductor][w]['segment'])
+                    nwires = len(wires)
+                    wire0 = wires[0]
+                    plane = parent(G, wire0, 'plane')
+                    ind_wip = G[plane][wire0]['wip']
+                    ind_plane = G[face][plane]['plane']
+                    if ind_plane != ind_layer:
+                        raise ValueError('Inconsistent graph, layer and plane differ')
+
+                    # wire attachment number along top of APA frame.
+                    ind_wan = ind_box * spots_in_layer[ind_layer] + ind_spot
+                    ind_wanglobal = ind_wan + spots_in_layer[ind_layer]*boxes_in_face*ind_side
+
+                    one = dict(channel = channel_hash(ind_connector, ind_slot, ind_chip, ind_address))
+                    for k,v in locals().items():
+                        if k.startswith('ind_'):
+                            one[k[4:]] = v
+                    ret.append(one)
+    return ret
+
+                        
 
 def to_celltree_wires(G, face='face0'):
     '''
