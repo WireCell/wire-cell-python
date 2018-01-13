@@ -291,39 +291,39 @@ def graph(desc, maker = maker):
     
     p = Parts(*[maker(G, desc, typename) for typename in Parts._fields])
 
-    def join(n1, n2, relationship = "containment", **params):
+    def join(n1, n2, link, relationship = "containment", **params):
 
         if relationship in ["peer", "sibling"]:
-            G.add_edge(n1, n2, relationship=relationship, **params)
-            G.add_edge(n2, n1, relationship=relationship, **params)            
+            G.add_edge(n1, n2, relationship=relationship, link=link, **params)
+            G.add_edge(n2, n1, relationship=relationship, link=link, **params)            
             return
         if relationship in ["direct","simple"]:
-            G.add_edge(n1, n2, relationship=relationship, **params)
+            G.add_edge(n1, n2, relationship=relationship, link=link, **params)
             return
         # parent/child
-        G.add_edge(n1, n2, relationship="children", **params)
-        G.add_edge(n2, n1, relationship="parent", **params)
+        G.add_edge(n1, n2, relationship="children", link=link, **params)
+        G.add_edge(n2, n1, relationship="parent", link=link, **params)
         
     # FIXME: for now hard-code the single apa connection.  This should
     # be expanded to 6 for protoDUNE or 150 for DUNE SP FD.  But, each
     # APA is identical up to a translation in global coordinates so it
     # is not yet obvious that it's necessary to exaustively construct
     # them all.
-    join(p.detector, p.apa, anode_lcr = desc.p.anode_loc)
+    join(p.detector, p.apa, 'submodule', anode_lcr = desc.p.anode_loc)
 
     # variable name convention below: gi_ = "global index", "i_" just an index.
     # everything else an object
     for gi_wib in range(desc.nwibs):
         wib = p.wib[gi_wib]
 
-        join(p.apa, wib, slot=gi_wib)
+        join(p.apa, wib, 'slot', slot=gi_wib)
 
 
         for i_wibconn in range(desc.p.daq.nconnperwib):
             gi_board = desc.iboard_by_conn_slot[i_wibconn, gi_wib]
             board = p.board[gi_board]
 
-            join(wib, board, connector = i_wibconn)
+            join(wib, board, 'cable', connector = i_wibconn)
 
             gi_face, iboard_in_face = desc.iface_board(gi_board)
 
@@ -334,43 +334,43 @@ def graph(desc, maker = maker):
                                                   ilayer_in_face, ispot_in_layer)
                                             
                     conductor = p.conductor[gi_cond]
-                    join(board, conductor, layer=ilayer_in_face, spot=ispot_in_layer)
+                    join(board, conductor, 'trace', layer=ilayer_in_face, spot=ispot_in_layer)
 
                     gi_chip = desc.ichip_by_face_board_chip[gi_face, iboard_in_face, ichip_on_board]
                     chip = p.chip[gi_chip]
 
                     # Note: this will be called multiple times.  Since
                     # G is not a multigraph subsequent calls are no-ops
-                    join(board, chip, spot=ichip_on_board)
+                    join(board, chip, 'place', spot=ichip_on_board)
 
                     # channels and conductors are one-to-one
                     channel = p.channel[gi_cond]
-                    join(chip, channel, address=ichan_in_chip)
+                    join(chip, channel, 'address', address=ichan_in_chip)
 
-                    join(channel, conductor, relationship="peer")
+                    join(channel, conductor, 'channel', relationship="peer")
 
     for ipoint, point in enumerate(p.point):
         G.node[point]['pos'] = desc.points[ipoint]
 
     for gi_face in range(desc.nfaces):
         face = p.face[gi_face]
-        join(p.apa, face, side=gi_face)
+        join(p.apa, face, 'side', side=gi_face)
 
         for iboard_in_face in range(desc.p.face.nboards):
             gi_board = desc.iboard_by_face_board[gi_face, iboard_in_face]
             board = p.board[gi_board]
-            join(face, board, spot = iboard_in_face)
+            join(face, board, 'spot', spot = iboard_in_face)
 
         for iplane_in_face, wires in enumerate(desc.wires_by_face_plane[gi_face]):
 
             gi_plane = desc.iplane(gi_face, iplane_in_face)
             plane = p.plane[gi_plane]
-            join(face, plane, plane=iplane_in_face)
+            join(face, plane, 'plane', plane=iplane_in_face)
 
             for wip in range(desc.nwires_by_plane[iplane_in_face]):
                 gi_wire, gwire = desc.wire_index_by_wip(gi_face, iplane_in_face, wip)
                 wire = p.wire[gi_wire]
-                join(plane, wire, wip=wip)
+                join(plane, wire, 'wip', wip=wip)
                 G.node[wire]['pitchloc'] = gwire.ploc
 
                 # odd segments are on the "other" face.
@@ -378,12 +378,12 @@ def graph(desc, maker = maker):
 
                 gi_conductor = desc.iconductor_by_face_plane_spot(spot_face, iplane_in_face, gwire.spot)
                 conductor = p.conductor[gi_conductor]
-                join(conductor, wire, segment=gwire.seg)
+                join(conductor, wire, 'segment', segment=gwire.seg)
 
                 tail = p.point[gwire.p1]
-                join(wire, tail, endpoint=0)
+                join(wire, tail, 'pt', endpoint=0)
                 head = p.point[gwire.p2]
-                join(wire, head, endpoint=1)
+                join(wire, head, 'pt', endpoint=1)
 
     return G,p
 

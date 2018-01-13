@@ -117,6 +117,57 @@ def make_wires(ctx, detector, output_file):
     click.echo('Unknown detector type: "%s"' % detector)
     sys.exit(1)
 
+@cli.command("gravio")
+@click.argument("dotfile")
+@click.pass_context
+def gravio(ctx, dotfile):
+    '''
+    Make a dot file using gravio of the connectivity.
+    '''
+    try:
+        from gravio import gen, dotify
+    except ImportError:
+        click.echo('You need to install the "gravio" package')
+        click.echo('See https://github.com/brettviren/gravio')
+        sys.exit(1)
+    from wirecell.util.wires import apa, graph
+    desc = apa.Description();
+    G,P = apa.graph(desc)
+
+    # ['wire', 'wib', 'conductor', 'point', 'chip', 'face', 'plane', 'board', 'detector', 'apa', 'channel']
+    node_colors = dict(wib='orange', chip='red', face='blue', plane='purple', board='green', channel='pink')
+    def skip_node(n):
+        skip_types = ['point','wire','conductor']
+        nt = G.nodes[n]['type']
+        return nt in skip_types
+
+    gr = gen.Graph("dune", "graph")
+    gr.node(shape='point')
+
+    for name, params in G.nodes.items():
+        if skip_node(name):
+            continue
+        nt = G.nodes[name]['type']        
+        gr.node(name, shape='point', color=node_colors.get(nt, 'black'))
+
+    #link_types = ['slot', 'submodule', 'pt', 'trace', 'wip', 'spot', 'side',
+    #              'plane', 'place', 'address', 'segment', 'cable', 'channel']
+    link_colors = dict(trace='pink', spot='red', side='blue', plane='purple', address='yellow', cable='brown', chanel='orange')
+    seen_edges = set()
+    for (n1,n2), params in G.edges.items():
+        if skip_node(n1) or skip_node(n2):
+            continue
+        if (n1,n2) in seen_edges or (n2,n1) in seen_edges:
+            continue
+        seen_edges.add((n1,n2))
+        link = params['link']
+        gr.edge(n1,n2, color=link_colors.get(link, 'black'))
+
+
+    d = dotify.Dotify(gr)
+    dottext = str(d)
+    open(dotfile,'w').write(dottext)
+
 @cli.command("make-wires-onesided")
 @click.argument("output-file")
 @click.pass_context
