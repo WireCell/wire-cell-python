@@ -136,7 +136,7 @@ def allplanes(store, pdffile):
                         wire = store.wires[wind]
                         p1 = store.points[wire.tail]
                         p2 = store.points[wire.head]
-                        width = wire.segment + 1
+                        width = wire.segment + .1
                         ax.plot((p1.z/units.meter, p2.z/units.meter),
                                 (p1.y/units.meter, p2.y/units.meter), linewidth = width)
 

@@ -76,7 +76,8 @@ def parent(G, child, parent_type):
 
 def channel_address(G, wire):
     '''
-    Return channel address associated with wire.
+    Return channel address tuple associated with wire and in order
+    ready to send to channel_hash().
     '''
 
     conductor = parent(G, wire, 'conductor')
@@ -94,6 +95,11 @@ def channel_address(G, wire):
     return (iconn, islot, ichip, iaddr)
 
 def channel_hash(iconn, islot, ichip, iaddr):
+    '''
+    Hash a channel address tuple into a single integer.  
+
+    See also channel_address().
+    '''
     return int("%d%d%d%02d" % (iconn+1, islot+1, ichip+1, iaddr+1))
 
 def channel_node(G, addrhash):

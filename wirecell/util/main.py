@@ -1,5 +1,6 @@
-import click
 import sys
+import click
+import numpy
 from wirecell import units
 
 @click.group("util")
@@ -116,6 +117,95 @@ def make_wires(ctx, detector, output_file):
         return
     click.echo('Unknown detector type: "%s"' % detector)
     sys.exit(1)
+
+@cli.command("make-map")
+@click.option('-d','--detector',
+#              type=click.Choice("microboone protodune dune apa".split()),
+              type=click.Choice(['apa']),
+              help="Set the target detector")
+@click.argument("output-file")
+@click.pass_context
+def make_map(ctx, detector, output_file):
+    '''
+    Generate a WCT channel map file giving numpy arrays.
+    '''
+    schema = output_file[output_file.rfind(".")+1:]
+    click.echo('writing schema: "%s"' % schema)
+
+    if detector == "apa":
+        from wirecell.util.wires import apa
+        if schema == "npz":
+            click.echo('generating Numpy file "%s"' % output_file)
+            numpy.savez(output_file, **dict(
+                chip_channel_spot = apa.chip_channel_spot,
+                chip_channel_layer = apa.chip_channel_layer,
+                connector_slot_board = numpy.asarray(range(10),dtype=numpy.int32).reshape(2,5)+1,
+                face_board_femb = numpy.asarray(range(20),dtype=numpy.int32).reshape(2,10)+1))
+            return
+        if schema == "tex":     # fixme: this should be moved out of here
+            click.echo('generating LaTeX fragment file "%s"' % output_file)
+            with open(output_file,"w") as fp:
+                color = dict(u="red", v="blue", w="black")
+                lines = list()
+                mat = numpy.asarray([r"\textcolor{%s}{%s%02d}" % (color[p], p, w) \
+                                     for p,w in apa.chip_channel_layer_spot_matrix.reshape(8*16,2)])\
+                           .reshape(8,16)
+                for chn, ch in enumerate(mat.T):
+                    cells = ["ch%02d" % chn]
+                    for chip in ch:
+                        cells.append(chip)
+                    lines.append(" & " .join(cells))
+                end = r"\\" + "\n"
+                body = end.join(lines)
+                top = "&".join(["ASIC:"] + [str(n+1) for n in range(8)]) + r"\\"
+                form = "r|rrrrrrrr"
+                tabular = [r"\begin{center}", r"\begin{tabular}{%s}"%form, r"\hline", top,
+                           r"\hline", body+r"\\", r"\hline", r"\end{tabular}",r"\end{center}",""]
+                fp.write("\n".join(tabular))
+
+                layers = dict(u=[""]*40, v=[""]*40, w=[""]*48)
+                for chipn, chip in enumerate(apa.chip_channel_layer_spot_matrix):
+                    for chn, (plane,wire) in enumerate(chip):
+                        layers[plane][wire-1] = (chipn,chn)
+
+                lines = list()
+                for letter, layer in sorted(layers.items()):
+                    nchans = len(layer)
+                    nhalf = nchans // 2
+                    form = "|" + "C{3.5mm}|"*nhalf
+                    lines += ["",
+                              #r"\tiny",
+                              r"\begin{center}",
+                              r"\begin{tabular}{%s}"%form,
+                    ]
+
+                    lines += [#r"\hline",
+                              r"\multicolumn{%d}{c}{%s layer, first half: conductor / chip / chan} \\" % (nhalf, letter.upper()),
+                              r"\hline"]
+                    wires = "&".join(["%2s"%ww for ww in range(1,nhalf+1)]) + r"\\";
+                    chips = "&".join(["%2s"%cc[0] for cc in layer[:nhalf]]) + r"\\";
+                    chans = "&".join(["%2s"%cc[1] for cc in layer[:nhalf]]) + r"\\";
+                    lines += [wires, r"\hline", chips, chans];
+
+                    lines += [r"\hline",
+                              r"\multicolumn{%d}{c}{%s layer, second half: conductor / chip / chan} \\" % (nhalf, letter.upper()),
+                              r"\hline"]
+                    wires = "&".join(["%2s"%ww for ww in range(nhalf+1,nchans+1)]) + r"\\";
+                    chips = "&".join(["%2s"%cc[0] for cc in layer[nhalf:]]) + r"\\";
+                    chans = "&".join(["%2s"%cc[1] for cc in layer[nhalf:]]) + r"\\";
+                    lines += [wires, r"\hline", chips, chans];
+
+                    lines += [r"\hline", r"\end{tabular}"]
+                    lines += [r"\end{center}"]
+                fp.write("\n".join(lines))
+            return
+
+        return
+
+
+    click.echo('Unknown detector type: "%s"' % detector)
+    sys.exit(1)
+
 
 @cli.command("gravio")
 @click.argument("dotfile")

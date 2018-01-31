@@ -49,6 +49,11 @@ chip_channel_layer_spot_matrix = numpy.array([
      ('v', 32), ('v', 34), ('v', 36), ('v', 38), ('v', 40), ('u', 32),
      ('u', 34), ('u', 36), ('u', 38), ('u', 40)]], dtype=object)
 
+# split off each half of the tuple.
+chip_channel_spot = chip_channel_layer_spot_matrix[:,:,1].astype(numpy.int32)
+chip_channel_layer = numpy.asarray(["uvw".index(i) for i in chip_channel_layer_spot_matrix[:,:,0].flat]).reshape(chip_channel_layer_spot_matrix.shape[:2]).astype(numpy.int32)
+
+
 def flatten_cclsm(mat = chip_channel_layer_spot_matrix):
     '''
     Flatten an ASIC channel X number matrix to a dictionary keyed by
