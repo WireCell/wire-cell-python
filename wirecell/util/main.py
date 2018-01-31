@@ -183,7 +183,7 @@ def make_map(ctx, detector, output_file):
                               r"\multicolumn{%d}{c}{%s layer, first half: conductor / chip / chan} \\" % (nhalf, letter.upper()),
                               r"\hline"]
                     wires = "&".join(["%2s"%ww for ww in range(1,nhalf+1)]) + r"\\";
-                    chips = "&".join(["%2s"%cc[0] for cc in layer[:nhalf]]) + r"\\";
+                    chips = "&".join(["%2s"%(cc[0]+1,) for cc in layer[:nhalf]]) + r"\\";
                     chans = "&".join(["%2s"%cc[1] for cc in layer[:nhalf]]) + r"\\";
                     lines += [wires, r"\hline", chips, chans];
 
@@ -191,7 +191,7 @@ def make_map(ctx, detector, output_file):
                               r"\multicolumn{%d}{c}{%s layer, second half: conductor / chip / chan} \\" % (nhalf, letter.upper()),
                               r"\hline"]
                     wires = "&".join(["%2s"%ww for ww in range(nhalf+1,nchans+1)]) + r"\\";
-                    chips = "&".join(["%2s"%cc[0] for cc in layer[nhalf:]]) + r"\\";
+                    chips = "&".join(["%2s"%(cc[0]+1,) for cc in layer[nhalf:]]) + r"\\";
                     chans = "&".join(["%2s"%cc[1] for cc in layer[nhalf:]]) + r"\\";
                     lines += [wires, r"\hline", chips, chans];
 
