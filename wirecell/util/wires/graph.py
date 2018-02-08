@@ -74,55 +74,28 @@ def parent(G, child, parent_type):
     return None
     
 
-def channel_address(G, wire):
+### this assumes a particular hashing scheme. 
+# def channel_node(G, addrhash):
+#     '''
+#     Return channel node associated with address hash
+#     '''
+#     a = str(addrhash)
+#     iconn,islot,ichip,iaddr = [int(n)-1 for n in [a[0], a[1], a[2], a[3:5]]]
+#     edgepath = [
+#         ('wib',         'slot',         islot),
+#         ('board',       'connector',    iconn),
+#         ('chip',        'spot',         ichip),
+#         ('channel',     'address',      iaddr)
+#     ]
+#     # Fixme: should not hardcode a single APA name here!
+#     return child_by_path(G, 'apa', edgepath)
+
+
+def flatten_to_conductor(G, channel_hash):
     '''
-    Return channel address tuple associated with wire and in order
-    ready to send to channel_hash().
-    '''
+    Flatten the graph to the conductor level.
 
-    conductor = parent(G, wire, 'conductor')
-    channel = parent(G, conductor, 'channel')
-    chip = parent(G, channel, 'chip')
-    board = parent(G, chip, 'board')
-    box = parent(G, board, 'face')
-    wib = parent(G, board, 'wib')
-    apa = parent(G, wib, 'apa')
-    
-    islot = G[apa][wib]['slot']
-    iconn = G[wib][board]['connector']
-    ichip = G[board][chip]['spot']
-    iaddr = G[chip][channel]['address']
-    return (iconn, islot, ichip, iaddr)
-
-def channel_hash(iconn, islot, ichip, iaddr):
-    '''
-    Hash a channel address tuple into a single integer.  
-
-    See also channel_address().
-    '''
-    return int("%d%d%d%02d" % (iconn+1, islot+1, ichip+1, iaddr+1))
-
-def channel_node(G, addrhash):
-    '''
-    Return channel node associated with address hash
-    '''
-    a = str(addrhash)
-    iconn,islot,ichip,iaddr = [int(n)-1 for n in [a[0], a[1], a[2], a[3:5]]]
-
-    edgepath = [
-        ('wib',         'slot',         islot),
-        ('board',       'connector',    iconn),
-        ('chip',        'spot',         ichip),
-        ('channel',     'address',      iaddr)
-    ]
-
-    # Fixme: should not hardcode a single APA name here!
-    return child_by_path(G, 'apa', edgepath)
-
-
-def flatten_to_conductor(G):
-    '''
-    Flatten the graph to the conductor level
+    The channel_hash is a callable like apa.channel_hash().
     '''
     ret = list()
     apa = 'apa'
@@ -172,7 +145,7 @@ def flatten_to_conductor(G):
 
                         
 
-def to_celltree_wires(G, face='face0'):
+def to_celltree_wires(G, channel_ident, face='face0'):
     '''
     Return list of tuples: (ch, plane, wip, sx, sy, sz, ex, ey, ez)
 
@@ -203,18 +176,20 @@ def to_celltree_wires(G, face='face0'):
             ecm = [r/units.cm for r in G.node[head]['pos']]
             scm = [r/units.cm for r in G.node[tail]['pos']]
 
-            channel = channel_hash(*channel_address(G, wire))
-            one = [channel, iplane, iwire] + scm + ecm
+            chident = channel_ident(G, wire)
+            one = [chident, iplane, iwire] + scm + ecm
             #print one
             ret.append(tuple(one))
     return ret
 
 
-def to_schema(G, face='face0'):
+def to_schema(G, channel_ident, face='face0'):
     '''
     Return a wirecell.util.wires.schema store filled with information
-    from connection graph G starting from given face
+    from connection graph G starting from given face.
     '''
+    # n.b. this is called from the CLI main.
+
     import schema
     m = schema.maker()
 
@@ -245,9 +220,9 @@ def to_schema(G, face='face0'):
 
             conductor = parent(G, wire, 'conductor')
             segment = G[wire][conductor]['segment']
-            channel = channel_hash(*channel_address(G, wire))
+            chident = channel_ident(G, wire)
             wident = (iplane+1)*10000 + wip
-            wire_id = m.make('wire', wident, channel, segment, t_id, h_id)
+            wire_id = m.make('wire', wident, chident, segment, t_id, h_id)
             plane_wires[iplane].append(wire_id)
 
     wire_plane_indices = list()

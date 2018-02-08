@@ -2,6 +2,9 @@
 '''
 This module provides connectivity information about DUNE APAs
 (protoDUNE or nominal DUNE FD design, and not 35t prototype)
+
+See the Plex class for a convenient one-stop user shop. 
+
 '''
 from wirecell import units
 import wirecell.util.wires.generator as generator
@@ -397,3 +400,72 @@ oneapa_lcr = (1,1,1)
 protodun_lcr = (1,2,3)
 dune_lcr = (2,25,3)
 
+
+def channel_tuple(G, wire):
+    '''
+    Return a channel address tuple associated with the given wire.
+
+    The tuple is intended to be directly passed to channel_hash().
+    '''
+
+    conductor = parent(G, wire, 'conductor')
+    channel = parent(G, conductor, 'channel')
+    chip = parent(G, channel, 'chip')
+    board = parent(G, chip, 'board')
+    box = parent(G, board, 'face')
+    wib = parent(G, board, 'wib')
+    apa = parent(G, wib, 'apa')
+    
+    islot = G[apa][wib]['slot']
+    iconn = G[wib][board]['connector']
+    ichip = G[board][chip]['spot']
+    iaddr = G[chip][channel]['address']
+    return (iconn, islot, ichip, iaddr)
+
+def channel_hash(iconn, islot, ichip, iaddr):
+    '''
+    Hash a channel address tuple into a single integer.  
+
+    See also channel_tuple().
+    '''
+    return int("%d%d%d%02d" % (iconn+1, islot+1, ichip+1, iaddr+1))
+
+def channel_unhash(chident):
+    '''
+    Return tuple used to produce the given hash.
+    '''
+    a = str(chident)
+    return tuple([int(n)-1 for n in [a[0], a[1], a[2], a[3:5]]])
+
+
+def channel_ident(G, wire):
+    '''
+    Return an identifier number for the channel attached to the given wire.
+    '''
+    return channel_hash(*channel_address(G, wire))
+
+
+
+class Plex(object):
+    '''
+    Provide an instance of a Plex that provides some convenient
+    mappings on the connection graph.
+
+    This assumes the given graph was created using conventions
+    expressed in parent module.
+
+    The term "Plex" for this role was invented by MINOS.
+    '''
+
+    def __init__(self, G, P):
+        self.G = G
+        self.P = P
+
+    def channel_plane(self, chanidents):
+        '''
+        Return a generator of plane numbers, one for each chanidents.
+        '''
+        for chid in chanidents:
+            iconn, islot, ichip, iaddr = channel_unhash(chid)
+            yield chip_channel_layer[ichip, iaddr]
+            

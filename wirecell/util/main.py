@@ -32,6 +32,30 @@ def convert_oneside_wires(ctx, input_file, output_file):
     persist.dump(output_file, store)
 
 
+@cli.command("convert-multitpc-wires")
+@click.argument("input-file")
+@click.argument("output-file")
+@click.pass_context
+def convert_multitpc_wires(ctx, input_file, output_file):
+    '''
+    Convert a "multitpc" wire description file into one suitable for
+    WCT.
+
+    Here "TPC" refers to on anode face.  That is, one APA is made up
+    of two TPCs.  An example file is protodune-wires-larsoft-v1.txt
+    from wire-cell-data.  It has columns like:
+
+        # chan tpc plane wire sx sy sz ex ey ez
+
+    And, further the order of rows of identical channel number express
+    progressively higher segment count.
+    '''
+    from wirecell.util.wires import multitpc, persist
+    store = multitpc.load(input_file)
+    persist.dump(output_file, store)
+
+
+
 @cli.command("convert-uboone-wire-regions")
 @click.argument("wire-json-file")
 @click.argument("csvfile")
@@ -112,7 +136,8 @@ def make_wires(ctx, detector, output_file):
         from wirecell.util.wires import apa, graph, persist
         desc = apa.Description();
         G,P = apa.graph(desc)
-        store = graph.to_schema(G)
+
+        store = graph.to_schema(G, apa.channel_ident)
         persist.dump(output_file, store)
         return
     click.echo('Unknown detector type: "%s"' % detector)
