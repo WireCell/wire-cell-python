@@ -6,7 +6,7 @@ Functions to assist in persisting schema objects.
 
 # fixme: except for this next line, this module is generic.  See also similar
 # code for the detector response schema.
-import schema
+from . import schema
 
 ###########################
 
@@ -68,17 +68,17 @@ def dump(filename, obj, indent=2):
     Save a response object (typically response.schema.FieldResponse)
     to a file of the given name.
     '''
-    text = dumps(obj, indent=indent)
+    btext = dumps(obj, indent=indent).encode()
     if filename.endswith(".json"):
-        open(filename, 'w').write(text)
+        open(filename, 'w').write(btext)
         return
     if filename.endswith(".json.bz2"):
         import bz2
-        bz2.BZ2File(filename, 'w').write(text)
+        bz2.BZ2File(filename, 'w').write(btext)
         return
     if filename.endswith(".json.gz"):
         import gzip
-        gzip.open(filename, "wb").write(text)
+        gzip.open(filename, "wb").write(btext)
         return
     raise ValueError("unknown file format: %s" % filename)
 

@@ -84,7 +84,6 @@ def plot_wires(ctx, json_file, pdf_file):
     import wirecell.util.wires.persist as wpersist
     import wirecell.util.wires.plot as wplot
     wires = wpersist.load(json_file)
-    print wires
     wplot.allplanes(wires, pdf_file)
 
 @cli.command("plot-select-channels")
@@ -321,7 +320,7 @@ def wire_channel_map(ctx, input_file):
     for c,wires in sorted(channel_map.items()):
         if c[1] in range(4210, 4235):
             wires.sort()
-            print c,"\t",wires
+            click.echo(c,"\t",wires)
 
 
 def main():

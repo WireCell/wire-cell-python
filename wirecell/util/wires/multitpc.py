@@ -3,7 +3,7 @@
 This holds routines to load "multitpc" format wire geometry files.
 '''
 
-import schema
+from . import schema
 from wirecell import units
 
 import numpy
@@ -105,7 +105,7 @@ def load(filename):
         index = store.make("plane", plane, wire_list)
         wire_plane_indices.append(index)   
     #assert(wire_plane_indices == range(3))
-    print "Got wire_plane_indices:",wire_plane_indices
+    print ("Got wire_plane_indices:",wire_plane_indices)
     face_index = store.make("face", 0, wire_plane_indices)
     store.make("anode", 0, [face_index])
     return store.schema()
