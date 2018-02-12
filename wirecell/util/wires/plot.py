@@ -128,7 +128,7 @@ def allplanes(store, pdffile):
                 for iplane in face.planes:
                     plane = store.planes[iplane]
 
-                    print "anode:%d face:%d plane:%d" % (anode.ident, face.ident, plane.ident)
+                    #print ("anode:%d face:%d plane:%d" % (anode.ident, face.ident, plane.ident))
 
                     fig, ax = plt.subplots(nrows=1, ncols=1)
                     ax.set_aspect('equal','box')
@@ -292,8 +292,8 @@ def plot_wires(wobj, wire_filter=None):
     dy = ymax-ymin
     wires = wobj.wires
 
-    print (xmin,ymin), (dx,dy)
-    print bbmin, bbmax
+    #print (xmin,ymin), (dx,dy)
+    #print bbmin, bbmax
 
     wirenums = [w.wire for w in wires]
     minwire = min(wirenums)
@@ -302,7 +302,7 @@ def plot_wires(wobj, wire_filter=None):
 
     if wire_filter:
         wires = [w for w in wires if wire_filter(w)]
-        print "filter leaves %d wires" % len(wires)
+        print ("filter leaves %d wires" % len(wires))
     ax = plt.axes()
     ax.set_aspect('equal', 'box') #'datalim')
     ax.add_patch(mpatches.Rectangle((xmin, ymin), dx, dy,

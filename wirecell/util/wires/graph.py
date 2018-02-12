@@ -190,7 +190,7 @@ def to_schema(G, channel_ident, face='face0'):
     '''
     # n.b. this is called from the CLI main.
 
-    import schema
+    from . import schema
     m = schema.maker()
 
 

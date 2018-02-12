@@ -408,6 +408,9 @@ def channel_tuple(G, wire):
     The tuple is intended to be directly passed to channel_hash().
     '''
 
+    # fixme: some problems with dependencies here:
+    from .graph import parent
+    
     conductor = parent(G, wire, 'conductor')
     channel = parent(G, conductor, 'channel')
     chip = parent(G, channel, 'chip')
@@ -442,7 +445,7 @@ def channel_ident(G, wire):
     '''
     Return an identifier number for the channel attached to the given wire.
     '''
-    return channel_hash(*channel_address(G, wire))
+    return channel_hash(*channel_tuple(G, wire))
 
 
 

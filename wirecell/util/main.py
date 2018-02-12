@@ -299,7 +299,7 @@ def make_wires_onesided(ctx, output_file):
 @click.pass_context
 def wire_channel_map(ctx, input_file):
     '''
-    Generate a WCT channel map wires file.
+    Debug command, generate a WCT channel map wires file.
     '''
     from collections import defaultdict
     import wirecell.util.wires.persist as wpersist
@@ -320,7 +320,7 @@ def wire_channel_map(ctx, input_file):
     for c,wires in sorted(channel_map.items()):
         if c[1] in range(4210, 4235):
             wires.sort()
-            click.echo(c,"\t",wires)
+            click.echo("%s\t%s" %(c,wires))
 
 
 def main():

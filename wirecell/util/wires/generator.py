@@ -2,7 +2,7 @@
 '''
 Wires and Channels
 '''
-import schema
+from . import schema
 from wirecell import units
 
 import math
@@ -72,6 +72,7 @@ class Point(object):
             return Point(*[(a/b) for a,b in zip(self, other)])
         except TypeError:
             return Point(*[(a/other) for a in self])
+    __truediv__ = __div__
 
     def dot(self, other):
         return sum([a*b for a,b in zip(self, other)])
@@ -425,11 +426,11 @@ def celltree_geometry():
     channels = set()
     for iplane, letter in enumerate("uvw"):
         rect, wires = protodune_plane_one_side(letter)
-        print letter, len(wires)
+        print (letter, len(wires))
         for wire in wires:
             ap, side, channel, seg, p1, p2 = wire
-            print wire
+            print (wire)
             aps.add(ap)
             sides.add(side)
             channels.add(channel)
-    print len(aps),len(sides),len(channels)
+    print (len(aps),len(sides),len(channels))
