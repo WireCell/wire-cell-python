@@ -129,6 +129,8 @@ def allplanes(store, pdffile):
     all_wire_z2 = list()
     all_wire_anode = list()
 
+    plane_colors=["blue","red","black"]
+
     with PdfPages(pdffile) as pdf:
         for anode in store.anodes:
             seg_x1 = [list(),list(),list()]
@@ -149,18 +151,11 @@ def allplanes(store, pdffile):
                         seg_x2[seg].append(p2.x/units.meter)
                         seg_z1[seg].append(p1.z/units.meter)
                         seg_z2[seg].append(p2.z/units.meter)
-                        seg_col[seg].append(iplane*2 + iface)
+                        seg_col[seg].append(plane_colors[plane.ident])
                         continue # wires
                     continue     # planes
                 continue         # faces
-            fig, axes = plt.subplots(nrows=3, ncols=1)
-            for seg in range(3):
-                ax = axes[seg]
-                ax.scatter(seg_z1[seg], seg_x1[seg], c=seg_col[seg], s=1, marker='.')
-                ax.set_title("Anode %d wires, seg %d, tail (%d wires)" %
-                             (anode.ident, seg, len(seg_col[seg])))
-            pdf.savefig(fig)
-            plt.close()
+
             fig, axes = plt.subplots(nrows=3, ncols=1)
             for seg in range(3):
                 ax = axes[seg]
@@ -169,6 +164,16 @@ def allplanes(store, pdffile):
                              (anode.ident, seg, len(seg_col[seg])))
             pdf.savefig(fig)
             plt.close()
+
+            fig, axes = plt.subplots(nrows=3, ncols=1)
+            for seg in range(3):
+                ax = axes[seg]
+                ax.scatter(seg_z1[seg], seg_x1[seg], c=seg_col[seg], s=1, marker='.')
+                ax.set_title("Anode %d wires, seg %d, tail (%d wires)" %
+                             (anode.ident, seg, len(seg_col[seg])))
+            pdf.savefig(fig)
+            plt.close()
+
 
             continue            # anodes
 
