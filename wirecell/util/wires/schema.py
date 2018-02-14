@@ -191,10 +191,14 @@ def maker():
     return SchemaMaker()
     
     
+layer_mask = 0x7
+face_shift = 3
+face_mask = 0x1
+apa_shift = 4
+
 def wire_plane_id(plane, face, apa):
     'See WireCellIface/WirePlaneId.h'
-    layer_mask = 0x7
-    face_shift = 3
-    apa_shift = 4
     return (plane&layer_mask) | (face << face_shift) | (apa << apa_shift)
 
+def plane_face_apa(wpid):
+    return (wpid&layer_mask, (wpid>>face_shift)&face_mask, wpid>>apa_shift)

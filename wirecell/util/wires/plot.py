@@ -121,14 +121,72 @@ def allplanes(store, pdffile):
     wire_step = 10                            # how many wires to skip
 
     from matplotlib.backends.backend_pdf import PdfPages
+
+    # make some global pltos
+    all_wire_x1 = list()
+    all_wire_x2 = list()
+    all_wire_z1 = list()
+    all_wire_z2 = list()
+    all_wire_anode = list()
+
     with PdfPages(pdffile) as pdf:
         for anode in store.anodes:
+            seg_x1 = [list(),list(),list()]
+            seg_x2 = [list(),list(),list()]
+            seg_z1 = [list(),list(),list()]
+            seg_z2 = [list(),list(),list()]
+            seg_col = [list(),list(),list()]
             for iface in anode.faces:
                 face = store.faces[iface]
                 for iplane in face.planes:
                     plane = store.planes[iplane]
+                    for wind in plane.wires:
+                        wire = store.wires[wind]
+                        p1 = store.points[wire.tail]
+                        p2 = store.points[wire.head]
+                        seg = wire.segment
+                        seg_x1[seg].append(p1.x/units.meter)
+                        seg_x2[seg].append(p2.x/units.meter)
+                        seg_z1[seg].append(p1.z/units.meter)
+                        seg_z2[seg].append(p2.z/units.meter)
+                        seg_col[seg].append(iplane*2 + iface)
+                        continue # wires
+                    continue     # planes
+                continue         # faces
+            fig, axes = plt.subplots(nrows=3, ncols=1)
+            for seg in range(3):
+                ax = axes[seg]
+                ax.scatter(seg_z1[seg], seg_x1[seg], c=seg_col[seg], s=1, marker='.')
+                ax.set_title("Anode %d wires, seg %d, tail (%d wires)" %
+                             (anode.ident, seg, len(seg_col[seg])))
+            pdf.savefig(fig)
+            plt.close()
+            fig, axes = plt.subplots(nrows=3, ncols=1)
+            for seg in range(3):
+                ax = axes[seg]
+                ax.scatter(seg_z2[seg], seg_x2[seg], c=seg_col[seg], s=1, marker='.')
+                ax.set_title("Anode %d wires, seg %d, head (%d wires)" %
+                             (anode.ident, seg, len(seg_col[seg])))
+            pdf.savefig(fig)
+            plt.close()
 
-                    #print ("anode:%d face:%d plane:%d" % (anode.ident, face.ident, plane.ident))
+            continue            # anodes
+
+        for anode in store.anodes:
+            wire_x1 = list()
+            wire_x2 = list()
+            wire_z1 = list()
+            wire_z2 = list()
+            wire_anode = list()
+
+            for iface in anode.faces:
+                face = store.faces[iface]
+                
+                for iplane in face.planes:
+                    plane = store.planes[iplane]
+
+                    print ("anode:%d face:%d plane:%d" %
+                           (anode.ident, face.ident, plane.ident))
 
                     fig, ax = plt.subplots(nrows=1, ncols=1)
                     ax.set_aspect('equal','box')
@@ -139,7 +197,13 @@ def allplanes(store, pdffile):
                         width = wire.segment + .1
                         ax.plot((p1.z/units.meter, p2.z/units.meter),
                                 (p1.y/units.meter, p2.y/units.meter), linewidth = width)
+                        wire_x1.append(p1.x/units.meter)
+                        wire_z1.append(p1.z/units.meter)
+                        wire_x2.append(p2.x/units.meter)
+                        wire_z2.append(p2.z/units.meter)
+                        wire_anode.append(anode.ident)
 
+                    wirex = None
                     for wcount, wind in enumerate([plane.wires[0], plane.wires[-1]]):
                         wire = store.wires[wind]
                         print ("\twcount:%d wind:%d wident:%d chan:%d" % (wcount,wind,wire.ident,wire.channel))
@@ -147,6 +211,7 @@ def allplanes(store, pdffile):
                         p2 = store.points[wire.head]
                         x = p2.z/units.meter
                         y = p2.y/units.meter
+                        wirex = p2.x/units.meter
                         hal="center"
 #                        if wcount == 1:
 #                            hal = "right"
@@ -159,10 +224,40 @@ def allplanes(store, pdffile):
 
                     ax.set_xlabel("Z [meter]")
                     ax.set_ylabel("Y [meter]")
-                    ax.set_title("Anode %d, Face %d, Plane %d every %dth wire" % \
-                                 (anode.ident, face.ident, plane.ident, wire_step))
+                    ax.set_title("Anode %d, Face %d, Plane %d every %dth wire, x=%dm" % \
+                                 (anode.ident, face.ident, plane.ident, wire_step, wirex))
                     pdf.savefig(fig)
                     plt.close()
+                    continue    # over planes
+                continue        # over faces
+
+            fig, ax = plt.subplots(nrows=1, ncols=1)
+            ax.scatter(wire_z1, wire_x1,s=1, c=wire_anode, marker='.')
+            ax.set_title("Anode %d wires, tail" % anode.ident)
+            pdf.savefig(fig)
+            plt.close()
+            fig, ax = plt.subplots(nrows=1, ncols=1)
+            ax.scatter(wire_z2, wire_x2,s=1, c=wire_anode, marker='.')
+            ax.set_title("Anode %d wires, head" % anode.ident)
+            pdf.savefig(fig)
+            plt.close()
+            all_wire_x1 += wire_x1
+            all_wire_z1 += wire_z1
+            all_wire_x2 += wire_x2
+            all_wire_z2 += wire_z2
+            all_wire_anode += wire_anode
+            
+            continue            # over anodes
+        fig, ax = plt.subplots(nrows=1, ncols=1)
+        ax.scatter(all_wire_z1, all_wire_x1,s=1, c=all_wire_anode,marker='.')
+        ax.set_title("All wires, tail")
+        pdf.savefig(fig)
+        plt.close()
+        fig, ax = plt.subplots(nrows=1, ncols=1)
+        ax.scatter(all_wire_z2, all_wire_x2,s=1, c=all_wire_anode,marker='.')
+        ax.set_title("All wires, head")
+        pdf.savefig(fig)
+        plt.close()
 
 
 def face_in_allplanes(store, iface=0, segments=None):
