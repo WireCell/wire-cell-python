@@ -70,7 +70,7 @@ def oneplane(store, iplane, segments=None):
 
     return fig,ax
 
-def select_channels(store, pdffile, channels):
+def select_channels(store, pdffile, channels, labels=True):
     '''
     Plot wires for select channels.
     '''
@@ -97,15 +97,18 @@ def select_channels(store, pdffile, channels):
             p1 = store.points[wire.tail]
             p2 = store.points[wire.head]
             width = wire.segment + 1
-            ax.plot((p1.z/units.meter, p2.z/units.meter), (p1.y/units.meter, p2.y/units.meter), linewidth = width)
+            ax.plot((p1.z/units.meter, p2.z/units.meter),
+                    (p1.y/units.meter, p2.y/units.meter), linewidth = width)
             x = p2.z/units.meter
             y = p2.y/units.meter
-            t='w:%d ch:%d\nident:%d seg:%d' %(wip, wire.channel, wire.ident, wire.segment)
             if x > 0:
                 hal="left"
             else:
                 hal="right"
-            ax.text(x, y, t,
+            if labels:
+                t='w:%d ch:%d\nident:%d seg:%d' % \
+                   (wip, wire.channel, wire.ident, wire.segment)
+                ax.text(x, y, t,
                         horizontalalignment=hal,
                         bbox=dict(facecolor='yellow', alpha=0.5, pad=10))
             ax.set_xlabel("Z [meter]")

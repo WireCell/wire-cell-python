@@ -4,7 +4,7 @@ Functions to process descriptions of wire regions
 '''
 
 from wirecell import units
-from collections import namedtuple
+from collections import namedtuple, defaultdict
 
 Point = namedtuple("Point","x y z")
 Border = namedtuple("Border","plane wire ch tail head")   # a wire
@@ -54,8 +54,12 @@ def uboone_shorted(store, filename):
     # Channel,Plane,Wire,Start X,Start Y,Start Z,End X,End Y,End Z
 
     
-    ret = list()
-    current_plane = None
+    # return a dictionary indexed by shorted plane number and with
+    # values which are lists of triples of (plane,wire1,wire2)
+
+    ret = defaultdict(list)
+    last_triple = list()
+    shorted_plane = None
     for lineno, line in enumerate(open(filename).readlines()):
         line=line.strip()
 
@@ -69,15 +73,14 @@ def uboone_shorted(store, filename):
         if "shorted region" in maybe:
             letter = maybe[maybe.find("shorted region")-2]
             #print 'Starting plane "%s"' % letter
-            current_plane = "uvy".index(letter)
+            shorted_plane = "uvy".index(letter)
             continue
 
         if vals[0].lower() == "plane":
             continue                      # column names
 
         plane = int(vals[17])
-        if plane != current_plane:
-            continue;
+
         ch1 = int(vals[16])
         w1 = int(vals[18])
         ch2 = int(vals[25])
@@ -87,8 +90,16 @@ def uboone_shorted(store, filename):
         chw2 = [w.ident for w in store.wires if w.channel == ch2]
         assert w1 in chw1, "w1 %s %s"%(w1,chw1)
         assert w2 in chw2, "w2 %s %s"%(w2,chw2)
+        one = dict(plane=plane,ch1=ch1,wire1=w1,ch2=ch2,wire2=w2)
+        if plane == shorted_plane:
+            print "[ {plane:%d, min:%d, max:%d} ]," % (plane,w1,w2)
+        last_triple.append(one)
 
-        ret.append(dict(plane=plane, wire1=w1, wire2=w2))
+        if plane == 2:
+            if last_triple:
+                ret[shorted_plane].append(last_triple)
+            last_triple = list()
+
     return ret
 
         

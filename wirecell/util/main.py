@@ -64,7 +64,8 @@ def convert_multitpc_wires(ctx, input_file, output_file):
 def convert_uboon_wire_regions(ctx, wire_json_file, csvfile, region_json_file):
     '''
     Convert CSV file to WCT format for wire regions.  Example is one
-    as saved from MicroBooNE_ShortedWireList.xlsx.
+    as saved from MicroBooNE_ShortedWireList.xlsx.  Use ,-separated
+    and remove quoting.
     '''
     import wirecell.util.wires.persist as wpersist
     import wirecell.util.wires.regions as reg
@@ -72,6 +73,82 @@ def convert_uboon_wire_regions(ctx, wire_json_file, csvfile, region_json_file):
     ubs = reg.uboone_shorted(store, csvfile)
     wpersist.dump(region_json_file, ubs)
     
+@cli.command("plot-wire-regions")
+@click.argument("wire-json-file")
+@click.argument("region-json-file")
+@click.argument("pdf-file")
+@click.pass_context
+def plot_wire_regions(ctx, wire_json_file, region_json_file, pdf_file):
+    import wirecell.util.wires.persist as wpersist
+    import wirecell.util.wires.plot as wplot
+    from matplotlib.backends.backend_pdf import PdfPages
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Polygon
+    from matplotlib.collections import PatchCollection
+
+    store = wpersist.load(wire_json_file)
+    regions = wpersist.load(region_json_file)
+
+
+    def pt2xy(pt):
+        'Point id to xy tuple'
+        ptobj = store.points[pt]
+        return (ptobj.z, ptobj.y)
+    def wo2pg(wo1,wo2):
+        'wire objects to polygon'
+        return numpy.asarray([pt2xy(wo1.tail),pt2xy(wo1.head),
+                              pt2xy(wo2.head),pt2xy(wo2.tail)])
+
+    colors=['red','green','blue']
+
+    def get_polygons(shorted, triples):
+        ret = list()
+        for trip in triples:
+            
+            for one in trip:
+                pl,wip1,wip2 = one["plane"],one["wire1"],one["wire2"]
+                if pl != shorted:
+                    continue
+                
+                # fixme: this line assumes only 1 face
+                plobj = store.planes[pl]
+                wobj1 = store.wires[plobj.wires[wip1]]
+                wobj2 = store.wires[plobj.wires[wip2]]
+
+                assert wobj1.channel == one['ch1']
+                assert wobj2.channel == one['ch2']
+
+                verts = wo2pg(wobj1,wobj2)
+                print verts
+                pg = Polygon(verts, closed=True, facecolor=colors[pl],
+                             alpha=0.3, fill=True, linewidth=.1, edgecolor='black')
+                ret.append(pg)
+        return ret
+
+    pgs = [get_polygons(int(s), t) for s,t in regions.items()]
+    pgs2 = [get_polygons(int(s), t) for s,t in regions.items()]
+    pgs.append(pgs2[0] + pgs2[1])
+
+    zlimits = [ (0,4100), (6900,7500), (0, 7500) ]
+
+    with PdfPages(pdf_file) as pdf:
+
+        for pgl,zlim in zip(pgs,zlimits):
+            fig, ax = plt.subplots(nrows=1, ncols=1)
+            for pg in pgl:
+                ax.add_patch(pg)
+
+            ax.set_xlim(*zlim)
+            ax.set_ylim(-1500,1500)
+            ax.set_title('Dead wires')
+            ax.set_xlabel('Z [mm]')
+            ax.set_ylabel('Y [mm]')
+            pdf.savefig(fig)
+            plt.close()
+
+
+
+    return
 
 @cli.command("plot-wires")
 @click.argument("json-file")
@@ -87,18 +164,20 @@ def plot_wires(ctx, json_file, pdf_file):
     wplot.allplanes(wires, pdf_file)
 
 @cli.command("plot-select-channels")
+@click.option('--labels/--no-labels', default=True,
+              help="Use labels or not")
 @click.argument("json-file")
 @click.argument("pdf-file")
 @click.argument("channels", nargs=-1, type=int)
 @click.pass_context
-def plot_select_channels(ctx, json_file, pdf_file, channels):
+def plot_select_channels(ctx, labels, json_file, pdf_file, channels):
     '''
     Plot wires for select channels from a WCT JSON(.bz2) wire file
     '''
     import wirecell.util.wires.persist as wpersist
     import wirecell.util.wires.plot as wplot
     wires = wpersist.load(json_file)
-    wplot.select_channels(wires, pdf_file, channels)
+    wplot.select_channels(wires, pdf_file, channels, labels=labels)
 
 
 @cli.command("gen-plot-wires")
