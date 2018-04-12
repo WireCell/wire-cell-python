@@ -21,7 +21,10 @@ def numpy_saver(filename, outfile):
     chjumps = [0] + list(numpy.where(chd>1)[0]) + [channels.size-1]
     indjumps = zip(chjumps[:-1], chjumps[1:])
 
-    fig, axes = plt.subplots(nrows=len(indjumps), ncols=1)
+    njumps = len(indjumps)
+    fig, axes = plt.subplots(nrows=njumps, ncols=1)
+    if njumps == 1:
+        axes = [axes]
 
     for ax, (ind1, ind2) in zip(axes, indjumps):
         ch1 = channels[ind1+1]
