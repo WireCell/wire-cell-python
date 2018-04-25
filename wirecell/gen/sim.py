@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 '''
-Work with sim
+Work with sim data.
+
+fixme: this module is poorly named.
 '''
 
 from wirecell import units
@@ -51,15 +53,18 @@ class Frame(object):
 
         tstart, tick = self.tickinfo[:2]
         nticks = frame.shape[1]
+        tend = tstart + nticks*tick
 
-        if t0 is None:
+        if t0 is None or t0 < tstart:
             t0 = tstart
-        if tf is None:
-            tf = t0 + tick*nticks
+        if tf is None or tf > tend or tf < tstart:
+            tf = tend
 
-        tick0 = max(int((t0-tstart)/tick), 0)
-        tickf = min(int((tf-tstart)/tick), nticks)
+        tick0 = int((t0-tstart)/tick)
+        tickf = int((tf-tstart)/tick)
         
+        print ("trange=[%.2f %.2f]ms ticks=[%d,%d]" % (t0/units.ms,tf/units.ms,tick0,tickf))
+
         chinds = group_channel_indices(self.channels)
         ngroups = len(chinds)
         fig, axes = plt.subplots(nrows=ngroups, ncols=1, sharex = True)
@@ -67,15 +72,18 @@ class Frame(object):
             axes = [axes]       # always list 
 
         for ax, chind in zip(axes, chinds):
+            ngroups -= 1
             ch1 = self.channels[chind[0]]
             ch2 = self.channels[chind[1]-1]
 
             extent = (t0/units.ms, tf/units.ms, ch2, ch1)
 
-            print (chind,extent)
+            print (chind,extent, chind, tick0, tickf, frame.shape)
             im = ax.imshow(frame[chind[0]:chind[1],tick0:tickf],
                            aspect='auto', extent=extent, interpolation='none')
             plt.colorbar(im, ax=ax)
+            if not ngroups:
+                ax.set_xlabel('time [ms]')
 
         #plt.savefig(outfile)
         return fig,axes
@@ -97,6 +105,12 @@ class Depos(object):
         self.info = fp['depo_info_%d'%ident]
 
     @property
+    def t(self):
+        return self.data[0]
+    @property
+    def q(self):
+        return self.data[1]
+    @property
     def x(self):
         return self.data[2]
     @property
@@ -109,14 +123,24 @@ class Depos(object):
     def plot(self):
         fig = plt.figure()
         ax10 = fig.add_subplot(223)
-        ax00 = fig.add_subplot(221, sharex=ax10)
+        ax00 = fig.add_subplot(221)
         ax11 = fig.add_subplot(224, sharey=ax10)
         ax01 = fig.add_subplot(222, projection='3d')
 
-        ax00.scatter(self.x/units.m, self.y/units.m)
+        
+        ax00.hist(self.t/units.ms, 100)
+
         ax10.scatter(self.x/units.m, self.z/units.m)
         ax11.scatter(self.y/units.m, self.z/units.m)
         ax01.scatter(self.x/units.m, self.y/units.m, self.z/units.m)
+
+        ax00.set_title('depo times [ms]');
+
+        ax10.set_xlabel('x [m]');
+        ax10.set_ylabel('z [m]');
+        ax11.set_xlabel('y [m]');
+        ax11.set_ylabel('z [m]');
+
 
         # fig, axes = plt.subplots(nrows=2, ncols=2)
         # axes[0,0].scatter(self.x/units.m, self.y/units.m, sharex=axes[1,0])

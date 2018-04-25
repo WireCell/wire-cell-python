@@ -85,7 +85,48 @@ def plot_depos(ctx, json_path, plot,
     depos = deposmod.load(input_file)
     plotter(depos, output_file)
 
+@cli.command("plot-test-boundaries")
+@click.option("-t", "--times", default=[100.0,105.0], type=float, nargs=2,
+              help="Two range of times over which to limit frame plots, in ms.")
+@click.argument("npz-file")
+@click.argument("pdf-file")
+@click.pass_context
+def plot_test_boundaries(ctx, times, npz_file, pdf_file):
+    '''
+    Make some plots from the boundaries test.
 
+        wire-cell -c gen/test/test_boundaries.jsonnet
+
+    this makes a test_boundaries.npz file which is input to this command.
+    '''
+    print (times)
+
+    from wirecell.gen import sim
+    from matplotlib.backends.backend_pdf import PdfPages
+    import matplotlib.pyplot as plt
+    import numpy
+    f = numpy.load(npz_file);
+
+    fnums = [int(k.split('_')[-1]) for k in f.keys() if k.startswith("frame")]
+    dnums = [int(k.split('_')[-1]) for k in f.keys() if k.startswith("depo_data")]
+
+    with PdfPages(pdf_file) as pdf:
+
+        for fnum in fnums:
+            fo = sim.Frame(f, fnum)
+
+            fig, axes = fo.plot(t0=times[0]*units.ms, tf=times[1]*units.ms, raw=False)
+            fig.suptitle("Frame %d" % fnum)
+            pdf.savefig(fig)
+            plt.close()
+
+        for dnum in dnums:
+            depo = sim.Depos(f, dnum)
+            fig, axes = depo.plot()
+            fig.suptitle("Depo group %d" % fnum)
+            pdf.savefig(fig)
+            plt.close()
+        
 
 
 def main():
