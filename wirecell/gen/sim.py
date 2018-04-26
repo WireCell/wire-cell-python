@@ -55,9 +55,10 @@ class Frame(object):
         nticks = frame.shape[1]
         tend = tstart + nticks*tick
 
-        if t0 is None or t0 < tstart:
+        if t0 is None or t0 < tstart or t0 > tend:
             t0 = tstart
-        if tf is None or tf > tend or tf < tstart:
+
+        if tf is None or tf < t0 or tf > tend:
             tf = tend
 
         tick0 = int((t0-tstart)/tick)
