@@ -76,7 +76,7 @@ def dotify(dat):
 
 def main(filename):
     edges = json.load(open(filename))[-1]["data"]["edges"]
-    print dotify(edges)
+    print (dotify(edges))
 
 if '__main__' == __name__:
     main(sys.argv[1])
