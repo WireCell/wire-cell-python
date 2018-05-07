@@ -10,3 +10,5 @@ venv
 venv*
 test_*.png
 test_*.pdf
+build
+dist

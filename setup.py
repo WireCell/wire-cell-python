@@ -20,6 +20,7 @@ setup(
             'wirecell-util = wirecell.util.main:main',
             'wirecell-gen = wirecell.gen.main:main',
             'wirecell-validate = wirecell.validate.main:main',
+            'wirecell-pgraph = wirecell.pgraph.main:main',
         ]
     )
 )

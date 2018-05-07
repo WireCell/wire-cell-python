@@ -7,6 +7,18 @@ import sys
 import json
 from collections import defaultdict
 
+import sys
+import click
+
+from wirecell import units
+
+@click.group("pgraph")
+@click.pass_context
+def cli(ctx):
+    '''
+    Wire Cell Signal Processing Features
+    '''
+
 class Node (object):
     def __init__(self, tn):
         self.tn = tn
@@ -44,7 +56,9 @@ class Node (object):
 
 
 def dotify(dat):
-
+    '''
+    Return GraphViz text 
+    '''
     nodes = dict()
     def get(edge, end):
         tn = edge[end]["node"]
@@ -74,10 +88,24 @@ def dotify(dat):
     ret.append("}")
     return '\n'.join(ret);
 
-def main(filename):
-    edges = json.load(open(filename))[-1]["data"]["edges"]
-    print (dotify(edges))
+@cli.command("dotify")
+@click.argument("json-file")
+@click.argument("dot-file")
+@click.pass_context
+def cmd_dotify(ctx, json_file, dot_file):
+    '''
+    Convert a JSON file for a WCT job configuration based on the Pgraph app into a dot file.
+    '''
+    for cfg in json.load(open(json_file)):
+        if cfg["type"] != "Pgrapher":
+            continue;
+        edges = cfg["data"]["edges"]
+        open(dot_file, "w").write(dotify(edges))
+
+
+def main():
+    cli(obj=dict())
 
 if '__main__' == __name__:
-    main(sys.argv[1])
-
+    main()
+    
