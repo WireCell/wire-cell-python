@@ -54,10 +54,12 @@ class Wire(namedtuple("Wire","ident channel segment tail head")):
     toward the electronics.
 
     :param int ident: numerical identifier unique to this wire in the
-        anode plane.  This is made available via IWire::ident().
+        wire plane.  It is typically the "wire-in-plane" index which
+        counts the wire along the pitch direction.  This is made
+        available in the C++ via IWire::ident().
     :param int channel: numerical identifier unique to this conductor
-        in the anode plane.  It is made
-        available via IWire::channel().
+        in the anode plane.  It is made available via
+        IWire::channel().
     :param int segment: count the number of wires between this and the
         channel input.
     :param int tail: index referencing the tail end point of the wire
@@ -70,11 +72,11 @@ class Wire(namedtuple("Wire","ident channel segment tail head")):
 
 class Plane(namedtuple("Plane", "ident wires")):
     '''
-    A WirePlane object collects the wires that make up one physical
-    plane.
+    A Plane object collects the coplanar wires.
 
-    :param int ident: numerical identifier unique to the anode plane.
-        It is made available as IWire::planeid().
+    :param int ident: numerical identifier unique to the this plane in
+        the face.  It should index the planes in U/V/W order.  It is
+        made available in the C++ as IWire::planeid().
     :param list wires: list of indices referencing the wires that make
         up this plane.  This list must be sorted in increasing wire Z.
     '''
@@ -86,14 +88,18 @@ class Face(namedtuple("Face", "ident planes")):
     A Face collects the wire and conductor planes making up one face
     of an anode plane.
 
-    :param int ident: numerical identifier unique to the face.  This
-        is used to refer to the face in IAnodePlane::face() and
-        available from IAnodeFace::ident().
+    :param int ident: numerical identifier unique to the face in the
+        Anode.  It should be "0" for the "front" face and "1" for the
+        "back face".  The "front" face is assumed to have its normal
+        vector point in the positive X direction (used to produce
+        Pimpos, for eg).  In C++, this is used to refer to the face in
+        IAnodePlane::face() and available from IAnodeFace::ident().
     :param list planes: list of indices referencing planes.  This list
         must be in the order of which drifting electrons pass (ie,
         negative-X order).
     '''
     __slots__ = ()
+
 
 
 class Anode(namedtuple("Anode","ident faces")):
@@ -104,7 +110,7 @@ class Anode(namedtuple("Anode","ident faces")):
     protoDUNE/SP has two faces per each of its six anodes (aka APAs).
 
     :param int ident: numerical identifier unique to this anode.  This
-        is available from IAnodePlane::ident().
+        is available in the C++ from IAnodePlane::ident().
     :param list faces: list indices referencing faces.  As a
         guideline, the first face is considered "front" (eg, for
         protoDUNE, it points at the larger drift cell).  The second is

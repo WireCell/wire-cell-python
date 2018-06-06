@@ -183,7 +183,7 @@ def to_celltree_wires(G, channel_ident, face='face0'):
     return ret
 
 
-def to_schema(G, channel_ident, face='face0'):
+def to_schema(G, P, channel_ident):
     '''
     Return a wirecell.util.wires.schema store filled with information
     from connection graph G starting from given face.
@@ -193,51 +193,53 @@ def to_schema(G, channel_ident, face='face0'):
     from . import schema
     m = schema.maker()
 
+    # fixme: currently only support one APA
+    iapa = 0
+    apa = P.apa
 
-    apa = parent(G, face, 'apa')
-    iapa = 0                    # fixme: we still only support one APA....
-    iface = G[apa][face]['side']
+    face_indices = list()
+    for face in neighbors_by_type(G, apa, 'face'):
+        iface = G[apa][face]['side']
 
-    plane_wires = [list(), list(), list()]
+        planes = list(neighbors_by_type(G, face, 'plane'))
+        planes.sort(key = lambda p : G[face][p]['plane'])
+        plane_wires = [list() for _ in planes] # temp stash
+        for plane in planes:
+            wires = list(neighbors_by_type(G, plane, 'wire'))
+            wires.sort(key = lambda w : G[plane][w]['wip'])
+            iplane = G[face][plane]['plane']
+            for wire in wires:
+                wip = G[plane][wire]['wip']
 
-    planes = list(neighbors_by_type(G, face, 'plane'))
-    planes.sort(key = lambda p : G[face][p]['plane'])
-    for iplane, plane in enumerate(planes):
-        wires = list(neighbors_by_type(G, plane, 'wire'))
-        wires.sort(key = lambda w : G[plane][w]['wip'])
-        iplane = G[face][plane]['plane']
-        for wire in wires:
-            wip = G[plane][wire]['wip']
+                pts = list(neighbors_by_type(G, wire, 'point'))[:2]
+                head, tail = pts[0:2]
+                if G[wire][head]['endpoint'] == 1:
+                    head, tail = pts[1], pts[0]
+                hpos = G.node[head]['pos']
+                tpos = G.node[tail]['pos']
+                h_id = m.make('point', hpos.x, hpos.y, hpos.z)
+                t_id = m.make('point', tpos.x, tpos.y, tpos.z)
 
-            pts = list(neighbors_by_type(G, wire, 'point'))[:2]
-            head, tail = pts[0:2]
-            if G[wire][head]['endpoint'] == 1:
-                head, tail = pts[1], pts[0]
-            hpos = G.node[head]['pos']
-            tpos = G.node[tail]['pos']
-            h_id = m.make('point', hpos.x, hpos.y, hpos.z)
-            t_id = m.make('point', tpos.x, tpos.y, tpos.z)
+                conductor = parent(G, wire, 'conductor')
+                segment = G[wire][conductor]['segment']
+                chident = channel_ident(G, wire)
+                wire_id = m.make('wire', wip, chident, segment, t_id, h_id)
+                plane_wires[iplane].append(wire_id)
 
-            conductor = parent(G, wire, 'conductor')
-            segment = G[wire][conductor]['segment']
-            chident = channel_ident(G, wire)
-            wident = (iplane+1)*10000 + wip
-            wire_id = m.make('wire', wident, chident, segment, t_id, h_id)
-            plane_wires[iplane].append(wire_id)
-
-    wire_plane_indices = list()
-    for iplane, wire_list in enumerate(plane_wires):
-        if iplane == 0:
-            wire_list.sort(key = lambda w: -1*m.wire_ypos(w))
-        elif iplane == 1:
-            wire_list.sort(key = m.wire_ypos)
-        else:
-            wire_list.sort(key = m.wire_zpos)
-        wpid = schema.wire_plane_id(iplane, iface, iapa)
-        index = m.make("plane", wpid, wire_list)
-        wire_plane_indices.append(index)   
-    face_index = m.make("face", iface, wire_plane_indices)
-    m.make("anode", iapa, [face_index])
+        wire_plane_indices = list()
+        for iplane, wire_list in enumerate(plane_wires):
+            if iplane == 0:
+                wire_list.sort(key = lambda w: -1*m.wire_ypos(w))
+            elif iplane == 1:
+                wire_list.sort(key = m.wire_ypos)
+            else:
+                wire_list.sort(key = m.wire_zpos)
+            wpid = schema.wire_plane_id(iplane, iface, iapa)
+            index = m.make("plane", iplane, wire_list)
+            wire_plane_indices.append(index)   
+        fi = m.make("face", iface, wire_plane_indices)
+        face_indices.append(fi)
+    m.make("anode", iapa, face_indices)
     return m.schema()
         
 

@@ -214,8 +214,7 @@ def make_wires(ctx, detector, output_file):
         from wirecell.util.wires import apa, graph, persist
         desc = apa.Description();
         G,P = apa.graph(desc)
-
-        store = graph.to_schema(G, apa.channel_ident)
+        store = graph.to_schema(G, P, apa.channel_ident)
         persist.dump(output_file, store)
         return
     click.echo('Unknown detector type: "%s"' % detector)
