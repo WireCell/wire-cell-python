@@ -58,7 +58,7 @@ class FieldResponse(namedtuple("FieldResponse","planes axis origin tstart period
 
 
 
-class PlaneResponse(namedtuple("PlaneResponse","paths planeid location pitch pitchdir wiredir")):
+class PlaneResponse(namedtuple("PlaneResponse","paths planeid location pitch")):
     '''
     :param list paths: List of PathResponse objects.
     :param int planeid: A numerical identifier for the plane,
@@ -67,19 +67,6 @@ class PlaneResponse(namedtuple("PlaneResponse","paths planeid location pitch pit
         (see FieldResponse.origin).
     :param float pitch: The uniform wire pitch used for the path
         responses of this plane.
-    :param list pitchdir: A normalized 3-vector giving direction of
-        the wire pitch.
-    :param list wiredir: A normalized 3-vector giving direction of the
-        wire run.
-
-        Along with FieldResponse.axis, the following vector equation
-        should hold:
-
-        (axis) X (wiredir) = (pitchdir)
-
-        Note: 2D response calculations has all wiredir = (0,1,0) and
-        this may be retroactively "lied" about in Wire Cell in order
-        to extend to 3D.  See C++ Response::Schema::lie().
     '''
     __slots__ = ()
     

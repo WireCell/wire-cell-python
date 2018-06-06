@@ -661,8 +661,6 @@ def rf1dtoschema(rflist, origin=10*units.cm, speed = 1.114*units.mm/units.us):
         onetwo = [rf for rf in inplane if rf.impact == 0.0 and (rf.region == 0 or rf.region==1)]
         pitch = abs(onetwo[0].pos[0] - onetwo[1].pos[0])
         location = inplane[0].pos[1]
-        pitchdir = (0.0, 0.0, 1.0)
-        wiredir = (0.0, 1.0, 0.0)
         inplane.sort(key=lambda x: x.region*10000+x.impact)
 
         paths = list()
@@ -672,7 +670,7 @@ def rf1dtoschema(rflist, origin=10*units.cm, speed = 1.114*units.mm/units.us):
             par = schema.PathResponse(rf.response, pitchpos, wirepos)
             paths.append(par)
 
-        plr = schema.PlaneResponse(paths, planeid, location, pitch, pitchdir, wiredir)
+        plr = schema.PlaneResponse(paths, planeid, location, pitch)
         planes.append(plr)
     return schema.FieldResponse(planes, anti_drift_axis, origin, tstart, period, speed)
 
