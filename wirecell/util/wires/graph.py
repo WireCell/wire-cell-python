@@ -201,6 +201,10 @@ def to_schema(G, P, channel_ident):
     for face in neighbors_by_type(G, apa, 'face'):
         iface = G[apa][face]['side']
 
+        sign = +1
+        if iface == 1:          # "back" face
+            sign = -1
+
         planes = list(neighbors_by_type(G, face, 'plane'))
         planes.sort(key = lambda p : G[face][p]['plane'])
         plane_wires = [list() for _ in planes] # temp stash
@@ -217,8 +221,8 @@ def to_schema(G, P, channel_ident):
                     head, tail = pts[1], pts[0]
                 hpos = G.node[head]['pos']
                 tpos = G.node[tail]['pos']
-                h_id = m.make('point', hpos.x, hpos.y, hpos.z)
-                t_id = m.make('point', tpos.x, tpos.y, tpos.z)
+                h_id = m.make('point', sign*hpos.x, hpos.y, sign*hpos.z)
+                t_id = m.make('point', sign*tpos.x, tpos.y, sign*tpos.z)
 
                 conductor = parent(G, wire, 'conductor')
                 segment = G[wire][conductor]['segment']
@@ -228,12 +232,13 @@ def to_schema(G, P, channel_ident):
 
         wire_plane_indices = list()
         for iplane, wire_list in enumerate(plane_wires):
+            # note, this assumes an APA with a "portrait" aspect ratio
             if iplane == 0:
                 wire_list.sort(key = lambda w: -1*m.wire_ypos(w))
             elif iplane == 1:
                 wire_list.sort(key = m.wire_ypos)
             else:
-                wire_list.sort(key = m.wire_zpos)
+                wire_list.sort(key = lambda w: sign*m.wire_zpos(w))
             wpid = schema.wire_plane_id(iplane, iface, iapa)
             index = m.make("plane", iplane, wire_list)
             wire_plane_indices.append(index)   

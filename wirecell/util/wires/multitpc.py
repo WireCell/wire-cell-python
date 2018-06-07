@@ -46,30 +46,34 @@ def load(filename):
 
     Example lines::
 
-         # chan tpc plane wire sx sy sz ex ey ez
-         0 0 0   0 -368.926 606.670  229.881     -368.926 605.569 230.672
-         0 1 0 400 -358.463 285.577  5.68434e-14 -358.463 606.509 230.672
-         0 0 0 800 -368.926 286.518 -1.56319e-13 -368.926   7.61  200.467
-         1 0 0   1 -368.926 606.670  229.306     -368.926 604.769 230.673
-         1 1 0 401 -358.463 284.777  5.68434e-14 -358.463 605.709 230.672
-         1 0 0 801 -368.926 285.718  1.7053e-13  -368.926   7.61  199.892
-         ...
-         800 0 1   0 -368.449 605.639  0.335  -368.449 606.335 0.835
-         800 1 1 400 -358.939 605.648  0.335  -358.939 285.648 230.337
-         800 0 1 800 -368.449   7.61  30.4896 -368.449 285.656 230.337
-         801 0 1   1 -368.449 604.839  0.335  -368.449 606.335 1.40999
-         801 1 1 401 -358.939 604.848  0.335  -358.939 284.848 230.337
-         801 0 1 801 -368.449   7.61  31.0646 -368.449 284.856 230.337
-         ...
-         1600 0 2 0 -367.973 7.61 0.57535 -367.973 606 0.57535
-         1601 0 2 1 -367.973 7.61 1.05455 -367.973 606 1.05455
-         1602 0 2 2 -367.973 7.61 1.53375 -367.973 606 1.53375
+        # chan tpc plane wire sx sy sz ex ey ez
+        0 0 0   0 -368.926 606.670  229.881     -368.926 605.569 230.672
+        0 1 0 400 -358.463 285.577  5.68434e-14 -358.463 606.509 230.672
+        0 0 0 800 -368.926 286.518 -1.56319e-13 -368.926   7.61  200.467
+        1 0 0   1 -368.926 606.670  229.306     -368.926 604.769 230.673
+        1 1 0 401 -358.463 284.777  5.68434e-14 -358.463 605.709 230.672
+        1 0 0 801 -368.926 285.718  1.7053e-13  -368.926   7.61  199.892
+        ...
+        800 0 1   0 -368.449 605.639  0.335  -368.449 606.335 0.835
+        800 1 1 400 -358.939 605.648  0.335  -358.939 285.648 230.337
+        800 0 1 800 -368.449   7.61  30.4896 -368.449 285.656 230.337
+        801 0 1   1 -368.449 604.839  0.335  -368.449 606.335 1.40999
+        801 1 1 401 -358.939 604.848  0.335  -358.939 284.848 230.337
+        801 0 1 801 -368.449   7.61  31.0646 -368.449 284.856 230.337
+        ...
+        1600 0 2 0 -367.973 7.61 0.57535 -367.973 606 0.57535
+        1601 0 2 1 -367.973 7.61 1.05455 -367.973 606 1.05455
+        1602 0 2 2 -367.973 7.61 1.53375 -367.973 606 1.53375
 
     As shown in the example, the first and second set of three lines
     are from each the same "chan" and represent subsequent segments of
     one condutor.
 
     Also as shown, there is no sanity in segment direction.
+
+    TPC 1 are on the "front" face and TPC 0 are "back" face in the
+    sense that the normal to a front face pointing into the drift
+    region is parallel to the global X axis.
     '''
 
     store = schema.maker()
@@ -96,7 +100,7 @@ def load(filename):
             if beg[1] > end[1]:
                 beg,end = end,beg # always point upward in Y
 
-            face = tpc%2        # checkme: this is 
+            face = (1+tpc)%2    # "front" face is 0.
             apa = tpc//2        # pure conjecture
             wip = wire          # this too
 
@@ -119,6 +123,8 @@ def load(filename):
     for wpid, wire_list in sorted(wpids.items()):
         plane,face,apa = schema.plane_face_apa(wpid)
         wire_list.sort(key = wire_pos)
+        if face == 1:           # to satisfy pitch-order and wire(x)pitch cross product
+            wire_list.reverse()
         plane_index = store.make("plane", plane, wire_list)
         by_apa_face[(apa,face)].append(plane_index)
 

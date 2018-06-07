@@ -15,7 +15,7 @@ from collections import defaultdict
 def load(filename):
     '''Load a "celltree wire geometry file".
 
-    Return a list of schema.Wire objects.
+    Return a list of schema.Store.
 
 
     Somewhere, there exists code to dump wires from larsoft in a text

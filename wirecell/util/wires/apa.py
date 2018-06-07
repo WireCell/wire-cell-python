@@ -78,6 +78,7 @@ GeomParams = namedtuple("GeomParams", ["width", "height", "pitch","angle","offse
 Params = namedtuple("ApaParams", ["nfaces", "anode_loc", "crate_addr",
                                   "face", "board", "daq", "geom"])
 
+plane_separation = 4.71*units.mm
 default_params = Params(
     nfaces = 2,
     anode_loc = (1,1,1),        # layer, column, row
@@ -92,7 +93,7 @@ default_params = Params(
             pitch = 4.669*units.mm,
             angle = +35.707*units.deg,
             offset = 0.3923*units.mm, 
-            planex = 15*units.mm,
+            planex = 3*plane_separation
         ),
         GeomParams(
             width = 2295*units.mm,
@@ -100,7 +101,7 @@ default_params = Params(
             pitch = 4.669*units.mm,
             angle = -35.707*units.deg,
             offset = 0.3923*units.mm, 
-            planex = 10*units.mm, 
+            planex = 2*plane_separation
         ),
         GeomParams(
             width = 2295*units.mm,
@@ -108,7 +109,7 @@ default_params = Params(
             pitch = 4.790*units.mm, 
             angle = 0.0,
             offset = 0.295*units.mm,
-            planex = 5*units.mm,
+            planex = plane_separation
         ),
     ]
 )

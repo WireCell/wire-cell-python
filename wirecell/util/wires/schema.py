@@ -1,26 +1,63 @@
 #!/usr/bin/env python
 '''
-This module defines an object schema which gives the terms in which
-wires are described for the Wire Cell Toolkit.
+This module defines an schema of object which describe the
+wire-related geometry for the Wire Cell Toolkit.
 
-The wire end points are expressed in a Cartesian 3-space associated
-with the anode plane face in which the wire resides.  For double-sided
-anode planes there will be two such coordinate systems one for each
-face.  From tail to head, a wire points in the direction that signal
-travels towards electronics.
+It covers a hierarchy of object types:
 
-Any "ident" attribute of an object is a number which is considered
-opaque to the toolkit.  It will be passed through to implementations.
-Generally, the number is required to be unique to that object.
+    - Detector
 
-Objects are referenced through their index in the associated Store
-collection.  Except for the lists in the Store, lists of references
-have ordering requirements.
+    - Anode (eg, one APA)
 
-Some information is assumed implicit or calculated by the application
-such as wire plane direction and pitch.
+    - Face
 
-Units Warning: distance must be specified in millimeters.
+    - Plane
+
+    - Wire
+
+    - Point
+
+Except for Point, all objects are organizational and describe
+parentage.  Points are used to describe the end points of wire
+segments (wires) and are MUST be expressed in GLOBAL coordinates.
+
+In the following cases the children are referenced by their parent in
+a strictly ordered list:
+
+    - A face orders its child planes following how charge drifts.
+      That is, in U/V/W order.
+
+    - A plane orders its child wires in increasing pitch direction
+      such that the cross product of the wire direction (see next) and
+      this pitch direction gives a direction which is normal to the
+      wire plane and anti-parallel to the nominal drift direction for
+      that plane.
+
+    - Wire places its head end-point closer to the input of the
+      detector electronics.  The wire direction is taken from tail to
+      head end-points.  For top DUNE APAs and all other current
+      detectors this direction points generally upward and for bottom
+      DUNE APAs it points generally downward.
+
+Ordering of all other lists is not defined.
+
+Most objects in the schema have an "ident" attribute.  This number is
+made available to user C++ code but is treated as OPAQUE but UNIQUE by
+the toolkit.  If an object is referenced in multiple contexts their
+ident MUST match.  For example, a wire plane and a field reponse plane
+must be correlated by their ident.
+
+Schema objects are held in flat, per type store and a reference to an
+object of a particular type is made via its index into the store for
+that type.
+
+All values MUST be in the WCT system of units.  Code that generates
+these objects may use the Python module wirecell.units to assure this.
+
+Although not specified here, there are places where "front" and "back"
+qualifiers are applied to "face".  A "front" face is one for which the
+cross product of wire and pitch directions (as described above) is
+parallel to the global X-axis.
 '''
 
 
@@ -29,19 +66,11 @@ from collections import namedtuple
 
 class Point(namedtuple("Point", "x y z")):
     '''
-    A point in 3 space.
+    A position.
 
-    Each point is in terms of the coordinate system (as described
-    below for each coordinate) of its drift cell.  This means that for
-    double-sided anode planes one must understand the context in which
-    the point is referenced to know where a point is in some external
-    coordinate system in which both drift cells are related.
-
-    :param float x: Measure along the X-axis which points counter to
-        the electron drift direction.
-    :param float y: Measure along the Y-axis which points counter to
-        the force of gravity.
-    :param float z: Measure along the Z-axis which is X cross Y.
+    :param float x:
+    :param float y:
+    :param float z:
     '''
     __slots__ = ()
 
@@ -53,15 +82,13 @@ class Wire(namedtuple("Wire","ident channel segment tail head")):
     A wire is a ray which points in the direction that signals flow
     toward the electronics.
 
-    :param int ident: numerical identifier unique to this wire in the
-        wire plane.  It is typically the "wire-in-plane" index which
-        counts the wire along the pitch direction.  This is made
-        available in the C++ via IWire::ident().
-    :param int channel: numerical identifier unique to this conductor
-        in the anode plane.  It is made available via
-        IWire::channel().
-    :param int segment: count the number of wires between this and the
-        channel input.
+    :param int ident:
+    :param int channel: numerical identifier unique to this conductor.
+        It is made available via IWire::channel().  This number is
+        treated as opaque by the toolkit except that it is expected to
+        uniquely identify an electronics input channel.
+    :param int segment: count the number of other wires between this
+        wire and the channel input.
     :param int tail: index referencing the tail end point of the wire
         in the coordinate system for the anode face.
     :param int head: index referencing the head end point of the wire
@@ -74,11 +101,10 @@ class Plane(namedtuple("Plane", "ident wires")):
     '''
     A Plane object collects the coplanar wires.
 
-    :param int ident: numerical identifier unique to the this plane in
-        the face.  It should index the planes in U/V/W order.  It is
-        made available in the C++ as IWire::planeid().
+    :param int ident:
     :param list wires: list of indices referencing the wires that make
-        up this plane.  This list must be sorted in increasing wire Z.
+        up this plane.  This list MUST be sorted in "increasing wire
+        pitch location" as described above.
     '''
     __slots__ = ()
 
@@ -88,15 +114,9 @@ class Face(namedtuple("Face", "ident planes")):
     A Face collects the wire and conductor planes making up one face
     of an anode plane.
 
-    :param int ident: numerical identifier unique to the face in the
-        Anode.  It should be "0" for the "front" face and "1" for the
-        "back face".  The "front" face is assumed to have its normal
-        vector point in the positive X direction (used to produce
-        Pimpos, for eg).  In C++, this is used to refer to the face in
-        IAnodePlane::face() and available from IAnodeFace::ident().
+    :param int ident:
     :param list planes: list of indices referencing planes.  This list
-        must be in the order of which drifting electrons pass (ie,
-        negative-X order).
+        MUST be in sorted in U/V/W order as described above.
     '''
     __slots__ = ()
 
@@ -109,33 +129,44 @@ class Anode(namedtuple("Anode","ident faces")):
     A detector like MicroBooNE has just one face per its single anode.
     protoDUNE/SP has two faces per each of its six anodes (aka APAs).
 
-    :param int ident: numerical identifier unique to this anode.  This
-        is available in the C++ from IAnodePlane::ident().
-    :param list faces: list indices referencing faces.  As a
-        guideline, the first face is considered "front" (eg, for
-        protoDUNE, it points at the larger drift cell).  The second is
-        considered "back".  These meaning ultimately are interpreted
-        by implementation.
+    :param int ident:
+    :param list faces: list indices referencing faces.
     '''
     __slots__ = ()    
+
+
+class Detector(namedtuple("Detector", "ident anodes")):
+    '''
+    A detector of anodes.
+
+    This allows one or more sets ot anodes to be defined.  
+    :param int ident:
+    :param list anodes: list of anodes
+    '''
+    __slots__ = ()
 
 
 class Store(namedtuple("Store","anodes faces planes wires points")):
     '''
     A store of collections of the objects of this schema.
 
+    This somewhat awkward indirection of a reference into a store is
+    so that multiple things may refer to something without having to
+    invent some kind of "pointer" which must be carried by each
+    object.
+
+    :param list detectors: list of the Detector objects.
     :param list anodes: list of the Anode objects.
     :param list faces: list of the Face objects
     :param list planes: list of the Plane objects.
     :param list wires: list of the Wire objects.
     :param list points: list of the Point objects.
-
     '''
     __slots__ = ()
 
     def __repr__(self):
-        return "<Store: %d anodes, %d faces, %d planes, %d wires, %d points>" % \
-            (len(self.anodes), len(self.faces), len(self.planes), len(self.wires), len(self.points))
+        return "<Store: %d detectors, %d anodes, %d faces, %d planes, %d wires, %d points>" % \
+            (len(self.detectors), len(self.anodes), len(self.faces), len(self.planes), len(self.wires), len(self.points))
 
 def classes():
     import sys, inspect

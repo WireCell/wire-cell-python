@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import numpy
 from collections import defaultdict
+import math
 
 def plot_polyline(pts):
     cmap = plt.get_cmap('seismic')
@@ -189,14 +190,20 @@ def allplanes(store, pdffile):
             wire_z2 = list()
             wire_anode = list()
 
+
             for iface in anode.faces:
                 face = store.faces[iface]
+
+                mid_wires = list()
                 
                 for iplane in face.planes:
                     plane = store.planes[iplane]
 
                     print ("anodeID:%d faceID:%d planeID:%d" %
                            (anode.ident, face.ident, plane.ident))
+
+                    nhalf = len(plane.wires)//2
+                    mid_wires.append(plane.wires[nhalf:nhalf+2])
 
                     fig, ax = plt.subplots(nrows=1, ncols=1)
                     ax.set_aspect('equal','box')
@@ -239,7 +246,45 @@ def allplanes(store, pdffile):
                     pdf.savefig(fig)
                     plt.close()
                     continue    # over planes
+
+                # plot directions
+                fig, axes = plt.subplots(nrows=2, ncols=2)
+                for iplane,winds in enumerate(mid_wires):
+                    plane_color = "red green blue".split()[iplane]
+                    w0 = store.wires[winds[0]]
+                    h0 = numpy.asarray(store.points[w0.head])
+                    t0 = numpy.asarray(store.points[w0.tail])
+                    w1 = store.wires[winds[1]]
+                    t1 = numpy.asarray(store.points[w1.tail])
+                    
+                    w = h0-t0   # wire direction
+                    w = w/math.sqrt(numpy.sum(w*w))
+
+                    r = t1-t0    # roughtly in the pitch direction
+                    r = r/math.sqrt(numpy.sum(r*r))
+
+                    x = numpy.cross(w,r) # drift direction
+                    x = x/math.sqrt(numpy.sum(x*x))
+                    p = numpy.cross(x,w) # really pitch direction
+                    
+                    for ipt, pt in enumerate([x,w,p]):
+                        axes[0,0].arrow(0,0, pt[2], pt[1], color=plane_color, linewidth=ipt+1) # 0
+                        axes[0,1].arrow(0,0, pt[2], pt[0], color=plane_color, linewidth=ipt+1) # 1
+                        axes[1,0].arrow(0,0, pt[0], pt[1], color=plane_color, linewidth=ipt+1) # 2
+
+                    for a,t in zip(axes.flatten(),["Z vs Y","X vs Y","Z vs X","none"]):
+                        a.set_aspect('equal')
+                        a.set_title("%s anode: %d, face: %d" % (t, anode.ident, face.ident))
+                        a.set_ylim(-1.1,1.1)
+                        a.set_xlim(-1.1,1.1)
+
+                plt.tight_layout()
+                pdf.savefig(fig)
+                plt.close()
+
                 continue        # over faces
+
+
 
             fig, ax = plt.subplots(nrows=1, ncols=1)
             ax.scatter(wire_z1, wire_x1,s=1, c=wire_anode, marker='.')
