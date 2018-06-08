@@ -2,12 +2,12 @@
 '''
 Fixme: make this into a proper click main
 '''
-
+import os
 import sys
 import json
 from collections import defaultdict
+import subprocess
 
-import sys
 import click
 
 from wirecell import units
@@ -88,20 +88,60 @@ def dotify(dat):
     ret.append("}")
     return '\n'.join(ret);
 
+def jsonnet_try_path(path, rel):
+    if not rel:
+        raise RuntimeError('Got invalid filename (empty string).')
+    if rel[0] == '/':
+        full_path = rel
+    else:
+        full_path = os.path.join(path, rel)
+    if full_path[-1] == '/':
+        raise RuntimeError('Attempted to import a directory')
+
+    if not os.path.isfile(full_path):
+        return full_path, None
+    with open(full_path) as f:
+        return full_path, f.read()
+
+
+def jsonnet_import_callback(path, rel):
+    paths = [path] + os.environ.get("WIRECELL_PATH","").split(":")
+    for maybe in paths:
+        try:
+            full_path, content = jsonnet_try_path(maybe, rel)
+        except RuntimeError:
+            continue
+        if content:
+            return full_path, content
+    raise RuntimeError('File not found')
+
+
+
 @cli.command("dotify")
 @click.argument("json-file")
-@click.argument("dot-file")
+@click.argument("out-file")
 @click.pass_context
-def cmd_dotify(ctx, json_file, dot_file):
+def cmd_dotify(ctx, json_file, out_file):
     '''
     Convert a JSON file for a WCT job configuration based on the Pgraph app into a dot file.
     '''
-    for cfg in json.load(open(json_file)):
+    if json_file.endswith(".jsonnet"):
+        import _jsonnet
+        jtext = _jsonnet.evaluate_file(json_file, import_callback=jsonnet_import_callback)
+    else:
+        jtext = open(json_file).read()
+
+    for cfg in json.loads(jtext):
         if cfg["type"] != "Pgrapher":
             continue;
-        edges = cfg["data"]["edges"]
-        open(dot_file, "w").write(dotify(edges))
 
+        edges = cfg["data"]["edges"]
+        dtext = dotify(edges)
+        ext = os.path.splitext(out_file)[1][1:]
+        dot = "dot -T %s -o %s" % (ext, out_file)
+        proc = subprocess.Popen(dot, shell=True, stdin = subprocess.PIPE)
+        proc.communicate(input=dtext)
+        return
 
 def main():
     cli(obj=dict())
