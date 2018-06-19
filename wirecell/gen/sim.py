@@ -21,18 +21,40 @@ def baseline_subtract(frame):
     return (frame.T - numpy.median(frame, axis=1)).T
 
 
-def group_channel_indices(channels):
+def group_channel_indices(channels, boundaries=()):
     '''
     Given a list of channels, return a list of lists where each
-    sublist is a sequential set.
+    sublist is a sequential set.  If a sequence of boundaries are
+    given, then force a grouping on that channel even if there's not
+    jump.
     '''
+
     channels = numpy.asarray(channels)
+    chan_list = channels.tolist()
+    binds = list()
+    for b in boundaries:
+        try:
+            i = chan_list.index(b)
+        except ValueError:
+            continue
+        binds.append(i)
+
     chd = channels[1:] - channels[:-1]
     chjumps = [-1] + list(numpy.where(chd>1)[0]) + [channels.size-1]
     ret = list()
     for a,b in zip(chjumps[:-1], chjumps[1:]):
         #print a,b,channels[a+1:b+1]
-        ret.append((a+1,b+1))
+        a += 1
+        b += 1
+
+        gotsome = 0
+        for bind in binds:
+            if a < bind and bind < b:
+                ret.append((a,bind))
+                ret.append((bind,b))
+                gotsome += 1
+        if gotsome == 0:
+            ret.append((a,b))
     return ret
 
 class Frame(object):
@@ -46,7 +68,7 @@ class Frame(object):
         for n in 'frame channels tickinfo'.split():
             setattr(self, n, thing(n))
         
-    def plot(self, t0=None, tf=None, raw=True):
+    def plot(self, t0=None, tf=None, raw=True, chinds = ()):
         frame = self.frame
         if not raw:
             frame = baseline_subtract(frame)
@@ -64,9 +86,10 @@ class Frame(object):
         tick0 = int((t0-tstart)/tick)
         tickf = int((tf-tstart)/tick)
         
-        print ("trange=[%.2f %.2f]ms ticks=[%d,%d]" % (t0/units.ms,tf/units.ms,tick0,tickf))
+        #print ("trange=[%.2f %.2f]ms ticks=[%d,%d]" % (t0/units.ms,tf/units.ms,tick0,tickf))
 
-        chinds = group_channel_indices(self.channels)
+        if not chinds:
+            chinds = group_channel_indices(self.channels)
         ngroups = len(chinds)
         fig, axes = plt.subplots(nrows=ngroups, ncols=1, sharex = True)
         if ngroups == 1:
@@ -79,7 +102,7 @@ class Frame(object):
 
             extent = (t0/units.ms, tf/units.ms, ch2, ch1)
 
-            print (chind,extent, chind, tick0, tickf, frame.shape)
+            #print (chind,extent, chind, tick0, tickf, frame.shape)
             im = ax.imshow(frame[chind[0]:chind[1],tick0:tickf],
                            aspect='auto', extent=extent, interpolation='none')
             plt.colorbar(im, ax=ax)

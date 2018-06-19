@@ -145,10 +145,23 @@ def plot_wire_regions(ctx, wire_json_file, region_json_file, pdf_file):
             ax.set_ylabel('Y [mm]')
             pdf.savefig(fig)
             plt.close()
-
-
-
     return
+
+
+@cli.command("wires-info")
+@click.argument("json-file")
+@click.pass_context
+def wires_info(ctx, json_file):
+    '''
+    Print information about a wires file (.json or .json.bz2)
+    '''
+    import wirecell.util.wires.persist as wpersist
+    import wirecell.util.wires.info as winfo
+    wires = wpersist.load(json_file)
+    dat = winfo.summary(wires)
+    print ('\n'.join(dat))
+
+    
 
 @cli.command("plot-wires")
 @click.argument("json-file")
@@ -162,6 +175,7 @@ def plot_wires(ctx, json_file, pdf_file):
     import wirecell.util.wires.plot as wplot
     wires = wpersist.load(json_file)
     wplot.allplanes(wires, pdf_file)
+
 
 @cli.command("plot-select-channels")
 @click.option('--labels/--no-labels', default=True,

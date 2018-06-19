@@ -16,6 +16,21 @@ def cli(ctx):
     '''
 
 
+@cli.command("response-info")
+@click.argument("json-file")
+@click.pass_context
+def response_info(ctx, json_file):
+    '''
+    Show some info about a field response file (.json or .json.bz2).
+    '''
+    import response.persist as per
+    fr = per.load(json_file)
+    print ("origin:%f period:%f tstart:%f speed:%f axis:(%f,%f,%f)" % \
+           (fr.origin, fr.period, fr.tstart, fr.speed, fr.axis[0],fr.axis[1],fr.axis[2]))
+    for pr in fr.planes:
+        print ("\tplane:%d, location:%f, pitch:%f" % \
+               (pr.planeid, pr.location, pr.pitch))
+
 @cli.command("convert-garfield")
 @click.option("-o", "--origin", default="10.0*cm",
               help="Set drift origin (give units, eg '10*cm').")

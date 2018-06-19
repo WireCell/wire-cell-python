@@ -35,7 +35,7 @@ def fromdict(obj):
         for typ in [FieldResponse, PlaneResponse, PathResponse]:
             tname = typ.__name__
             if tname in obj:
-                return typ(**{k: fromdict(v) for k, v in obj[tname].items()})
+                return typ(**{k: fromdict(v) for k, v in obj[tname].items() if k not in ["pitchdir","wiredir"]})
 
     if isinstance(obj, list):
         return [fromdict(ele) for ele in obj]
