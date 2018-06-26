@@ -25,11 +25,11 @@ def response_info(ctx, json_file):
     '''
     import response.persist as per
     fr = per.load(json_file)
-    print ("origin:%f period:%f tstart:%f speed:%f axis:(%f,%f,%f)" % \
-           (fr.origin, fr.period, fr.tstart, fr.speed, fr.axis[0],fr.axis[1],fr.axis[2]))
+    print ("origin:%.2f cm, period:%.2f us, tstart:%.2f us, speed:%.2f mm/us, axis:(%.2f,%.2f,%.2f)" % \
+           (fr.origin/units.cm, fr.period/units.us, fr.tstart/units.us, fr.speed/(units.mm/units.us), fr.axis[0],fr.axis[1],fr.axis[2]))
     for pr in fr.planes:
-        print ("\tplane:%d, location:%f, pitch:%f" % \
-               (pr.planeid, pr.location, pr.pitch))
+        print ("\tplane:%d, location:%.4fmm, pitch:%.4fmm" % \
+               (pr.planeid, pr.location/units.mm, pr.pitch/units.mm))
 
 @cli.command("convert-garfield")
 @click.option("-o", "--origin", default="10.0*cm",

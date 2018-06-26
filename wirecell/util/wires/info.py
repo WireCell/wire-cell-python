@@ -2,6 +2,7 @@
 '''
 Functions to provide information about wires
 '''
+from wirecell import units
 
 def p2p(p):
     return dict(x=p.x, y=p.y, z=p.z)
@@ -73,13 +74,14 @@ def summary(store):
                     for wire in plane['wires']:
                         bb(wire['head']);
                         bb(wire['tail']);
-                lines.append("anode:%d face:%d X=[%.2f,%.2f] Y=[%.2f,%.2f] Z=[%.2f,%.2f]" % \
+                lines.append("anode:%d face:%d X=[%.2f,%.2f]mm Y=[%.2f,%.2f]mm Z=[%.2f,%.2f]mm" % \
                              (anode['ident'], face['ident'],
-                              bb.minp['x'], bb.maxp['x'],
-                              bb.minp['y'], bb.maxp['y'],
-                              bb.minp['z'], bb.maxp['z']))
+                              bb.minp['x']/units.mm, bb.maxp['x']/units.mm,
+                              bb.minp['y']/units.mm, bb.maxp['y']/units.mm,
+                              bb.minp['z']/units.mm, bb.maxp['z']/units.mm))
                 for plane in face['planes']:
-                    lines.append('\t%d: x=%f dx=%f' % \
-                                 (plane['ident'], plane['wires'][0]['head']['x'],
-                                 plane['wires'][0]['head']['x']-face['planes'][2]['wires'][0]['head']['x']))
+                    lines.append('\t%d: x=%.2fmm dx=%.4fmm' % \
+                                 (plane['ident'],
+                                  plane['wires'][0]['head']['x']/units.mm,
+                                  (plane['wires'][0]['head']['x']-face['planes'][2]['wires'][0]['head']['x'])/units.mm))
     return lines
