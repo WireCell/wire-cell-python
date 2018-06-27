@@ -52,10 +52,12 @@ class BoundingBox(object):
             return
 
         for c,v in self.minp.items():
-            if v < self.minp[c]: self.minp[c] = v
+            if p[c] < v:
+                self.minp[c] = p[c]
 
         for c,v in self.maxp.items():
-            if v > self.maxp[c]: self.maxp[c] = v
+            if p[c] > v:
+                self.maxp[c] = p[c]
 
     def center(self):
         return {c:0.5*(self.minp[c]+self.maxp[c]) for c in "xyz"}
