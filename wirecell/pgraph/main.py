@@ -20,7 +20,7 @@ def cli(ctx):
     '''
 
 class Node (object):
-    def __init__(self, tn):
+    def __init__(self, tn, **attrs):
         self.tn = tn
         tn = tn.split(":")
         self.type = tn[0]
@@ -29,6 +29,7 @@ class Node (object):
         except IndexError:
             self.name = ""
         self.ports = defaultdict(set);
+        self.attrs = attrs
 
     def add_port(self, end, ident):
         '''
@@ -45,7 +46,16 @@ class Node (object):
             head = "{%s}" % ("|".join(["<in%d>%d"%(num,num) for num in sorted(self.ports["head"])]),)
             ret.append(head)
 
-        body = r"{%s\n%s}" % (self.type, self.name)
+        body = [self.type, self.name]
+        for k,v in sorted(self.attrs.items()):
+            if isinstance(v,list):
+                v = "list(%d)"%len(v)
+            if isinstance(v,dict):
+                v = "dict(%d)"%len(v)
+            one = "%s = %s" % (k,v)
+            body.append(one)
+        body = r"\n".join(body)
+        body = r"{%s}" % body
         ret.append(body)
 
         if self.ports.has_key("tail"):
@@ -55,9 +65,9 @@ class Node (object):
         return "{%s}" % ("|".join(ret),)
 
 
-def dotify(dat):
+def dotify(dat, attrs):
     '''
-    Return GraphViz text 
+    Return GraphViz text.  If attrs is a dictionary, append to the node a list of its items.
     '''
     nodes = dict()
     def get(edge, end):
@@ -65,7 +75,7 @@ def dotify(dat):
         try:
             n = nodes[tn]
         except KeyError:
-            n = Node(tn)
+            n = Node(tn, **attrs.get(tn, {}))
             nodes[tn] = n
         p = edge[end].get("port",0)
         n.add_port(end, p)
@@ -117,13 +127,53 @@ def jsonnet_import_callback(path, rel):
 
 
 
+def resolve_path(obj, jpath):
+    '''
+    Select out a part of obj based on a "."-separated path.  Any
+    element of the path that looks like an integer will be cast to
+    one assuming it indexes an array.
+    '''
+    jpath = jpath.split('.')
+    for one in jpath:
+        if not one:
+            break
+        try:
+            one = int(one)
+        except ValueError:
+            pass
+        obj = obj[one]
+
+    return obj
+
+def uses_to_params(uses):
+    '''
+    Given a list of "uses", return a dictionary of their "data" entries keyed by type:name
+    '''
+    ret = dict()
+    for one in uses:
+        tn = one["type"]
+        if one.has_key("name"):
+            tn += ":" + one["name"]
+        ret[tn] = one.get("data", {})
+    return ret
+
 @cli.command("dotify")
+@click.option("--jpath", default="-1",
+              help="A dot-delimited path into the JSON to locate a graph-like object")
+@click.option("--params/--no-params", default=True,
+              help="Enable/disable the inclusion of contents of configuration parameters") 
 @click.argument("json-file")
 @click.argument("out-file")
 @click.pass_context
-def cmd_dotify(ctx, json_file, out_file):
+def cmd_dotify(ctx, jpath, params, json_file, out_file):
     '''
-    Convert a JSON file for a WCT job configuration based on the Pgraph app into a dot file.
+    Convert a JSON file for a WCT job configuration based on the
+    Pgraph app into a dot file.
+
+    Use jpath to apply this function to a subset of what the input
+    file compiles to.  Default is "-1" which usually works well for a
+    full configuration sequence in which the last element is the
+    config for a Pgrapher.
     '''
     if json_file.endswith(".jsonnet"):
         import _jsonnet
@@ -131,17 +181,33 @@ def cmd_dotify(ctx, json_file, out_file):
     else:
         jtext = open(json_file).read()
 
-    for cfg in json.loads(jtext):
-        if cfg["type"] != "Pgrapher":
-            continue;
+    dat = json.loads(jtext)
+    try: 
+        cfg = resolve_path(dat, jpath)
+    except Exception:
+        click.echo("failed to resolve path in object:\n")
+        click.echo(json.dumps(cfg, indent=4))
+        sys.exit(1)
 
-        edges = cfg["data"]["edges"]
-        dtext = dotify(edges)
-        ext = os.path.splitext(out_file)[1][1:]
-        dot = "dot -T %s -o %s" % (ext, out_file)
-        proc = subprocess.Popen(dot, shell=True, stdin = subprocess.PIPE)
-        proc.communicate(input=dtext)
-        return
+    if cfg["type"] not in ["Pgrapher", "Pnode"]:
+        click.echo('Object must be of "type" Pgrapher or Pnode, got "%s"' % cfg["type"])
+        sys.exit(1)
+
+    if cfg["type"] == "Pgrapher":    # the Pgrapher app holds edges in "data" attribute
+        edges = cfg["data"]["edges"] 
+        uses = dat                   # if Pgrapher, then original is likely the full config sequence.
+    else:
+        edges = cfg["edges"] # Pnodes have edges as top-level attribute
+        uses = cfg["uses"]
+    attrs = dict()
+    if params:
+        attrs = uses_to_params(uses)
+    dtext = dotify(edges, attrs)
+    ext = os.path.splitext(out_file)[1][1:]
+    dot = "dot -T %s -o %s" % (ext, out_file)
+    proc = subprocess.Popen(dot, shell=True, stdin = subprocess.PIPE)
+    proc.communicate(input=dtext)
+    return
 
 def main():
     cli(obj=dict())
