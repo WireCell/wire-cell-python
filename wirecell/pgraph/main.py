@@ -185,8 +185,7 @@ def cmd_dotify(ctx, jpath, params, json_file, out_file):
     try: 
         cfg = resolve_path(dat, jpath)
     except Exception:
-        click.echo("failed to resolve path in object:\n")
-        click.echo(json.dumps(cfg, indent=4))
+        click.echo('failed to resolve path "%s" in object:\n' % (jpath))
         sys.exit(1)
 
     if cfg["type"] not in ["Pgrapher", "Pnode"]:
