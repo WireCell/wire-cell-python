@@ -127,7 +127,47 @@ def plot_test_boundaries(ctx, times, npz_file, pdf_file):
             pdf.savefig(fig)
             plt.close()
         
+@cli.command("plot-sim")
+@click.argument("input-file")
+@click.argument("output-file")
+@click.option("-p", "--plot", default='frame',
+                  help="The plot to make.")
+@click.option("-t", "--tag", default='',
+                  help="The frame tag.")
+@click.option("-n", "--number", default=0,
+                  help="The number of the frame or depo set to plot.")
+@click.option("-c", "--channel-groups", default='',
+                  help="Indices of channel groups as comma separated list.")
+@click.pass_context
+def plot_sim(ctx, input_file, output_file, plot, tag, number, channel_groups):
+    '''
+    Make plots of sim quantities saved into numpy array files.
+    '''
+    import wirecell.gen.sim
+    from wirecell import units
+    import numpy
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_pdf import PdfPages
 
+    fp = numpy.load(input_file)
+
+    if 'frame' in plot:
+        print "Frames: %s" %(', '.join([k for k in fp.keys() if k.startswith("frame")]), )
+        fr = wirecell.gen.sim.Frame(fp, tag=tag, ident=number)
+        ch = wirecell.gen.sim.group_channel_indices(fr.channels)
+        print "All channel groups: ", ch
+        if channel_groups:
+            ch = [ch[int(ci)] for ci in channel_groups.split(",")]
+        print "Using groups: ", ch
+        
+        fig, axes = fr.plot(raw=False, chinds=ch)
+        plt.savefig(output_file)
+
+    if 'depo' in plot:
+        print "Depos: %s" %(', '.join([k for k in fp.keys() if k.startswith("depo_data")]), )
+        deps = wirecell.gen.sim.Depos(fp, ident=number)
+        fig, axes = deps.plot()
+        plt.savefig(output_file)
 
 def main():
     cli(obj=dict())
