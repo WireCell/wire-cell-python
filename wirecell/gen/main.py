@@ -132,14 +132,16 @@ def plot_test_boundaries(ctx, times, npz_file, pdf_file):
 @click.argument("output-file")
 @click.option("-p", "--plot", default='frame',
                   help="The plot to make.")
-@click.option("-t", "--tag", default='',
+@click.option("--tag", default='',
                   help="The frame tag.")
+@click.option("-t", "--time-range", default='0,5',
+                  help="The time range in ms.")
 @click.option("-n", "--number", default=0,
                   help="The number of the frame or depo set to plot.")
 @click.option("-c", "--channel-groups", default='',
                   help="Indices of channel groups as comma separated list.")
 @click.pass_context
-def plot_sim(ctx, input_file, output_file, plot, tag, number, channel_groups):
+def plot_sim(ctx, input_file, output_file, plot, tag, time_range, number, channel_groups):
     '''
     Make plots of sim quantities saved into numpy array files.
     '''
@@ -160,7 +162,9 @@ def plot_sim(ctx, input_file, output_file, plot, tag, number, channel_groups):
             ch = [ch[int(ci)] for ci in channel_groups.split(",")]
         print "Using groups: ", ch
         
-        fig, axes = fr.plot(raw=False, chinds=ch)
+        t0,tf = [float(t)*units.ms for t in time_range.split(",")]
+
+        fig, axes = fr.plot(t0, tf, raw=False, chinds=ch)
         plt.savefig(output_file)
 
     if 'depo' in plot:
