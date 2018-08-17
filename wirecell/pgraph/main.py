@@ -158,7 +158,7 @@ def uses_to_params(uses):
     return ret
 
 @cli.command("dotify")
-@click.option("--jpath", default="-1",
+@click.option("--jpath", default="",
               help="A dot-delimited path into the JSON to locate a graph-like object")
 @click.option("--params/--no-params", default=True,
               help="Enable/disable the inclusion of contents of configuration parameters") 
@@ -171,9 +171,9 @@ def cmd_dotify(ctx, jpath, params, json_file, out_file):
     Pgraph app into a dot file.
 
     Use jpath to apply this function to a subset of what the input
-    file compiles to.  Default is "-1" which usually works well for a
-    full configuration sequence in which the last element is the
-    config for a Pgrapher.
+    file compiles to.  Use "-1" to index the last element of the
+    configuration sequence which is typically the config for a
+    Pgrapher.
     '''
     if json_file.endswith(".jsonnet"):
         import _jsonnet
@@ -188,16 +188,16 @@ def cmd_dotify(ctx, jpath, params, json_file, out_file):
         click.echo('failed to resolve path "%s" in object:\n' % (jpath))
         sys.exit(1)
 
-    if cfg["type"] not in ["Pgrapher", "Pnode"]:
-        click.echo('Object must be of "type" Pgrapher or Pnode, got "%s"' % cfg["type"])
-        sys.exit(1)
+    # if cfg["type"] not in ["Pgrapher", "Pnode"]:
+    #     click.echo('Object must be of "type" Pgrapher or Pnode, got "%s"' % cfg["type"])
+    #     sys.exit(1)
 
-    if cfg["type"] == "Pgrapher":    # the Pgrapher app holds edges in "data" attribute
+    if cfg.get("type","") == "Pgrapher":    # the Pgrapher app holds edges in "data" attribute
         edges = cfg["data"]["edges"] 
         uses = dat                   # if Pgrapher, then original is likely the full config sequence.
     else:
         edges = cfg["edges"] # Pnodes have edges as top-level attribute
-        uses = cfg["uses"]
+        uses = cfg.get("uses", list())
     attrs = dict()
     if params:
         attrs = uses_to_params(uses)
