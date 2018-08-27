@@ -127,7 +127,7 @@ def dotify(edge_dat, attrs):
                     cn = Node(maybe, **attrs.get(maybe, {}))
                     nodes[maybe] = cn
 
-                e = '%s -> %s[style=dashed,constraint=false,color=gray]' % (n.dot_name(), cn.dot_name())
+                e = '%s -> %s[style=dashed,color=gray]' % (n.dot_name(), cn.dot_name())
                 edges.append(e)
 
         
