@@ -21,6 +21,9 @@ def cli(ctx):
 
 class Node (object):
     def __init__(self, tn, **attrs):
+        if not attrs:
+            print "Node(%s) with no attributes"%tn
+
         self.tn = tn
         tn = tn.split(":")
         self.type = tn[0]
@@ -30,6 +33,12 @@ class Node (object):
             self.name = ""
         self.ports = defaultdict(set);
         self.attrs = attrs
+
+    @property
+    def display_name(self):
+        if self.name:
+            return "[%s]"%self.name
+        return "(unnamed)"
 
     def add_port(self, end, ident):
         '''
@@ -46,7 +55,7 @@ class Node (object):
             head = "{%s}" % ("|".join(["<in%d>%d"%(num,num) for num in sorted(self.ports["head"])]),)
             ret.append(head)
 
-        body = [self.type, self.name]
+        body = [self.type, self.display_name]
         for k,v in sorted(self.attrs.items()):
             if isinstance(v,list):
                 v = "list(%d)"%len(v)
@@ -65,10 +74,20 @@ class Node (object):
         return "{%s}" % ("|".join(ret),)
 
 
-def dotify(dat, attrs):
+def is_string(x):
+    return type(x) in [type(u""), type("")]
+def is_list(x):
+    return type(x) in [list]
+def is_list_of_string(x):
+    if not is_list(x): return False
+    return all(map(is_string, x))
+
+def dotify(edge_dat, attrs):
     '''
-    Return GraphViz text.  If attrs is a dictionary, append to the node a list of its items.
+    Return GraphViz text.  If attrs is a dictionary, append to the
+    node a list of its items.  
     '''
+
     nodes = dict()
     def get(edge, end):
         tn = edge[end]["node"]
@@ -80,13 +99,38 @@ def dotify(dat, attrs):
         p = edge[end].get("port",0)
         n.add_port(end, p)
         return n,p
+
     
     edges = list()
-    for edge in dat:
+    for edge in edge_dat:
         t,tp = get(edge, "tail")
         h,hp = get(edge, "head")
         e = '%s:out%d -> %s:in%d' % (t.dot_name(),tp, h.dot_name(),hp)
         edges.append(e);
+
+    # Try to find any components refereneced.
+    for tn,n in nodes.items():
+        for k,v in n.attrs.items():
+            tocheck = None
+            if is_string(v):
+                tocheck = [v]
+            if is_list_of_string(v):
+                tocheck = v
+            if not tocheck:
+                continue
+            for maybe in tocheck:
+                if maybe not in attrs:
+                    continue
+                try:
+                    cn = nodes[maybe]
+                except KeyError:
+                    cn = Node(maybe, **attrs.get(maybe, {}))
+                    nodes[maybe] = cn
+
+                e = '%s -> %s[style=dashed,constraint=false,color=gray]' % (n.dot_name(), cn.dot_name())
+                edges.append(e)
+
+        
 
     ret = ["digraph pgraph {",
            "rankdir=LR;",
@@ -147,12 +191,15 @@ def resolve_path(obj, jpath):
 
 def uses_to_params(uses):
     '''
-    Given a list of "uses", return a dictionary of their "data" entries keyed by type:name
+    Given a list of nodes, return a dictionary of their "data" entries
+    keyed by 'type' or 'type:name'
     '''
     ret = dict()
     for one in uses:
-        tn = one["type"]
-        if one.has_key("name"):
+        if type(one) != dict:
+            print type(one),one
+        tn = one[u"type"]
+        if one.has_key("name") and one['name']:
             tn += ":" + one["name"]
         ret[tn] = one.get("data", {})
     return ret
@@ -170,10 +217,14 @@ def cmd_dotify(ctx, jpath, params, json_file, out_file):
     Convert a JSON file for a WCT job configuration based on the
     Pgraph app into a dot file.
 
-    Use jpath to apply this function to a subset of what the input
-    file compiles to.  Use "-1" to index the last element of the
+    The JSON file needs to at least contain a list of edges found at
+    the given jpath.  Use, eg, "-1" to locate the last element of a
     configuration sequence which is typically the config for a
-    Pgrapher.
+    Pgrapher.  If indeed it is, its [jpath].data.edges attribution
+    will be located and the overall JSON data structure will be used
+    as a list of nodes.  Otherwise [jpath].edges will be used and
+    [jpath].uses will be used to provide an initial list of node
+    objects.
     '''
     if json_file.endswith(".jsonnet"):
         import _jsonnet
@@ -193,8 +244,9 @@ def cmd_dotify(ctx, jpath, params, json_file, out_file):
     #     sys.exit(1)
 
     if cfg.get("type","") == "Pgrapher":    # the Pgrapher app holds edges in "data" attribute
+        print ('Pgrapher object found at jpath: "%s" with %d nodes' % (jpath, len(dat)))
         edges = cfg["data"]["edges"] 
-        uses = dat                   # if Pgrapher, then original is likely the full config sequence.
+        uses = dat # if Pgrapher, then original is likely the full config sequence.
     else:
         edges = cfg["edges"] # Pnodes have edges as top-level attribute
         uses = cfg.get("uses", list())
