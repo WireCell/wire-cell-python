@@ -162,6 +162,28 @@ def wires_info(ctx, json_file):
     print ('\n'.join(dat))
 
     
+@cli.command("wires-volumes")
+@click.option('-a', '--anode', default=1.0,
+              help='Distance from collection plane to "anode" (cutoff) plane (cm)')
+@click.option('-r', '--response', default=10.0,
+              help='Distance from collection plane to "respones" plane, should probably match Garfield (cm)')
+@click.option('-c', '--cathode', default=1.0,
+              help='Distance from colleciton plane to "cathode" plane (cm)')
+@click.argument("json-file")
+@click.pass_context
+def wires_volumes(ctx, anode, response, cathode, json_file):
+    '''
+    Print a parms.det.volumes JSON fragment for the given wires file.
+
+    You very likely want to carefully supply ALL command line options.
+    '''
+    import wirecell.util.wires.persist as wpersist
+    import wirecell.util.wires.info as winfo
+    wires = wpersist.load(json_file)
+    jv = winfo.jsonnet_volumes(wires, anode*units.cm, response*units.cm, cathode*units.cm)
+    print jv
+
+    
 
 @cli.command("plot-wires")
 @click.argument("json-file")
