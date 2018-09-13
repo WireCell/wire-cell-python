@@ -21,6 +21,12 @@ def baseline_subtract(frame):
     return (frame.T - numpy.median(frame, axis=1)).T
 
 
+def parse_channel_boundaries(cb):
+    if type(cb) != type(""):
+        return cb               # assume already parsed.
+    return tuple(map(int, cb.split(',')))
+    
+
 def group_channel_indices(channels, boundaries=()):
     '''
     Given a list of channels, return a list of lists where each
@@ -28,6 +34,8 @@ def group_channel_indices(channels, boundaries=()):
     given, then force a grouping on that channel even if there's not
     jump.
     '''
+
+    print ("Channel boundaries: %s" % str(boundaries))
 
     channels = numpy.asarray(channels)
     chan_list = channels.tolist()
@@ -68,7 +76,50 @@ class Frame(object):
         for n in 'frame channels tickinfo'.split():
             setattr(self, n, thing(n))
         
+        self.channel_boundaries = ()
+
+    def plot_ticks(self, tick0=0, tickf=-1, raw=True, chinds = ()):
+        '''
+        Plot in terms of ticks.  Here, the frame is assumed to be
+        dense and chinds are taken as channel ranges.
+        '''
+        frame = self.frame
+        print ("Frame shape: %s" % str(frame.shape))
+
+        if not raw:
+            frame = baseline_subtract(frame)
+
+
+        if not chinds:
+            chinds = group_channel_indices(self.channels, self.channel_boundaries)
+
+        tick = self.tickinfo[1]
+        if tickf < 0:
+            tickf += frame.shape[1]
+
+        ngroups = len(chinds)
+        fig, axes = plt.subplots(nrows=ngroups, ncols=1, sharex = True)
+        if ngroups == 1:
+            axes = [axes]       # always list 
+
+        for ax, chind in zip(axes, chinds):
+            ngroups -= 1
+            ch1 = self.channels[chind[0]]
+            ch2 = self.channels[chind[1]-1]
+
+            extent = (tick0, tickf, ch2, ch1)
+            print ("exent: %s" % str(extent))
+
+            im = ax.imshow(frame[chind[0]:chind[1],tick0:tickf],
+                           aspect='auto', extent=extent, interpolation='none')
+            plt.colorbar(im, ax=ax)
+            if not ngroups:
+                ax.set_xlabel('ticks (%.2f us)' % (tick/units.us),)
+
+        return fig,axes
+
     def plot(self, t0=None, tf=None, raw=True, chinds = ()):
+
         frame = self.frame
         if not raw:
             frame = baseline_subtract(frame)

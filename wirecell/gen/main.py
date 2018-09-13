@@ -130,18 +130,22 @@ def plot_test_boundaries(ctx, times, npz_file, pdf_file):
 @cli.command("plot-sim")
 @click.argument("input-file")
 @click.argument("output-file")
+@click.option("--ticks/--no-ticks", default=False,
+              help="Plot ticks, not time.")
 @click.option("-p", "--plot", default='frame',
-                  help="The plot to make.")
+              help="The plot to make.")
 @click.option("--tag", default='',
-                  help="The frame tag.")
-@click.option("-t", "--time-range", default='0,5',
+              help="The frame tag.")
+@click.option("-t", "--time-range", default='',
                   help="The time range in ms.")
 @click.option("-n", "--number", default=0,
                   help="The number of the frame or depo set to plot.")
 @click.option("-c", "--channel-groups", default='',
                   help="Indices of channel groups as comma separated list.")
+@click.option("-b", "--channel-boundaries", default='',
+                  help="Channels at which there are boundaries.")
 @click.pass_context
-def plot_sim(ctx, input_file, output_file, plot, tag, time_range, number, channel_groups):
+def plot_sim(ctx, input_file, output_file, ticks, plot, tag, time_range, number, channel_groups, channel_boundaries):
     '''
     Make plots of sim quantities saved into numpy array files.
     '''
@@ -151,20 +155,35 @@ def plot_sim(ctx, input_file, output_file, plot, tag, time_range, number, channe
     import matplotlib.pyplot as plt
     from matplotlib.backends.backend_pdf import PdfPages
 
+    if not time_range:
+        if ticks:
+            time_range = "0,-1"
+        else:
+            time_range = '0,5'
+
     fp = numpy.load(input_file)
 
     if 'frame' in plot:
         print "Frames: %s" %(', '.join([k for k in fp.keys() if k.startswith("frame")]), )
         fr = wirecell.gen.sim.Frame(fp, tag=tag, ident=number)
-        ch = wirecell.gen.sim.group_channel_indices(fr.channels)
+        
+        channel_boundaries = wirecell.gen.sim.parse_channel_boundaries(channel_boundaries)
+        ch = wirecell.gen.sim.group_channel_indices(fr.channels, channel_boundaries)
         print "All channel groups: ", ch
         if channel_groups:
             ch = [ch[int(ci)] for ci in channel_groups.split(",")]
         print "Using groups: ", ch
         
-        t0,tf = [float(t)*units.ms for t in time_range.split(",")]
 
-        fig, axes = fr.plot(t0, tf, raw=False, chinds=ch)
+        if ticks:
+            plotter = fr.plot_ticks
+            t0,tf = [int(t,10) for t in time_range.split(",")]
+        else:
+            plotter = fr.plot
+            t0,tf = [float(t)*units.ms for t in time_range.split(",")]
+
+
+        fig, axes = plotter(t0, tf, raw=False, chinds=ch)
         plt.savefig(output_file)
 
     if 'depo' in plot:
