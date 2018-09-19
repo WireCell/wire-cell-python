@@ -136,6 +136,52 @@ def allplanes(store, pdffile):
     plane_colors=["blue","red","black"]
 
     with PdfPages(pdffile) as pdf:
+        # make channel plots
+        for anode in store.anodes:
+            edge_z = list()
+            edge_x = list()
+            edge_n = list()
+            edge_s = list()
+
+            for iface in anode.faces:            
+                face = store.faces[iface]
+
+                for iplane in face.planes:
+                    plane = store.planes[iplane]
+                    wires_in_plane = [store.wires[wind] for wind in plane.wires]
+                    wires = [w for w in wires_in_plane if w.segment == 0]
+                    def pt(w): return store.points[w.head]
+                    wires.sort(lambda a,b: cmp(pt(a).z, pt(b).z))
+                    def add_edge(w):
+                        p = pt(w)
+                        print p,w.channel
+                        edge_z.append(p.z/units.m)
+                        edge_x.append(p.x/units.m)
+                        edge_n.append(w.channel)
+                        edge_s.append('f%d p%d c%d w%d' % (face.ident, plane.ident, w.channel,  w.ident))
+                    add_edge(wires[0])
+                    add_edge(wires[-1])
+
+            fig, ax = plt.subplots(nrows=1, ncols=1)
+            ax.scatter(edge_z, edge_x, s=1, c='red', marker='.')
+            for i,(z,x,s) in enumerate(zip(edge_z, edge_x, edge_s)):
+                hal = ["left","right"][i%2]
+                ax.text(z, x, s, horizontalalignment=hal,
+                        bbox=dict(facecolor='yellow', alpha=0.5, pad=1))
+            for i in range(len(edge_n)//2):
+                z = 0.5*(edge_z[2*i]+edge_z[2*i+1])
+                n = 1+abs(edge_n[2*i] - edge_n[2*i+1])
+                x = edge_x[2*i]
+                ax.text(z, x, str(n), horizontalalignment='center',
+                        bbox=dict(facecolor='yellow', alpha=0.5, pad=1))
+                
+
+            ax.set_title("Edge Channels AnodeID: %d" % (anode.ident))
+            ax.set_xlabel("Z [meter]")
+            ax.set_ylabel("Y [meter]")
+            pdf.savefig(fig)
+            plt.close()
+
         for anode in store.anodes:
             seg_x1 = [list(),list(),list()]
             seg_x2 = [list(),list(),list()]
@@ -179,8 +225,6 @@ def allplanes(store, pdffile):
             plt.tight_layout()
             pdf.savefig(fig)
             plt.close()
-
-
             continue            # anodes
 
         for anode in store.anodes:
@@ -241,7 +285,7 @@ def allplanes(store, pdffile):
 
                     ax.set_xlabel("Z [meter]")
                     ax.set_ylabel("Y [meter]")
-                    ax.set_title("AnodeID %d, FaceID %d, PlaneID %d every %dth wire, x=%dm" % \
+                    ax.set_title("AnodeID %d, FaceID %d, PlaneID %d every %dth wire, x=%.3fm" % \
                                  (anode.ident, face.ident, plane.ident, wire_step, wirex))
                     pdf.savefig(fig)
                     plt.close()
