@@ -82,10 +82,11 @@ def summary(store):
                               bb.minp['y']/units.mm, bb.maxp['y']/units.mm,
                               bb.minp['z']/units.mm, bb.maxp['z']/units.mm))
                 for plane in face['planes']:
-                    lines.append('\t%d: x=%.2fmm dx=%.4fmm' % \
+                    lines.append('\t%d: x=%.2fmm dx=%.4fmm n=%d' % \
                                  (plane['ident'],
                                   plane['wires'][0]['head']['x']/units.mm,
-                                  (plane['wires'][0]['head']['x']-face['planes'][2]['wires'][0]['head']['x'])/units.mm))
+                                  (plane['wires'][0]['head']['x']-face['planes'][2]['wires'][0]['head']['x'])/units.mm,
+                                  len(plane['wires'])))
     return lines
 
 def jsonnet_volumes(store,
