@@ -158,7 +158,7 @@ def allplanes(store, pdffile):
                         edge_z.append(p.z/units.m)
                         edge_x.append(p.x/units.m)
                         edge_n.append(w.channel)
-                        edge_s.append('f%d p%d c%d w%d' % (face.ident, plane.ident, w.channel,  w.ident))
+                        edge_s.append('f%d p%d c%d wid%d' % (face.ident, plane.ident, w.channel,  w.ident))
                     add_edge(wires[0])
                     add_edge(wires[-1])
 
@@ -277,7 +277,7 @@ def allplanes(store, pdffile):
 #                        if wcount == 1:
 #                            hal = "right"
                             
-                        t='wip:%d ch:%d' %(wire.ident, wire.channel)
+                        t='wid:%d ch:%d' %(wire.ident, wire.channel)
                         ax.text(x, y, t,
                                     horizontalalignment=hal,
                                     bbox=dict(facecolor='yellow', alpha=0.5, pad=10))

@@ -148,13 +148,18 @@ class Frame(object):
 
         for ax, chind in zip(axes, chinds):
             ngroups -= 1
-            ch1 = self.channels[chind[0]]
-            ch2 = self.channels[chind[1]-1]
+            chind0 = chind[0]
+            chind1 = chind[1]
+
+            ch1 = self.channels[chind0]
+            ch2 = self.channels[chind1-1]
 
             extent = (t0/units.ms, tf/units.ms, ch2, ch1)
+            print ("exent: %s, chind=(%d,%d)" % (str(extent), chind0, chind1) )
+
 
             #print (chind,extent, chind, tick0, tickf, frame.shape)
-            im = ax.imshow(frame[chind[0]:chind[1],tick0:tickf],
+            im = ax.imshow(frame[chind0:chind1,tick0:tickf],
                            aspect='auto', extent=extent, interpolation='none')
             plt.colorbar(im, ax=ax)
             if not ngroups:
