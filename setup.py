@@ -13,6 +13,9 @@ setup(
     packages = find_packages(),
     install_requires = [
         'Click',
+        'numpy',
+        'matplotlib',
+        'mayavi',
     ],
     entry_points = dict(
         console_scripts = [
@@ -21,6 +24,7 @@ setup(
             'wirecell-gen = wirecell.gen.main:main',
             'wirecell-validate = wirecell.validate.main:main',
             'wirecell-pgraph = wirecell.pgraph.main:main',
+            'wirecell-img = wirecell.img.main:main',
         ]
     )
 )
