@@ -75,6 +75,7 @@ def clusters2blobs(tap):
                 continue
             if key == 'span':
                 thickness = val
+                continue
             datasetnames.add(key)
             vals[key] = val;
         pts,cells = extrude(pts, thickness)
