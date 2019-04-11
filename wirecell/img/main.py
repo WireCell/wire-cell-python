@@ -24,8 +24,12 @@ def paraview_blobs(ctx, cluster_tap_file, paraview_file):
     from tvtk.api import write_data
     
     tap = json.load(open(cluster_tap_file))
+    if 0 == len(tap["vertices"]):
+        click.echo("no verticies in %s" % cluster_tap_file)
+        return
     dat = vtk.clusters2blobs(tap)
     write_data(dat, paraview_file)
+    click.echo(paraview_file)
     return
 
 

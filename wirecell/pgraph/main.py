@@ -105,7 +105,7 @@ def dotify(edge_dat, attrs):
     for edge in edge_dat:
         t,tp = get(edge, "tail")
         h,hp = get(edge, "head")
-        e = '%s:out%d -> %s:in%d' % (t.dot_name(),tp, h.dot_name(),hp)
+        e = '"%s":out%d -> "%s":in%d' % (t.dot_name(),tp, h.dot_name(),hp)
         edges.append(e);
 
     # Try to find any components refereneced.
@@ -127,7 +127,7 @@ def dotify(edge_dat, attrs):
                     cn = Node(maybe, **attrs.get(maybe, {}))
                     nodes[maybe] = cn
 
-                e = '%s -> %s[style=dashed,color=gray]' % (n.dot_name(), cn.dot_name())
+                e = '"%s" -> "%s"[style=dashed,color=gray]' % (n.dot_name(), cn.dot_name())
                 edges.append(e)
 
         
@@ -136,7 +136,7 @@ def dotify(edge_dat, attrs):
            "rankdir=LR;",
            "\tnode[shape=record];"]
     for nn,node in sorted(nodes.items()):
-        ret.append('\t%s[label="%s"];' % (node.dot_name(), node.dot_label()))
+        ret.append('\t"%s"[label="%s"];' % (node.dot_name(), node.dot_label()))
     for e in edges:
         ret.append("\t%s;" % e)
     ret.append("}")
