@@ -4,7 +4,7 @@ Functions related to responses.
 '''
 from wirecell import units
 
-import schema
+from . import schema
 
 import math
 import numpy
@@ -357,7 +357,7 @@ def plane_impact_blocks(rflist, eresp = None):
         nregions = len(regions)
         ntbins = len(inplane[0].response)
         pib_shape = (nimpacts, nregions, ntbins)
-        print pib_shape
+
         pib = numpy.zeros(pib_shape)
         for inimpact in byimpact:
             impact_index = impacts.index(inimpact[0].impact)
@@ -710,9 +710,7 @@ def line(rflist, normalization=13700*units.eplus):
 
     impacts = set([rf.impact for rf in rflist])
     if len(impacts) > 1:
-        print "Averaging",len(rflist),"=3*",len(rflist)/3
         rflist = average(rflist)
-        print "got back",len(rflist),"=3*",len(rflist)/3
     byplane = group_by(rflist, 'plane')
     
     # sum across all impact positions assuming a single point source is

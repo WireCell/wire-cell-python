@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 from .. import units
-import response
+from . import response
 
 import numpy
 import matplotlib.pyplot as plt
@@ -19,7 +19,7 @@ def fine_response(rflist_fine, regions = None, shaped=False):
     byplane = response.group_by(rflist_fine, 'plane')
 
     for iplane, plane_rfs in enumerate(byplane):
-        print 'plane %d, %d regions' % (iplane, len(plane_rfs))
+        print ('plane %d, %d regions' % (iplane, len(plane_rfs)))
         byregion = response.group_by(plane_rfs,'region')
 
         byregion = [lst for lst in byregion if lst[0].region in regions]
@@ -30,14 +30,13 @@ def fine_response(rflist_fine, regions = None, shaped=False):
 
             ax = axes[iregion][iplane]
             ax.set_title('region %d' % (first.region,))
-            print "plane=%s, region=%d, impacts: " % (first.plane,first.region),
+            # print ("plane=%s, region=%d, impacts: " % (first.plane,first.region))
             for rf in region_rfs:
                 if shaped:
                     rf = rf.shaped()
                 times = numpy.linspace(*rf.domainls)/units.us
                 ax.plot(times, rf.response)
-                print "[%f] " % rf.impact,
-            print
+                # print "[%f] " % rf.impact,
     
     
 def average_shaping(rflist_avg, gain_mVfC=14, shaping=2.0*units.us, nbins=5000):
@@ -177,7 +176,6 @@ def plane_impact_blocks(pibs):
 
     minres = [numpy.min(pibs.response(p, 0.0, 0)) for p in 'uvw']
     maxres = [numpy.max(pibs.response(p, 0.0, 0)) for p in 'uvw']
-    print minres, maxres
 
 
     for iplane, plane in enumerate(pibs.plane_keys):
@@ -212,13 +210,13 @@ def plane_impact_blocks_full(pibs):
 
     region_keys = list(pibs.region_keys)
     nregions = len(region_keys)
-    print '%d regions: %s' % (nregions, region_keys)
+    print ('%d regions: %s' % (nregions, region_keys))
 
     impact_keys = list(pibs.impact_keys) # put positive numbers on top
     nimpacts = len(impact_keys)
-    print '%d impacts: %s' % (nimpacts, impact_keys)
+    print ('%d impacts: %s' % (nimpacts, impact_keys))
     
-    print "t=(%f,%f)" % (pibs.tmin, pibs.tmax)
+    print ("t=(%f,%f)" % (pibs.tmin, pibs.tmax))
     times, regions = numpy.meshgrid(
         numpy.linspace(pibs.tmin, pibs.tmax, pibs.ntbins),
         numpy.linspace(impact_keys[0]+region_keys[0],
@@ -226,14 +224,14 @@ def plane_impact_blocks_full(pibs):
                        nimpacts*nregions))
     times /= units.us
     xylim = (times.min(), times.max(), regions.min(), regions.max())
-    print 'limits: ', xylim
+    print ('limits: ', xylim)
 
     fig, axes = plt.subplots(3, 1, sharex=True, sharey=True)
 
     for iplane, plane in enumerate(pibs.plane_keys):
 
         block = numpy.zeros((nregions*nimpacts, pibs.ntbins))
-        print '%s-plane shapes: times=%s regions=%s block=%s ' % (plane, times.shape, regions.shape, block.shape)
+        print ('%s-plane shapes: times=%s regions=%s block=%s ' % (plane, times.shape, regions.shape, block.shape))
 
         for iregion, region in enumerate(region_keys):
             for iimpact, impact in enumerate(impact_keys):
@@ -263,7 +261,7 @@ def response_by_wire_region(rflist_averages):
     byplane = response.group_by(rflist_averages, 'plane')
 
     nwires = map(len, byplane)
-    print "%d planes, nwires: %s" % (len(nwires), str(nwires))
+    print ("%d planes, nwires: %s" % (len(nwires), str(nwires)))
     nwires = min(nwires)
 
     region0s = response.by_region(rflist_averages)
@@ -315,7 +313,7 @@ def response_averages_colz(avgtriple, time):
                           numpy.linspace(minwires, maxwires, nwires))
     x *= 1.0e6                  # put into us
 
-    print x.shape, mintbin, maxtbin, mintime, maxtime, nwires, minwires, maxwires
+    # print (x.shape, mintbin, maxtbin, mintime, maxtime, nwires, minwires, maxwires)
 
     fig = plt.figure()
     cmap = 'seismic'
@@ -386,12 +384,12 @@ def plot_digitized_line(uvw_rfs,
     ymins=list()
     data = list()
     for ind, rf in enumerate(uvw_rfs):
-        print rf.plane, legends[ind], numpy.sum(rf.response)*dt_hi/units.eplus, " electrons"
+        print (rf.plane, legends[ind], numpy.sum(rf.response)*dt_hi/units.eplus, " electrons")
 
         if shaping:
             sig = rf.shaped(gain, shaping)
         else:
-            print 'No shaping'
+            # print 'No shaping'
             sig = rf
         samp = sig.resample(n_lo)
         x = (samp.times-time_offset)/units.us
@@ -400,7 +398,7 @@ def plot_digitized_line(uvw_rfs,
 
         # figure out what to plot
         if shaping:
-            print 'Shaped:', ind, sum(samp.response)
+            print ('Shaped:', ind, sum(samp.response))
             if adc_per_voltage:           # full shaping + ADC
                 adcf = samp.response * adc_per_voltage
                 y = numpy.array(adcf, dtype=int)   #digitize
@@ -412,8 +410,8 @@ def plot_digitized_line(uvw_rfs,
             itot = sum(nonzero)
             dt = len(nonzero)*tick
             qtot = itot*dt
-            print "qtot=%e C, itot=%e uA, dt=%d us, nele=%f" % \
-              (qtot/units.coulomb,itot/units.microampere,dt/units.us,qtot/units.eplus)
+            print ("qtot=%e C, itot=%e uA, dt=%d us, nele=%f" % \
+              (qtot/units.coulomb,itot/units.microampere,dt/units.us,qtot/units.eplus))
 
             y = samp.response/units.nanoampere
 
@@ -434,8 +432,8 @@ def plot_digitized_line(uvw_rfs,
     # limit time
     xmmymm[0] = 0.0
     xmmymm[1] = 50.0
-    if "dune" in detector.lower():
-        xmmymm[1] = 25.0
+    # if "dune" in detector.lower():
+    #     xmmymm[1] = 25.0
 
     # fixme: this plotter should work on other response functions than Garfield
     # 2D with MB-style 3mm pitch.  This titling is for the MB noise paper.  

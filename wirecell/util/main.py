@@ -119,7 +119,7 @@ def plot_wire_regions(ctx, wire_json_file, region_json_file, pdf_file):
                 assert wobj2.channel == one['ch2']
 
                 verts = wo2pg(wobj1,wobj2)
-                print verts
+                #print (verts)
                 pg = Polygon(verts, closed=True, facecolor=colors[pl],
                              alpha=0.3, fill=True, linewidth=.1, edgecolor='black')
                 ret.append(pg)
@@ -181,7 +181,7 @@ def wires_volumes(ctx, anode, response, cathode, json_file):
     import wirecell.util.wires.info as winfo
     wires = wpersist.load(json_file)
     jv = winfo.jsonnet_volumes(wires, anode*units.cm, response*units.cm, cathode*units.cm)
-    print jv
+    click.echo(str(jv))
 
     
 

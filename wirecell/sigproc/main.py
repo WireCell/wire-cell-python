@@ -140,7 +140,7 @@ def plot_garfield_track_response(ctx, gain, shaping, tick, electrons,
     dat = gar.load(garfield_fileset, normalization, zero_wire_locs)
 
     if regions:
-        print "Limiting to %d regions" % regions
+        print ("Limiting to %d regions" % regions)
         dat = [r for r in dat if abs(r.region) in range(regions)]
 
     uvw = res.line(dat, electrons)
@@ -150,7 +150,7 @@ def plot_garfield_track_response(ctx, gain, shaping, tick, electrons,
         detector = "MicroBooNE"
     if "dune_" in garfield_fileset:
         detector = "DUNE"
-    print 'Using detector hints: "%s"' % detector
+    print ('Using detector hints: "%s"' % detector)
 
     nwires = len(set([abs(r.region) for r in dat])) - 1
     #msg = "%d electrons, +/- %d wires" % (electrons, nwires)
@@ -304,8 +304,6 @@ def channel_responses(ctx, tscale, scale, name, infile, outfile):
     tedges = edges[1]
     t0,t1 = tscale*(tedges[0:2])
     tick = t1-t0
-
-    #print tick/units.us, t0/units.us, arr.dtype, arr.shape, numpy.min(arr), numpy.max(arr)
 
     nchans, nticks = arr.shape
     channels = list()

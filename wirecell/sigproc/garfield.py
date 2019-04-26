@@ -21,7 +21,7 @@ These quantities must be given explicitly:
 
 '''
 from .. import units
-import response
+from . import response
 
 import numpy
 import tarfile
@@ -37,14 +37,14 @@ def fromtarfile(filename):
     for name,member in sorted([(m.name,m) for m in tf.getmembers()]):
         if member.isdir():
             continue
-        yield (member.name, tf.extractfile(member).read())
+        yield (member.name, tf.extractfile(member).read().decode('utf-8'))
 # fixme: move to some util module
 def asgenerator(source):
     '''
     If string, assume file, open proper generator, o.w. just return
     '''
     if type(source) not in [type(""), type(u"")]:
-        #print 'Source is not a string: %s' % type(source)
+        #print ('Source is not a string: %s' % type(source))
         return source
     if osp.splitext(source)[1] in [".tar", ".gz", ".tgz"]:
         return fromtarfile(source)
@@ -177,7 +177,7 @@ def load(source, normalization = None, zero_wire_loc = 0.0):
                 ### debugging: central collection wire has both records but one is miniscule
                 #oldtot = sum(old['y'])
                 #if abs(oldtot) > 0.0: 
-                #    print 'found key already: "%s", sum=%e+%e"' %(key, sum(dat['y']), sum(old['y']))
+                #    print ('found key already: "%s", sum=%e+%e"' %(key, sum(dat['y']), sum(old['y'])))
                 old['y'] += dat['y']
                 continue
 
@@ -191,7 +191,7 @@ def load(source, normalization = None, zero_wire_loc = 0.0):
         zeros = [one for one in byplane if one['wire_region_pos'][0] == zwl and one['impact'] == 0.0]
         if len(zeros) != 1:
             for one in sorted(byplane, key=lambda x: (x['wire_region_pos'][0], x['impact'])):
-                print "region=%s impact=%s" % (one['wire_region_pos'], one['impact'])
+                print ("region=%s impact=%s" % (one['wire_region_pos'], one['impact']))
             raise ValueError("%s-plane, failed to find exactly one zero wire (at %f).  Found: %s wires" % (plane.upper(), zwl, zeros))
         zero_wire_region = zeros[0]['wire_region']
         this_plane = list()
@@ -217,10 +217,6 @@ def load(source, normalization = None, zero_wire_loc = 0.0):
     itot = sum([sum(w.response) for w in w0])/len(w0)
     qtot = itot*dt
 
-    #imin = min([min(w.response) for w in w0])
-    #imax = max([max(w.response) for w in w0])
-    #print 'nw0=%d, dt=%e us, itot=%e nAmp, imm=%e,%e nAmp, qtot=%e ele' % \
-    #  (len(w0), dt/units.us, itot, imin/units.nanoampere, imax/units.nanoampere, qtot/units.eplus)
 
     if normalization is None or normalization == 0:
         print ("No normalizing. But, %d paths (Qavg=%f fC = %f electrons)" % \

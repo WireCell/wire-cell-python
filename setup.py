@@ -15,7 +15,7 @@ setup(
         'Click',
         'numpy',
         'matplotlib',
-        'mayavi',
+#        'mayavi',
     ],
     entry_points = dict(
         console_scripts = [
