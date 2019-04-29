@@ -22,7 +22,7 @@ def cli(ctx):
 class Node (object):
     def __init__(self, tn, **attrs):
         if not attrs:
-            print "Node(%s) with no attributes"%tn
+            print ("Node(%s) with no attributes"%tn)
 
         self.tn = tn
         tn = tn.split(":")
@@ -51,7 +51,7 @@ class Node (object):
 
     def dot_label(self):
         ret = list()
-        if self.ports.has_key("head"):
+        if "head" in self.ports:
             head = "{%s}" % ("|".join(["<in%d>%d"%(num,num) for num in sorted(self.ports["head"])]),)
             ret.append(head)
 
@@ -67,7 +67,7 @@ class Node (object):
         body = r"{%s}" % body
         ret.append(body)
 
-        if self.ports.has_key("tail"):
+        if "tail" in self.ports:
             tail = "{%s}" % ("|".join(["<out%d>%d"%(num,num) for num in sorted(self.ports["tail"])]),)
             ret.append(tail)
 
@@ -109,7 +109,7 @@ def dotify(edge_dat, attrs):
         edges.append(e);
 
     # Try to find any components refereneced.
-    for tn,n in nodes.items():
+    for tn,n in list(nodes.items()):
         for k,v in n.attrs.items():
             tocheck = None
             if is_string(v):
@@ -121,9 +121,9 @@ def dotify(edge_dat, attrs):
             for maybe in tocheck:
                 if maybe not in attrs:
                     continue
-                try:
-                    cn = nodes[maybe]
-                except KeyError:
+
+                cn = nodes.get(maybe,None);
+                if cn is None:
                     cn = Node(maybe, **attrs.get(maybe, {}))
                     nodes[maybe] = cn
 
@@ -197,9 +197,9 @@ def uses_to_params(uses):
     ret = dict()
     for one in uses:
         if type(one) != dict:
-            print type(one),one
+            print (type(one),one)
         tn = one[u"type"]
-        if one.has_key("name") and one['name']:
+        if "name" in one and one['name']:
             tn += ":" + one["name"]
         ret[tn] = one.get("data", {})
     return ret
