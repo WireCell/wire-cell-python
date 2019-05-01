@@ -349,12 +349,13 @@ def response_averages_colz(avgtriple, time):
 
 
 def plot_digitized_line(uvw_rfs,
-                            gain=14.0*units.mV/units.fC,
-                            shaping=2.0*units.us,
-                            tick=0.5*units.us,
-                            adc_per_voltage = 1.2*4096/(2.0*units.volt),
-                            detector = "MicroBooNE",
-                            ymin=None, ymax=None, msg=""):
+                        gain=14.0*units.mV/units.fC,
+                        shaping=2.0*units.us,
+                        tick=0.5*units.us,
+                        adc_per_voltage = 1.2*4096/(2.0*units.volt),
+                        detector = "MicroBooNE",
+                        ymin=None, ymax=None, msg="",
+                        tick_padding=0):
     '''
     Make plot of shaped and digitized response functions.
 
@@ -414,6 +415,10 @@ def plot_digitized_line(uvw_rfs,
               (qtot/units.coulomb,itot/units.microampere,dt/units.us,qtot/units.eplus))
 
             y = samp.response/units.nanoampere
+        if tick_padding:
+            print ("padding waveforms by %d ticks" % tick_padding)
+            y = numpy.hstack((y[-tick_padding:], y[:-tick_padding]))
+
 
         ymins.append(numpy.min(y))
         ymaxs.append(numpy.max(y))
@@ -432,7 +437,7 @@ def plot_digitized_line(uvw_rfs,
     # limit time
     xmmymm[0] = 0.0
     xmmymm[1] = 50.0
-    # if "dune" in detector.lower():
+    #if "dune" in detector.lower():
     #     xmmymm[1] = 25.0
 
     # fixme: this plotter should work on other response functions than Garfield
@@ -459,13 +464,19 @@ def plot_digitized_line(uvw_rfs,
         xmmymm[3] = ymax
 
     axes.axis(xmmymm)
+    textx = 5
     if "microboone" in detector.lower():
-        axes.text(5,20, "   Garfield 2D calculation\n(perpendicular line source)")
+        axes.text(textx, 20,
+                  "   Garfield 2D calculation\n(perpendicular line source)")
         if msg:
-            axes.text(5,-20, msg)
+            axes.text(textx,-20, msg)
 
     if "dune" in detector.lower():
-        axes.text(15,40, "   Garfield 2D calculation\n(perpendicular line source)")
+        if tick_padding == 0:
+            textx = 15
+
+        axes.text(textx, 40,
+                  "   Garfield 2D calculation\n(perpendicular line source)")
 
 
     return fig, numpy.vstack(data).T

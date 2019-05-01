@@ -88,6 +88,8 @@ def plot_garfield_exhaustive(ctx, normalization, zero_wire_locs,
                   help="Set shaping time in us.")
 @click.option("-t", "--tick", default=0.5,
                   help="Set tick time in us (0.1 is good for no shaping).")
+@click.option("-p", "--tick-padding", default=0,
+                  help="Number of ticks of zero ADC to pre-pad the plots.")
 @click.option("-e", "--electrons", default=13300,
                 help="Set normalization in units of electron charge.")
 @click.option("-a", "--adc-gain", default=1.2,
@@ -111,7 +113,7 @@ def plot_garfield_exhaustive(ctx, normalization, zero_wire_locs,
 @click.argument("garfield-fileset")
 @click.argument("pdffile")
 @click.pass_context
-def plot_garfield_track_response(ctx, gain, shaping, tick, electrons,
+def plot_garfield_track_response(ctx, gain, shaping, tick, tick_padding, electrons,
                                      adc_gain, adc_voltage, adc_resolution,
                                      normalization, zero_wire_locs,
                                      ymin, ymax, regions,
@@ -157,9 +159,10 @@ def plot_garfield_track_response(ctx, gain, shaping, tick, electrons,
     msg=""
 
     fig,data = plots.plot_digitized_line(uvw, gain, shaping,
-                                             adc_per_voltage = adc_per_voltage,
-                                             detector = detector,
-                                             ymin=ymin, ymax=ymax, msg=msg)
+                                         adc_per_voltage = adc_per_voltage,
+                                         detector = detector,
+                                         ymin=ymin, ymax=ymax, msg=msg,
+                                         tick_padding=tick_padding)
     print ("plotting to %s" % pdffile)
     fig.savefig(pdffile)
 
