@@ -5,7 +5,6 @@ A module to produce paraview / vtk objects
 import math
 import numpy
 from collections import defaultdict
-from tvtk.api import tvtk, write_data
 
 
 def extrude(pts, dx):
@@ -56,6 +55,8 @@ def depos2pts(arr):
     Convert numpy array like which comes from 'depo_data_0' key of npz
     file from NumpyDepoSaver to tvtk unstructured grid.
     '''
+    from tvtk.api import tvtk, write_data
+
     npts = arr.shape[1]
     # t,q,x,y,z,dl,dt
     q = arr[1,:].reshape(npts)
@@ -81,6 +82,7 @@ def clusters2blobs(gr):
     '''
     Given a graph object return a tvtk data object with blbos.
     '''
+    from tvtk.api import tvtk, write_data
 
     all_points = list()
     blob_cells = list()
@@ -148,6 +150,8 @@ def get_slice(gr, bnode):
 
 
 def clusters2views(gr):
+    from tvtk.api import tvtk, write_data
+
     class Perwpid:
         def __init__(self):
             self.allind = list()
@@ -195,3 +199,61 @@ def clusters2views(gr):
         all_imgdat[wpid] = imgdat
     return all_imgdat
 
+def blob_center(bdat):
+    '''
+    Return an array of one point at the center of the blob
+    '''
+    thickness = bdat['span']
+    value = bdat['value']
+    arr = numpy.asarray(bdat['corners'])
+
+    npts = arr.shape[0]
+    center = numpy.array([0.0]*4, dtype=float)
+    center[:3] = numpy.sum(arr, 0) / npts
+    center[0] += 0.5*thickness
+    center[3] = value;
+    return center
+    
+
+def blob_uniform_sample(bdat, density):
+    '''
+    Return an array of points uniformly sampled in the blob
+    '''
+    import random
+    from shapely.geometry import Polygon, Point
+    thickness = bdat['span']
+    value = bdat['value']
+
+    # z is x, y is y
+    xstart = bdat['corners'][0][0]
+    corners = [(cp[2],cp[1]) for cp in orderpoints(bdat['corners'])]
+    npts = len(corners);
+    pgon = Polygon(corners)
+    nwant = max(1, int(pgon.area * thickness * density))
+    pts = list()
+    min_x, min_y, max_x, max_y = pgon.bounds
+
+    while len(pts) != nwant:
+        p = Point([random.uniform(min_x, max_x), random.uniform(min_y, max_y)])
+        if (p.within(pgon)):
+            pts.append([random.uniform(xstart, xstart+thickness), p.y, p.x, value/nwant]);
+    return numpy.asarray(pts)
+            
+        
+
+def blobpoints(gr, sample_method=blob_center):
+    '''
+    return Nx4 array with rows made of x,y,z,q.
+    '''
+    arr = None
+
+    for node, ndata in gr.nodes.data():
+        if ndata['code'] != 'b':
+            continue;
+        one = sample_method(ndata)
+        if arr is None:
+            arr = one
+        else:
+            arr = numpy.vstack((arr, one))
+
+    return arr
