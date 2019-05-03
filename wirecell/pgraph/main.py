@@ -200,6 +200,7 @@ def uses_to_params(uses):
             print (type(one),one)
         tn = one[u"type"]
         if "name" in one and one['name']:
+            print (one["name"])
             tn += ":" + one["name"]
         ret[tn] = one.get("data", {})
     return ret
@@ -257,7 +258,7 @@ def cmd_dotify(ctx, jpath, params, json_file, out_file):
     ext = os.path.splitext(out_file)[1][1:]
     dot = "dot -T %s -o %s" % (ext, out_file)
     proc = subprocess.Popen(dot, shell=True, stdin = subprocess.PIPE)
-    proc.communicate(input=dtext)
+    proc.communicate(input=dtext.encode("utf-8"))
     return
 
 def main():
