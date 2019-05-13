@@ -3,6 +3,8 @@
 Functions to provide information about wires
 '''
 from wirecell import units
+import numpy
+import math
 
 def p2p(p):
     return dict(x=p.x, y=p.y, z=p.z)
@@ -62,6 +64,57 @@ class BoundingBox(object):
     def center(self):
         return {c:0.5*(self.minp[c]+self.maxp[c]) for c in "xyz"}
 
+class Ray(object):
+    def __init__(self, wire):
+        self.head = numpy.asarray([wire['head'][c] for c in "xyz"])
+        self.tail = numpy.asarray([wire['tail'][c] for c in "xyz"])
+    @property
+    def ray(self):
+        return self.head - self.tail
+    @property
+    def center(self):
+        return 0.5* (self.head + self.tail)
+
+
+def pitch_mean_rms(wires):
+    '''
+    Return [mean,rms] of pitch
+    '''
+    eks = numpy.asarray([1.0,0.0,0.0])
+    zero = numpy.asarray([0.0, 0.0, 0.0])
+
+    r0 = Ray(wires[0])
+    pdir = numpy.cross(eks, r0.ray)
+    pdir = pdir/numpy.linalg.norm(pdir)
+
+    pmax=pmin=None
+
+    prays = list()
+    for w in wires:
+        r = Ray(w)
+        p = numpy.dot(pdir, r.center)
+        prays.append((p,r))
+    prays.sort()
+    rays = [pr[1] for pr in prays]
+    psum = psum2 = 0.0
+    for r1,r2 in zip(rays[:-1], rays[1:]):
+        p = numpy.dot(pdir,r2.center - r1.center)
+        if pmax is None:
+            pmax = pmin = p
+        else:
+            pmax = max(pmax, p)
+            pmin = min(pmin, p)
+        psum += abs(p)
+        psum2 += p*p
+    n = len(wires)-1
+    pmean = psum/n
+    assert(pmean>0)
+    pvar = (pmean*pmean - psum2/n)/(n-1)
+    return pmean,  math.sqrt(abs(pvar)), pmin, pmax
+
+def format_pitch(p):
+    pmm = tuple([pp/units.mm for pp in p])
+    return "(%.3f +/- %.3f [%.3f<%.3f]) " % pmm
 
 def summary(store):
     '''
@@ -72,21 +125,31 @@ def summary(store):
         for anode in det['anodes']:
             for face in anode['faces']:
                 bb = BoundingBox()
+                pitches = list()
                 for plane in face['planes']:
+                    pitches.append(format_pitch(pitch_mean_rms(plane['wires'])))
                     for wire in plane['wires']:
                         bb(wire['head']);
                         bb(wire['tail']);
+
+                        # if anode['ident']==1 and face['ident']==1:
+                        #     if wire['ident'] == 220:
+                        #         print("--------special")
+                        #         print(wire)
+                        #         print("--------special")                            
+
+
                 lines.append("anode:%d face:%d X=[%.2f,%.2f]mm Y=[%.2f,%.2f]mm Z=[%.2f,%.2f]mm" % \
                              (anode['ident'], face['ident'],
                               bb.minp['x']/units.mm, bb.maxp['x']/units.mm,
                               bb.minp['y']/units.mm, bb.maxp['y']/units.mm,
                               bb.minp['z']/units.mm, bb.maxp['z']/units.mm))
-                for plane in face['planes']:
-                    lines.append('\t%d: x=%.2fmm dx=%.4fmm n=%d' % \
+                for pind, plane in enumerate(face['planes']):
+                    lines.append('\t%d: x=%.2fmm dx=%.4fmm n=%d pitch=%s' % \
                                  (plane['ident'],
                                   plane['wires'][0]['head']['x']/units.mm,
                                   (plane['wires'][0]['head']['x']-face['planes'][2]['wires'][0]['head']['x'])/units.mm,
-                                  len(plane['wires'])))
+                                  len(plane['wires']), pitches[pind]))
     return lines
 
 def jsonnet_volumes(store,

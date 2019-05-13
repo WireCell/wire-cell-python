@@ -70,7 +70,7 @@ def dump(filename, obj, indent=2):
     '''
     btext = dumps(obj, indent=indent).encode()
     if filename.endswith(".json"):
-        open(filename, 'w').write(btext)
+        open(filename, 'wb').write(btext)
         return
     if filename.endswith(".json.bz2"):
         import bz2

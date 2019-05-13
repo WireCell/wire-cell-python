@@ -102,21 +102,26 @@ def load(filename):
 
             face = (1+tpc)%2    # "front" face is 0.
             apa = tpc//2        # pure conjecture
-            wip = wire          # this too
+            wid = wire          # this too
 
             wpid = schema.wire_plane_id(plane, face, apa)
 
             begind = store.make("point", *beg)
             endind = store.make("point", *end)
             
-            wireind = store.make("wire", wip, chan, seg, begind, endind)
+            wireind = store.make("wire", wid, chan, seg, begind, endind)
             wpids[wpid].append(wireind)
 
     def wire_pos(ind):
+        '''
+        Return a number on which to sort wires.  The z-intercept is
+        returned.
+        '''
         wire = store.get("wire", ind)
         p1 = store.get("point", wire.tail)
         p2 = store.get("point", wire.head)
-        return 0.5*(p1.z + p2.z)
+        z_intercept = p1.z - p1.y * (p2.z - p1.z) / ( p2.y - p1.y ) # this will blow up with ICARUS!
+        return z_intercept
 
     # make and collect planes
     by_apa_face = defaultdict(list)
@@ -124,6 +129,7 @@ def load(filename):
         plane,face,apa = schema.plane_face_apa(wpid)
         wire_list.sort(key = wire_pos)
         if face == 1:           # to satisfy pitch-order and wire(x)pitch cross product
+            print ("Reversing wire order for p%d f%d a%d" %(plane,face,apa))
             wire_list.reverse()
         plane_index = store.make("plane", plane, wire_list)
         by_apa_face[(apa,face)].append(plane_index)

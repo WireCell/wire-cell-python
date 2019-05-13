@@ -151,10 +151,10 @@ def allplanes(store, pdffile):
                     wires_in_plane = [store.wires[wind] for wind in plane.wires]
                     wires = [w for w in wires_in_plane if w.segment == 0]
                     def pt(w): return store.points[w.head]
-                    wires.sort(lambda a,b: cmp(pt(a).z, pt(b).z))
+                    wires.sort(key=lambda a: pt(a).z)
                     def add_edge(w):
                         p = pt(w)
-                        print p,w.channel
+                        print (p,w.channel)
                         edge_z.append(p.z/units.m)
                         edge_x.append(p.x/units.m)
                         edge_n.append(w.channel)
@@ -178,7 +178,7 @@ def allplanes(store, pdffile):
 
             ax.set_title("Edge Channels AnodeID: %d" % (anode.ident))
             ax.set_xlabel("Z [meter]")
-            ax.set_ylabel("Y [meter]")
+            ax.set_ylabel("X [meter]")
             pdf.savefig(fig)
             plt.close()
 
@@ -238,7 +238,7 @@ def allplanes(store, pdffile):
             for iface in anode.faces:
                 face = store.faces[iface]
 
-                mid_wires = list()
+                first_wires = list()
                 
                 for iplane in face.planes:
                     plane = store.planes[iplane]
@@ -246,8 +246,7 @@ def allplanes(store, pdffile):
                     print ("anodeID:%d faceID:%d planeID:%d" %
                            (anode.ident, face.ident, plane.ident))
 
-                    nhalf = len(plane.wires)//2
-                    mid_wires.append(plane.wires[nhalf:nhalf+2])
+                    first_wires.append(plane.wires[:2])
 
                     fig, ax = plt.subplots(nrows=1, ncols=1)
                     ax.set_aspect('equal','box')
@@ -274,13 +273,25 @@ def allplanes(store, pdffile):
                         y = p2.y/units.meter
                         wirex = p2.x/units.meter
                         hal="center"
-#                        if wcount == 1:
-#                            hal = "right"
-                            
-                        t='wid:%d ch:%d' %(wire.ident, wire.channel)
+                        # if wcount == 1:
+                        #    hal = "right"
+
+                        t='%s wid:%d ch:%d' %(["beg","end"][wcount], wire.ident, wire.channel)
                         ax.text(x, y, t,
                                     horizontalalignment=hal,
                                     bbox=dict(facecolor='yellow', alpha=0.5, pad=10))
+
+                    # if anode.ident==1 and face.ident==1:
+                    #     for wcount, wind in enumerate(plane.wires):
+                    #         wire = store.wires[wind]
+                    #         if plane.ident==0 and wire.ident == 491 or \
+                    #            plane.ident==1 and wire.ident == 514 or \
+                    #            plane.ident==2 and wire.ident == 256:
+                            
+                    #                 p1 = store.points[wire.tail]
+                    #                 p2 = store.points[wire.head]
+                    #                 print("A1, F1, P%d, W: %s [%s -> %s]" %(plane.ident, wire, p1, p2))
+                            
 
 
                     ax.set_xlabel("Z [meter]")
@@ -293,18 +304,27 @@ def allplanes(store, pdffile):
 
                 # plot directions
                 fig, axes = plt.subplots(nrows=2, ncols=2)
-                for iplane,winds in enumerate(mid_wires):
+                for iplane,winds in enumerate(first_wires):
                     plane_color = "red green blue".split()[iplane]
                     w0 = store.wires[winds[0]]
                     h0 = numpy.asarray(store.points[w0.head])
                     t0 = numpy.asarray(store.points[w0.tail])
                     w1 = store.wires[winds[1]]
+                    h1 = numpy.asarray(store.points[w1.head])
                     t1 = numpy.asarray(store.points[w1.tail])
-                    
+
+                    c0 = 0.5*(h0+t0)
+                    c1 = 0.5*(h1+t1)                    
+
+                    # print ("A%d F%d c0=%s c1=%s" % (anode.ident, face.ident, c0, c1))
+                    # print (winds[0], w0, winds[1], w1)
+                    # print ("h0=%s t0=%s" % (h0, t0))
+                    # print ("h1=%s t1=%s" % (h1, t1))
+
                     w = h0-t0   # wire direction
                     w = w/math.sqrt(numpy.sum(w*w))
 
-                    r = t1-t0    # roughtly in the pitch direction
+                    r = c1-c0    # roughly in the pitch direction
                     r = r/math.sqrt(numpy.sum(r*r))
 
                     x = numpy.cross(w,r) # drift direction

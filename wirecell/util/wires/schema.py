@@ -238,4 +238,6 @@ def wire_plane_id(plane, face, apa):
     return (plane&layer_mask) | (face << face_shift) | (apa << apa_shift)
 
 def plane_face_apa(wpid):
-    return (wpid&layer_mask, (wpid>>face_shift)&face_mask, wpid>>apa_shift)
+    #return (wpid&layer_mask, (wpid>>face_shift)&face_mask, wpid>>apa_shift)
+    return (wpid&layer_mask, (wpid&(1<<face_shift))>>3, wpid>>apa_shift)
+
