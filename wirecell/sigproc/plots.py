@@ -379,7 +379,7 @@ def plot_digitized_line(uvw_rfs,
     colors = ['red', 'blue', 'black']
     legends = ['U-wire', 'V-wire', 'Y-wire']
 
-    fig, axes = plt.subplots(1, 1)
+    fig, axes = plt.subplots(1, 1, dpi=144)
 
     ymaxs=list()
     ymins=list()
@@ -390,7 +390,7 @@ def plot_digitized_line(uvw_rfs,
         if shaping:
             sig = rf.shaped(gain, shaping)
         else:
-            # print 'No shaping'
+            print ('No shaping')
             sig = rf
         samp = sig.resample(n_lo)
         x = (samp.times-time_offset)/units.us
@@ -401,7 +401,7 @@ def plot_digitized_line(uvw_rfs,
         if shaping:
             print ('Shaped:', ind, sum(samp.response))
             if adc_per_voltage:           # full shaping + ADC
-                adcf = samp.response * adc_per_voltage
+                adcf = numpy.floor(samp.response * adc_per_voltage)
                 y = numpy.array(adcf, dtype=int)   #digitize
                 lstype = 'steps'
             else:              # magic ADC, directly measuring voltage
@@ -417,16 +417,16 @@ def plot_digitized_line(uvw_rfs,
             y = samp.response/units.nanoampere
         if tick_padding:
             print ("padding waveforms by %d ticks" % tick_padding)
-            y = numpy.hstack((y[-tick_padding:], y[:-tick_padding]))
-
+            y = numpy.hstack((numpy.zeros((tick_padding,), dtype=int), y[:-tick_padding]))
 
         ymins.append(numpy.min(y))
         ymaxs.append(numpy.max(y))
 
-        axes.plot(x, y,
-                  ls=lstype,
-                  color=colors[ind],
-                  label=legends[ind])
+        if lstype == "steps":
+            print(x.shape, y.shape)
+            axes.step(x, y, color=colors[ind], label=legends[ind])
+        else:
+            axes.plot(x, y, ls=lstype, color=colors[ind], label=legends[ind])
         if not data:
             data.append(x)
         data.append(y)
