@@ -15,6 +15,73 @@ def cli(ctx):
     Wire Cell Signal Processing Features
     '''
 
+@cli.command("fr2npz")
+@click.option("-g", "--gain", default=0.0, type=float,
+                  help="Set gain in mV/fC.")
+@click.option("-s", "--shaping", default=0.0, type=float,
+                  help="Set shaping time in us.")
+@click.argument("json-file")
+@click.argument("npz-file")
+def fr2npz(gain, shaping, json_file, npz_file):
+    '''
+    Convert field response file to numpy (.json or .json.bz2 to .npz)
+
+    If gain and shaping are non zero then convolve each field response
+    function with the corresponding electronics response function.
+
+    Result holds a number of arrays and scalar values.
+
+    Arrays:
+
+        - resp[012] :: one 2D array for each plane.  A wire region is
+          10 pixels wide.  Each row of pixels represents the average
+          field response between the two original drift paths bounding
+          the row.  The 2D array also makes explicit the
+          flipped-symmetry that the original field response file
+          leaves implicit.  The columns mark time.  Note, to make a
+          per-wire sub-array of all impact rows #3 (counting from 0)
+          you can use Numpy indexing like: dat['resp2'][3::10,:]
+
+        - bincenters[012] :: the pitch location in mm of the row
+          centers
+
+        - pitches :: the nominal wire pitch for each plane as used in
+          the Garfield simulation.
+
+        - locations :: the locations along the drift direction of each
+          of the planes.
+
+        - eresp :: electronics response function, if gain/shaping given
+
+        - espec :: the FFT of this, if gain/shaping given
+
+    Scalar values:
+
+        - origin :: in mm of where the drifts start in the same axis
+          as the locations
+
+        - tstart :: time when drift starts
+
+        - period :: the sampling period in ns of the field response
+          (ie, width of resp columns)
+
+        - speed :: in mm/ns of the nominal electron drift speed used
+          in the Garfield calculation.
+    
+        - gain : the passed in gain
+
+        - shaping :: the passed in shaping time
+
+    '''
+    import wirecell.sigproc.response.persist as per
+    import wirecell.sigproc.response.arrays as arrs
+    import numpy
+    fr = per.load(json_file)
+    gain *= units.mV/units.fC
+    shaping *= units.us
+    dat = arrs.fr2arrays(fr, gain, shaping)
+    numpy.savez(npz_file, **dat)
+
 
 @cli.command("response-info")
 @click.argument("json-file")
@@ -23,7 +90,7 @@ def response_info(ctx, json_file):
     '''
     Show some info about a field response file (.json or .json.bz2).
     '''
-    import response.persist as per
+    import wirecell.sigproc.response.persist as per
     fr = per.load(json_file)
     print ("origin:%.2f cm, period:%.2f us, tstart:%.2f us, speed:%.2f mm/us, axis:(%.2f,%.2f,%.2f)" % \
            (fr.origin/units.cm, fr.period/units.us, fr.tstart/units.us, fr.speed/(units.mm/units.us), fr.axis[0],fr.axis[1],fr.axis[2]))
@@ -192,8 +259,8 @@ def plot_garfield_track_response(ctx, gain, shaping, tick, tick_padding, electro
 @click.argument("pdffile")
 @click.pass_context
 def plot_response(ctx, responsefile, pdffile):
-    import response.persist as per
-    import response.plots as plots
+    import wirecell.sigproc.response.persist as per
+    import wirecell.sigproc.response.plots as plots
 
     fr = per.load(responsefile)
     plots.plot_planes(fr, pdffile)

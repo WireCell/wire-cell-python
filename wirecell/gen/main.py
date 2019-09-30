@@ -164,15 +164,15 @@ def plot_sim(ctx, input_file, output_file, ticks, plot, tag, time_range, number,
     fp = numpy.load(input_file)
 
     if 'frame' in plot:
-        print "Frames: %s" %(', '.join([k for k in fp.keys() if k.startswith("frame")]), )
+        print ("Frames: %s" %(', '.join([k for k in fp.keys() if k.startswith("frame")]), ))
         fr = wirecell.gen.sim.Frame(fp, tag=tag, ident=number)
         
         channel_boundaries = wirecell.gen.sim.parse_channel_boundaries(channel_boundaries)
         ch = wirecell.gen.sim.group_channel_indices(fr.channels, channel_boundaries)
-        print "All channel groups: ", ch
+        print ("All channel groups: ", ch)
         if channel_groups:
             ch = [ch[int(ci)] for ci in channel_groups.split(",")]
-        print "Using groups: ", ch
+        print ("Using groups: ", ch)
         
 
         if ticks:
@@ -187,7 +187,7 @@ def plot_sim(ctx, input_file, output_file, ticks, plot, tag, time_range, number,
         plt.savefig(output_file)
 
     if 'depo' in plot:
-        print "Depos: %s" %(', '.join([k for k in fp.keys() if k.startswith("depo_data")]), )
+        print ("Depos: %s" %(', '.join([k for k in fp.keys() if k.startswith("depo_data")]), ))
         deps = wirecell.gen.sim.Depos(fp, ident=number)
         fig, axes = deps.plot()
         plt.savefig(output_file)

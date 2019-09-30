@@ -2,30 +2,30 @@
 
 * What's here.
 
-This package holds some Python modules that support Wire Cell Toolkit.  Currently this is a stand-alone package that does not depend directly on the C++ packages.  
+This package holds some Python modules that support Wire Cell Toolkit.
+Currently this is a stand-alone package that does not depend directly
+on the C++ packages of WCT.
 
-Some of the main functionality is provides is converters and generators of major WCT input data files including:
+Some of the functionality provided includes converters and generators
+of major WCT input data files including:
 
 - field response functions
 - wire geometry
 
 * Installation
 
-This package is somewhat experts only but does install in the "usual Python way".  For example, most developers will want to do something like:
-
 #+BEGIN_EXAMPLE
-  $ virtualenv venv
+  $ python3 -m venv venv
   $ source venv/bin/activate
-  $ python setup.py develop
+  $ cd wire-cell-toolkit/python
+  $ pip install -e .
 #+END_EXAMPLE
 
-In the future, when creating fresh shells, one only needs
+In fresh shells must repeat:
 
 #+BEGIN_EXAMPLE
   $ source venv/bin/activate
 #+END_EXAMPLE
-
-Any =git pull= or editing of the code will be reflected in your environment.
 
 * Command line interfaces
 
@@ -45,4 +45,11 @@ typically named after the module that provides the CLI.  For example:
     convert-garfield              Convert an archive of a Garfield fileset...
     plot-garfield-track-response
 #+END_EXAMPLE
+
+If your shell supports it, see what commands are available with TAB
+completion:
+
+#+begin_example
+  $ wirecell-<TAB><TAB>
+#+end_example
 

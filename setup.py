@@ -17,6 +17,7 @@ setup(
         'matplotlib',
         'mayavi',
         'networkx',
+        'vtk',
     ],
     entry_points = dict(
         console_scripts = [

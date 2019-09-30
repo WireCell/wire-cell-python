@@ -16,31 +16,34 @@ def get_plane(fr, planeid, reflect=True):
     tmin = fr.tstart
     tmax = tmin + ntbins*period
     tdelta = (tmax-tmin)/ntbins
-    print 'TBINS:', ntbins, tmin, tmax, tdelta, period
+    print ('TBINS:', ntbins, tmin, tmax, tdelta, period)
 
     pitches = [path.pitchpos for path in pr.paths]
     pdelta = pitches[1] - pitches[0]
+    if pdelta < 0:
+        print ("plane %d has negative pitch delta: %f" %(planeid, pdelta))
+
     pmax = max(map(abs, pitches)) + 0.5*pdelta   # bin centered
     pmin = -pmax
     npbins = int(round((pmax-pmin)/pdelta))
-    print 'PBINS:', npbins, pmin, pmax, pdelta, (pmax-pmin)/pdelta
+    print ('PBINS:', npbins, pmin, pmax, pdelta, (pmax-pmin)/pdelta)
 
     tlin = numpy.linspace(tmin, tmax, ntbins+1)
     plin = numpy.linspace(pmin, pmax, npbins+1)
 
-    # print 'T:', tlin
-    # print 'P:', plin
+    # print ('T:', tlin)
+    # print ('P:', plin)
 
     times, pitches = numpy.meshgrid(tlin, plin)
     currents = numpy.zeros((npbins, ntbins))
 
     for path in pr.paths:
-        pitch = path.pitchpos
-        pind = int(round((pitch - pmin)/pdelta))
+        pitchpos = path.pitchpos
+        pind = int(round((pitchpos - pmin)/pdelta))
         pind = max(0, pind)
         pind = min(npbins, pind)
 
-        pind_ref = int(round((-pitch - pmin)/pdelta))
+        pind_ref = int(round((-pitchpos - pmin)/pdelta))
         pind_ref = max(0, pind_ref)
         pind_ref = min(npbins, pind_ref)
 
@@ -52,15 +55,16 @@ def get_plane(fr, planeid, reflect=True):
 
             # sanity check on indexing:
             center_line = pitches[pind, tind] + 0.5*pdelta
-            perr = pitch - center_line
+            perr = pitchpos - center_line
             if abs(terr) >= 0.001*tdelta:
-                print 'time:', tind, time, times[pind, tind], terr
+                print ('time error big:', tind, time, times[pind, tind], terr, tdelta)
             if abs(perr) >= 0.001*pdelta:
-                print 'pitch:', pind, pitch, pitches[pind, tind], perr
+                print ('pitch error big: perr=%f pdelta=%f pind=%d pitchpos=%f pitch=%f' % (perr, pdelta, pind, pitchpos, pitches[pind, tind]))
+
             assert abs(terr) < 0.001*tdelta
             assert abs(perr) < 0.001*pdelta
             if pind >= npbins:
-                print 'pitch:', pind, pitch, pitches[pind, tind], perr
+                print ('pitch:', pind, pitchpos, pitches[pind, tind], perr)
 
             currents[pind, tind] = cur
 
@@ -89,7 +93,7 @@ def plot_planes(fr, filename=None):
     for planeid in range(3):
         vlim = vlims[planeid]
         t, p, c = get_plane(fr, planeid)
-        print t.shape, p.shape, c.shape
+        print (t.shape, p.shape, c.shape)
         ax = axes[planeid]
         ax.axis([65, 90, -20, 20])
         ax.set_title('Induced Current %s-plane' % 'UVW'[planeid])

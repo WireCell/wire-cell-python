@@ -1,7 +1,7 @@
 import json
 import numpy
 
-from schema import FieldResponse, PlaneResponse, PathResponse
+from .schema import FieldResponse, PlaneResponse, PathResponse
 
 
 def todict(obj):
