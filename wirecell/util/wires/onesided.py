@@ -3,7 +3,7 @@
 This holds MicroBooNE specific routines related to wire geometry.
 '''
 
-import schema
+from . import schema
 from wirecell import units
 
 import numpy
@@ -21,7 +21,7 @@ def load(filename):
     Somewhere, there exists code to dump wires from larsoft in a text
     format such as what made the files found:
 
-    https://github.com/BNLIF/wire-cell-celltree/tree/master/geometry
+    https://raw.githubusercontent.com/BNLIF/wire-cell-celltree/master/geometry/ChannelWireGeometry_v2.txt
 
     The file is line oriented.  Comment lines may begin with "#" and then have columns of:
 
@@ -69,6 +69,7 @@ def load(filename):
             if not line:
                 continue
             chunks = line.split()
+            print(chunks)
             ch, plane, wip = [int(x) for x in chunks[:3]]
             beg = [float(x)*units.cm for x in chunks[3:6]]
             end = [float(x)*units.cm for x in chunks[6:9]]
@@ -96,8 +97,8 @@ def load(filename):
     for plane, wire_list in sorted(planes.items()):
         wire_list.sort(key = wire_pos)
         index = store.make("plane", plane, wire_list)
-        wire_plane_indices.append(index)   
-    assert(wire_plane_indices == range(3))
+        wire_plane_indices.append(index)
+    assert(wire_plane_indices == list(range(3)))
     face_index = store.make("face", 0, wire_plane_indices)
     store.make("anode", 0, [face_index])
     return store.schema()

@@ -68,11 +68,11 @@ def dump(filename, obj):
         return
     if filename.endswith(".json.bz2"):
         import bz2
-        bz2.BZ2File(filename, 'w').write(text)
+        bz2.BZ2File(filename, 'wb').write(text.encode())
         return
     if filename.endswith(".json.gz"):
         import gzip
-        gzip.open(filename, "wb").write(text)
+        gzip.open(filename, "wb").write(text.encode())
         return
     raise ValueError("unknown file format: %s" % filename)
 

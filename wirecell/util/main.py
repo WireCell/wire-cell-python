@@ -54,7 +54,17 @@ def convert_multitpc_wires(ctx, input_file, output_file):
     store = multitpc.load(input_file)
     persist.dump(output_file, store)
 
-
+@cli.command("convert-icarustpc-wires")
+@click.argument("input-file")
+@click.argument("output-file")
+@click.pass_context
+def convert_icarustpc_wires(ctx, input_file, output_file):
+    '''
+    Description
+    '''
+    from wirecell.util.wires import icarustpc, persist
+    store = icarustpc.load(input_file)
+    persist.dump(output_file, store)
 
 @cli.command("convert-uboone-wire-regions")
 @click.argument("wire-json-file")
@@ -72,7 +82,7 @@ def convert_uboon_wire_regions(ctx, wire_json_file, csvfile, region_json_file):
     store = wpersist.load(wire_json_file)
     ubs = reg.uboone_shorted(store, csvfile)
     wpersist.dump(region_json_file, ubs)
-    
+
 @cli.command("plot-wire-regions")
 @click.argument("wire-json-file")
 @click.argument("region-json-file")
@@ -104,12 +114,12 @@ def plot_wire_regions(ctx, wire_json_file, region_json_file, pdf_file):
     def get_polygons(shorted, triples):
         ret = list()
         for trip in triples:
-            
+
             for one in trip:
                 pl,wip1,wip2 = one["plane"],one["wire1"],one["wire2"]
                 if pl != shorted:
                     continue
-                
+
                 # fixme: this line assumes only 1 face
                 plobj = store.planes[pl]
                 wobj1 = store.wires[plobj.wires[wip1]]
@@ -161,7 +171,7 @@ def wires_info(ctx, json_file):
     dat = winfo.summary(wires)
     print ('\n'.join(dat))
 
-    
+
 @cli.command("wires-volumes")
 @click.option('-a', '--anode', default=1.0,
               help='Distance from collection plane to "anode" (cutoff) plane (cm)')
@@ -183,7 +193,7 @@ def wires_volumes(ctx, anode, response, cathode, json_file):
     jv = winfo.jsonnet_volumes(wires, anode*units.cm, response*units.cm, cathode*units.cm)
     click.echo(str(jv))
 
-    
+
 
 @cli.command("plot-wires")
 @click.argument("json-file")
@@ -375,7 +385,7 @@ def gravio(ctx, dotfile):
     for name, params in G.nodes.items():
         if skip_node(name):
             continue
-        nt = G.nodes[name]['type']        
+        nt = G.nodes[name]['type']
         gr.node(name, shape='point', color=node_colors.get(nt, 'black'))
 
     #link_types = ['slot', 'submodule', 'pt', 'trace', 'wip', 'spot', 'side',
@@ -401,13 +411,13 @@ def gravio(ctx, dotfile):
 @click.pass_context
 def make_wires_onesided(ctx, output_file):
     '''
-    Generate a WCT wires file. 
+    Generate a WCT wires file.
     '''
     import wirecell.util.wires.generator as wgen
     import wirecell.util.wires.persist as wpersist
     s = wgen.onesided_wrapped()           # fixme, expose different algs to CLI
     wpersist.dump(output_file, s)
-    
+
 @cli.command("wire-channel-map")
 @click.argument("input-file")
 @click.pass_context
@@ -430,7 +440,7 @@ def wire_channel_map(ctx, input_file):
                     wire = s.wires[iwire]
                     # fixme: why isn't wire.ident changing?
                     channel_map[(plane.ident,wire.channel)].append(iwire)
-    
+
     for c,wires in sorted(channel_map.items()):
         if c[1] in range(4210, 4235):
             wires.sort()
@@ -442,5 +452,3 @@ def main():
 
 if '__main__' == __name__:
     main()
-    
-    

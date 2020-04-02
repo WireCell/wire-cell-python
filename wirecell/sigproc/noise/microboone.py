@@ -4,7 +4,7 @@ Stuff to deal with MicroBooNE specific noise things and such.
 '''
 
 from wirecell import units, util
-import schema
+from . import schema
 
 import numpy
 
@@ -12,7 +12,7 @@ import numpy
 def load_noise_spectra_v1(filename):
     '''
     Load a noise spectra file in format
-    
+
     <sampfreq> <frequnits> <number> Ticks <gain> <gainunits> <shaping> <timeunit>
     Freq  <wirelenghtincm1>  <wirelenghtincm2> ...
     Plane <       planeid1>  <       planeid2> ...

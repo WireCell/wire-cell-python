@@ -67,7 +67,7 @@ def fr2npz(gain, shaping, json_file, npz_file):
 
         - speed :: in mm/ns of the nominal electron drift speed used
           in the Garfield calculation.
-    
+
         - gain : the passed in gain
 
         - shaping :: the passed in shaping time
@@ -117,14 +117,14 @@ def convert_garfield(ctx, origin, speed, normalization, zero_wire_locs,
     Wire Cell field response file (.json with optional .gz or .bz2
     compression).
     '''
-    import garfield as gar
-    import response as res
-    import response.persist as per
+    import wirecell.sigproc.garfield as gar
+    from wirecell.sigproc.response import rf1dtoschema
+    import wirecell.sigproc.response.persist as per
 
     origin = eval(origin, units.__dict__)
     speed = eval(speed, units.__dict__)
     rflist = gar.load(garfield_fileset, normalization, zero_wire_locs)
-    fr = res.rf1dtoschema(rflist, origin, speed)
+    fr = rf1dtoschema(rflist, origin, speed)
     per.dump(wirecell_field_response_file, fr)
 
 
@@ -200,7 +200,7 @@ def plot_garfield_track_response(ctx, gain, shaping, tick, tick_padding, electro
     shaping *= units.us
     tick *= units.us
     electrons *= units.eplus
-    
+
     adc_gain *= 1.0                       # unitless
     adc_voltage *= units.volt
     adc_resolution = 1<<adc_resolution
@@ -250,7 +250,7 @@ def plot_garfield_track_response(ctx, gain, shaping, tick, tick_padding, electro
         if dump_data.endswith(".json"):
             import json
             open(dump_data,"wt").write(json.dumps(data.tolist(), indent=4))
-                    
+
 
 
 
@@ -301,7 +301,12 @@ def convert_noise_spectra(ctx, format, inputfile, outputfile):
     if format == "microboonev1":
         from wirecell.sigproc.noise.microboone import load_noise_spectra_v1
         loader = load_noise_spectra_v1
-    #elif:...
+    elif format == "icarusv1-incoherent":
+        from wirecell.sigproc.noise.icarus import load_noise_spectra
+        loader = load_noise_spectra
+    elif format == "icarusv1-coherent":
+        from wirecell.sigproc.noise.icarus import load_coherent_noise_spectra
+        loader = load_coherent_noise_spectra
 
     if not loader:
         click.echo('Unknown format: "%s"' % format)
@@ -379,7 +384,7 @@ def channel_responses(ctx, tscale, scale, name, infile, outfile):
     channels = list()
     for ch in range(nchans):
         # reduce down to ~32 bit float precision to save file space
-        res = [float("%.6g"%x) for x in arr[ch,:].tolist()] 
+        res = [float("%.6g"%x) for x in arr[ch,:].tolist()]
         one = [ch, res]
         channels.append(one)
 
@@ -404,4 +409,3 @@ def main():
 
 if '__main__' == __name__:
     main()
-    
