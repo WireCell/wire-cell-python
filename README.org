@@ -27,6 +27,19 @@ In fresh shells must repeat:
   $ source venv/bin/activate
 #+END_EXAMPLE
 
+** ZIO
+
+The ZIO Python package can provide some functionality that WCT may
+make use of (flow/domo brokers).  It's installation is somewhat
+irregular so a script is provided to help.  It will also install the
+~wirecell~ Python module.
+
+#+begin_example
+  $ python3 -m venv venv
+  $ source venv/bin/activate
+  $ ./zioinst.sh
+#+end_example
+
 * Command line interfaces
 
 Some functionality is available from the command line, with a command
