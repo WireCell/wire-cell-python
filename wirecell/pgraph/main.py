@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 '''
 Fixme: make this into a proper click main
 '''
@@ -214,9 +214,7 @@ def uses_to_params(uses):
 @click.argument("out-file")
 @click.pass_context
 def cmd_dotify(ctx, jpath, params, json_file, out_file):
-    '''
-    Convert a JSON file for a WCT job configuration based on the
-    Pgraph app into a dot file.
+    '''Convert a WCT JSON cfg file to a GraphViz dot file.
 
     The JSON file needs to at least contain a list of edges found at
     the given jpath.  Use, eg, "-1" to locate the last element of a
@@ -226,6 +224,16 @@ def cmd_dotify(ctx, jpath, params, json_file, out_file):
     as a list of nodes.  Otherwise [jpath].edges will be used and
     [jpath].uses will be used to provide an initial list of node
     objects.
+
+    Example bash command using a full job config run from
+    wire-cell-toolkit/ source:
+
+    $ jsonnet -J cfg mycfg.jsonnet > mycfg.json
+
+    $ wirecell-pgraph dotify --jpath=-1 mycfg.json mycfg.dot
+
+    $ dot -Tpdf -o mycfg.pdf mycfg.dot
+
     '''
     if json_file.endswith(".jsonnet"):
         import _jsonnet
