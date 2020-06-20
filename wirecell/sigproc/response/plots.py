@@ -96,7 +96,7 @@ def plot_planes(fr, filename=None):
     fig.subplots_adjust(left=0.1, right=1.0, top=0.95, bottom=0.05)
 
     # vlims = [0.1, 0.1, 0.1] # linear style
-    vlims = [4, 4, 4] # "log10" style
+    vlims = [3, 3, 3] # "log10" style
 
     for planeid in range(3):
         vlim = vlims[planeid]
@@ -113,7 +113,7 @@ def plot_planes(fr, filename=None):
         ax.set_xlabel('Time [us]')
         im = ax.pcolormesh(t/units.us, p/units.mm, lg10(c/units.picoampere),
                                vmin=-vlim, vmax=vlim,
-                               cmap='seismic')
+                               cmap='jet') # also try seismic
         fig.colorbar(im, ax=[ax], shrink=0.9, pad=0.05)
 
         # for iwire in range(10):
