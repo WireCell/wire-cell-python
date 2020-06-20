@@ -59,7 +59,7 @@ def split_text_records(text):
         if maybe.startswith("Created"):
             yield maybe
 
-def parse_text_record(text):
+def parse_text_record(text, delay=0):
     '''
     Iterate on garfield text, returning one record.
     '''
@@ -114,10 +114,20 @@ def parse_text_record(text):
     # ...
     #  +     0.99800003E+02   0.00000000E+00
     #  +     0.99900002E+02   0.00000000E+00 )
+    x0 = float(lines[9][4:].split()[0]) # first line, first column
+    x1 = float(lines[10][4:].split()[0]) # second line, first column
+    tbin = x1 - x0
     for line in lines[9:9+nbins]:
         xy = line[4:].split()
-        xdata.append(float(xy[0]))
+        xdata.append(float(xy[0]) + int(delay)*tbin)
         ydata.append(float(xy[1]))
+    lenx = len(xdata)
+    leny = len(ydata)
+    xdata = [i*tbin for i in range(int(delay))] + xdata
+    ydata0 = ydata[0]
+    ydata = [ydata0 for i in range(int(delay))] + ydata
+    xdata = xdata[:lenx] # trim the data
+    ydata = ydata[:leny]
     if nbins != len(xdata) or nbins != len(ydata):
         raise ValueError('parse error for "%s"' % wire)
     ret['x'] = numpy.asarray(xdata)*xscale
@@ -136,7 +146,7 @@ def parse_filename(filename):
         plane = 'w'
     return dict(impact=float(dist), plane=plane, filename=filename)
 
-def load(source, normalization = None, zero_wire_loc = 0.0):
+def load(source, normalization = None, zero_wire_loc = 0.0, delay=0):
     '''Load Garfield data source (eg, tarball).
 
     Return list of response.ResponseFunction objects.
@@ -168,7 +178,7 @@ def load(source, normalization = None, zero_wire_loc = 0.0):
 
         gen = split_text_records(text)
         for rec in gen:
-            dat = parse_text_record(rec)
+            dat = parse_text_record(rec, delay)
 
             key = tuple([filename] + [dat[k] for k in ['group', 'wire_region', 'label']])
 
