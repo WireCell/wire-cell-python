@@ -435,10 +435,10 @@ def plot_digitized_line(uvw_rfs,
     xmmymm = list(axes.axis())
 
     # limit time
-    xmmymm[0] = 10 # 0.0
-    xmmymm[1] = 15 # 50.0
-    #if "dune" in detector.lower():
-    #     xmmymm[1] = 25.0
+    xmmymm[0] = 0.0
+    xmmymm[1] = 50.0
+    if "dune" in detector.lower():
+        xmmymm[1] = 25.0
 
     # fixme: this plotter should work on other response functions than Garfield
     # 2D with MB-style 3mm pitch.  This titling is for the MB noise paper.  
