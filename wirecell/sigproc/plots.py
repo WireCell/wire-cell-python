@@ -68,14 +68,14 @@ def average_shaping(rflist_avg, gain_mVfC=14, shaping=2.0*units.us, nbins=5000):
     
     
 
-def one_electronics(gain, shaping, tick=0.1*units.us):
+def one_electronics(gain, shaping, tick=0.1*units.us, elec_type="cold"):
     '''
     Plot one electronics response function
     '''
     tmax = 10*units.us
     nticks = tmax/tick
     times = numpy.linspace(0, tmax, nticks)
-    res = response.electronics(times, gain, shaping)
+    res = response.electronics(times, gain, shaping, elec_type)
     fig, axes = plt.subplots(1, 1)
 
     x = times/units.us
@@ -352,6 +352,7 @@ def plot_digitized_line(uvw_rfs,
                         gain=14.0*units.mV/units.fC,
                         shaping=2.0*units.us,
                         tick=0.5*units.us,
+                        elec_type="cold",
                         adc_per_voltage = 1.2*4096/(2.0*units.volt),
                         detector = "MicroBooNE",
                         ymin=None, ymax=None, msg="",
@@ -388,7 +389,7 @@ def plot_digitized_line(uvw_rfs,
         print (rf.plane, legends[ind], numpy.sum(rf.response)*dt_hi/units.eplus, " electrons")
 
         if shaping:
-            sig = rf.shaped(gain, shaping)
+            sig = rf.shaped(gain, shaping, elec_type=elec_type)
         else:
             print ('No shaping')
             sig = rf
@@ -437,8 +438,8 @@ def plot_digitized_line(uvw_rfs,
     # limit time
     xmmymm[0] = 0.0
     xmmymm[1] = 50.0
-    if "dune" in detector.lower():
-        xmmymm[1] = 25.0
+    # if "dune" in detector.lower():
+    #     xmmymm[1] = 25.0
 
     # fixme: this plotter should work on other response functions than Garfield
     # 2D with MB-style 3mm pitch.  This titling is for the MB noise paper.  
