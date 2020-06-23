@@ -40,11 +40,13 @@ def response_info(ctx, json_file):
               help="Set normalization: 0:none, <0:electrons, >0:multiplicative scale.  def=0")
 @click.option("-z", "--zero-wire-locs", default=[0.0,0.0,0.0], nargs=3, type=float,
               help="Set location of zero wires.  def: 0 0 0")
+@click.option("-d", "--delay", default=0,
+              help="Set additional delay of bins in the output field response.  def=0")
 @click.argument("garfield-fileset")
 @click.argument("wirecell-field-response-file")
 @click.pass_context
 def convert_garfield(ctx, origin, speed, normalization, zero_wire_locs,
-                         garfield_fileset, wirecell_field_response_file):
+                    delay, garfield_fileset, wirecell_field_response_file):
     '''
     Convert an archive of a Garfield fileset (zip, tar, tgz) into a
     Wire Cell field response file (.json with optional .gz or .bz2
@@ -56,7 +58,7 @@ def convert_garfield(ctx, origin, speed, normalization, zero_wire_locs,
 
     origin = eval(origin, units.__dict__)
     speed = eval(speed, units.__dict__)
-    rflist = gar.load(garfield_fileset, normalization, zero_wire_locs)
+    rflist = gar.load(garfield_fileset, normalization, zero_wire_locs, delay)
     fr = res.rf1dtoschema(rflist, origin, speed)
     per.dump(wirecell_field_response_file, fr)
 
