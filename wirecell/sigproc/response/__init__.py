@@ -11,10 +11,12 @@ import numpy
 import collections
 
 
-def electronics_no_gain_scale(time, gain, shaping=2.0*units.us):
+def electronics_no_gain_scale(time, gain, shaping=2.0*units.us, elec_type="cold"):
     '''
     This version takes gain parameter already scaled such that the
-    gain actually desired is obtained.  
+    gain actually desired is obtained.
+    Both the "cold" and "warm" electroinics reponse functions are adapted from
+    wire-cell-toolkit/util/src/Response.cxx.  
     '''
     domain=(0, 10*units.us)
     if time <= domain[0] or time >= domain[1]:
@@ -24,23 +26,30 @@ def electronics_no_gain_scale(time, gain, shaping=2.0*units.us):
     st = shaping/units.us
         
     from math import sin, cos, exp
-    ret = 4.31054*exp(-2.94809*time/st) \
-          -2.6202*exp(-2.82833*time/st)*cos(1.19361*time/st) \
-          -2.6202*exp(-2.82833*time/st)*cos(1.19361*time/st)*cos(2.38722*time/st) \
-          +0.464924*exp(-2.40318*time/st)*cos(2.5928*time/st) \
-          +0.464924*exp(-2.40318*time/st)*cos(2.5928*time/st)*cos(5.18561*time/st) \
-          +0.762456*exp(-2.82833*time/st)*sin(1.19361*time/st) \
-          -0.762456*exp(-2.82833*time/st)*cos(2.38722*time/st)*sin(1.19361*time/st) \
-          +0.762456*exp(-2.82833*time/st)*cos(1.19361*time/st)*sin(2.38722*time/st) \
-          -2.6202*exp(-2.82833*time/st)*sin(1.19361*time/st)*sin(2.38722*time/st)  \
-          -0.327684*exp(-2.40318*time/st)*sin(2.5928*time/st) +  \
-          +0.327684*exp(-2.40318*time/st)*cos(5.18561*time/st)*sin(2.5928*time/st) \
-          -0.327684*exp(-2.40318*time/st)*cos(2.5928*time/st)*sin(5.18561*time/st) \
-          +0.464924*exp(-2.40318*time/st)*sin(2.5928*time/st)*sin(5.18561*time/st)
+    ret = 0
+    if elec_type == "warm":
+        reltime = time / st
+        leftArg = (0.9 * reltime) * (0.9 * reltime)
+        rightArg = (0.5 * reltime) * (0.5 * reltime)
+        ret = ((1. - exp(-0.5 * leftArg)) * exp(-0.5 * rightArg))
+    else:
+        ret = 4.31054*exp(-2.94809*time/st) \
+              -2.6202*exp(-2.82833*time/st)*cos(1.19361*time/st) \
+              -2.6202*exp(-2.82833*time/st)*cos(1.19361*time/st)*cos(2.38722*time/st) \
+              +0.464924*exp(-2.40318*time/st)*cos(2.5928*time/st) \
+              +0.464924*exp(-2.40318*time/st)*cos(2.5928*time/st)*cos(5.18561*time/st) \
+              +0.762456*exp(-2.82833*time/st)*sin(1.19361*time/st) \
+              -0.762456*exp(-2.82833*time/st)*cos(2.38722*time/st)*sin(1.19361*time/st) \
+              +0.762456*exp(-2.82833*time/st)*cos(1.19361*time/st)*sin(2.38722*time/st) \
+              -2.6202*exp(-2.82833*time/st)*sin(1.19361*time/st)*sin(2.38722*time/st)  \
+              -0.327684*exp(-2.40318*time/st)*sin(2.5928*time/st) +  \
+              +0.327684*exp(-2.40318*time/st)*cos(5.18561*time/st)*sin(2.5928*time/st) \
+              -0.327684*exp(-2.40318*time/st)*cos(2.5928*time/st)*sin(5.18561*time/st) \
+              +0.464924*exp(-2.40318*time/st)*sin(2.5928*time/st)*sin(5.18561*time/st)
     ret *= gain
     return ret
 
-def electronics(time, peak_gain=14*units.mV/units.fC, shaping=2.0*units.us):
+def electronics(time, peak_gain=14*units.mV/units.fC, shaping=2.0*units.us, elec_type="cold"):
     '''
     Electronics response function.
 
@@ -51,15 +60,17 @@ def electronics(time, peak_gain=14*units.mV/units.fC, shaping=2.0*units.us):
         - domain :: outside this pair, the response is identically zero
     '''
     # see wirecell.sigproc.plots.electronics() for these magic numbers.
-    if shaping <= 0.5*units.us:
-        gain = peak_gain*10.146826
-    elif shaping <= 1.0*units.us:
-        gain = peak_gain*10.146828
-    elif shaping <= 2.0*units.us:
-        gain = peak_gain*10.122374
-    else:
-        gain = peak_gain*10.120179
-    return electronics_no_gain_scale(time, gain, shaping)
+    gain = peak_gain
+    if elec_type=="cold":
+        if shaping <= 0.5*units.us:
+            gain = peak_gain*10.146826
+        elif shaping <= 1.0*units.us:
+            gain = peak_gain*10.146828
+        elif shaping <= 2.0*units.us:
+            gain = peak_gain*10.122374
+        else:
+            gain = peak_gain*10.120179
+    return electronics_no_gain_scale(time, gain, shaping, elec_type)
 
 electronics = numpy.vectorize(electronics)
 
@@ -132,7 +143,7 @@ class ResponseFunction(object):
                     domainls=self.domainls, response=self.response.tolist(),
                     impact=self.impact)
 
-    def shaped(self, gain=14*units.mV/units.fC, shaping=2.0*units.us, nbins=None):
+    def shaped(self, gain=14*units.mV/units.fC, shaping=2.0*units.us, nbins=None, elec_type="cold"):
         '''
         Convolve electronics shaping/peaking response, returning a new
         ResponseFunction.
@@ -146,7 +157,7 @@ class ResponseFunction(object):
         # integrate the current over the sample to get charge
         dt = newfr.times[1]-newfr.times[0]
         newfr.response = [r*dt for r in newfr.response]
-        elecr = electronics(newfr.times, gain, shaping)
+        elecr = electronics(newfr.times, gain, shaping, elec_type)
         newfr.response = convolve(elecr, newfr.response)
         return newfr
 

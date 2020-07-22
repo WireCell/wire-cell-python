@@ -132,6 +132,64 @@ def bee_blobs(output, geom, rse, sampling, density, cluster_tap_files):
     encoder.FLOAT_REPR = lambda o: format(o, '.3f')
     json.dump(dat, open(output,'w', encoding="utf8"))
 
+#   Export 3D charge points for the use of JsonDepoSource
+#   ref: wire-cell-toolkit/sio/JsonDepoSource.cxx
+@cli.command("json-depos")
+@click.option('-o', '--output', help="The output JSON depo file name")
+@click.option('-s', '--sampling', type=click.Choice(["center","uniform"]), default="uniform",
+              help="The sampling technique to turn blob volumes into points")
+@click.option('-d', '--density', type=float, default=9.0,
+              help="For samplings which care, specify target points per cc")
+@click.option('-n', '--number', type=int, default=-1,
+              help="The number of electrons per depo point")
+@click.argument("cluster-tap-files", nargs=-1)
+def json_depos(output, sampling, density, number, cluster_tap_files):
+    '''
+    Make one JSON depo file from the blobs in a set of 'cluster tap'
+    JSON files which are presumed to originate from one trigger.
+    '''
+    from . import tap, converter
+
+    dat = dict(depos=list())
+        
+    # given by user in units of 1/cc.  Convert to system of units 1/L^3.
+    density *= 1.0/(units.cm**3)
+    sampling_func = dict(
+        center = converter.blob_center,
+        uniform = lambda b : converter.blob_uniform_sample(b, density),
+    )[sampling];
+
+    for ctf in cluster_tap_files:
+        gr = tap.load(ctf)
+        print ("got %d" % gr.number_of_nodes())
+        if 0 == gr.number_of_nodes():
+            print("skipping empty graph %s" % ctf)
+            continue
+        arr = converter.blobpoints(gr, sampling_func)
+        print ("%s: %d points" % (ctf, arr.shape[0]))
+        for depo in arr:
+            onedepo = dict(n=round(depo[3], 3) if number<0 else number,
+                           q=0, s=0, t=0*units.microsecond,
+                           x=round(depo[0], 3)/units.mm,
+                           y=round(depo[1], 3)/units.mm,
+                           z=round(depo[2], 3)/units.mm)
+            x = onedepo['x']
+            y = onedepo['y']
+            z = onedepo['z']
+            dat['depos'] += [onedepo]
+            # if x>-3100 and x<-1800 and y>2800 and y<6000 and z>3000 and z<4500:
+            #     t0 = -1194.0 # microsecond
+            #     onedepo['x'] -= t0* 1.6
+            #     onedepo['t'] = t0*units.microsecond
+            #     dat['depos'] += [onedepo]
+
+    dat['depos'] += [dict()] # EOS
+
+    import json
+    # monkey patch
+    from json import encoder
+    encoder.FLOAT_REPR = lambda o: format(o, '.3f')
+    json.dump(dat, open(output,'w', encoding="utf8"))
 
 
 @cli.command("activity")
