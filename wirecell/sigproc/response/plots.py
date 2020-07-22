@@ -38,9 +38,8 @@ def get_plane(fr, planeid, reflect=True):
     currents = numpy.zeros((npbins, ntbins))
 
     for path in pr.paths:
-        pitch = path.pitchpos
-        pind = int(round((pitch -0.001 - pmin)/pdelta) ) # minus 0.001 to avoid rounding issue
-        # print "pitch: ", pitch, " pmin: ", pmin, " pind: ", pind
+        pitchpos = path.pitchpos
+        pind = int(round((pitchpos -0.001 - pmin)/pdelta) ) # minus 0.001 to avoid rounding issue
         pind = max(0, pind)
         pind = min(npbins-1, pind)
 
@@ -61,13 +60,13 @@ def get_plane(fr, planeid, reflect=True):
             assert abs(terr) < 0.001*tdelta
             assert abs(perr) < 0.001*pdelta
             if pind >= npbins:
-                print ('pitch:', pind, pitch, pitches[pind, tind], perr)
-            # print 'pitch:', pind, pitch, pitches[pind, tind], perr
+                print ('pitch:', pind, pitchpos, pitches[pind, tind], perr)
+
 
             currents[pind, tind] = cur
 
             if reflect:
-                pind_ref = int(round((-pitch -0.001 - pmin)/pdelta))
+                pind_ref = int(round((-pitchpos -0.001 - pmin)/pdelta))
                 if pind_ref>0 and pind_ref<npbins-1:
                     currents[pind_ref, tind] = cur
 
@@ -85,7 +84,7 @@ def lg10(current):
             else: c[tind, pind] = 0
     return c
 
-def plot_planes(fr, filename=None):
+def plot_planes(fr, filename=None, trange=(0,70)):
     '''
     Plot field response as time vs impact positions.
 
@@ -111,7 +110,7 @@ def plot_planes(fr, filename=None):
         pr = fr.planes[planeid]
         pitches = [path.pitchpos for path in pr.paths]
         pmax = max(map(abs, pitches))
-        ax.axis([0,70, -pmax,pmax])
+        ax.axis([trange[0],trange[1], -pmax,pmax])
         ax.set_title('Induced Current %s-plane' % 'UVW'[planeid])
         ax.set_ylabel('Pitch [mm]')
         ax.set_xlabel('Time [us]')
