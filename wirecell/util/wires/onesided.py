@@ -99,7 +99,8 @@ def load(filename):
         index = store.make("plane", plane, wire_list)
         wire_plane_indices.append(index)
     if wire_plane_indices != list(range(3)):
-        print("warning: got unexpected plane indices:", wire_plane_indices)
+        print("caution: did not get 3 planes, got plane IDs:", planes.keys())
+        print("continue, assuming you know what you are doing")
     face_index = store.make("face", 0, wire_plane_indices)
     store.make("anode", 0, [face_index])
     return store.schema()

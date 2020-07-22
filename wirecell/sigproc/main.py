@@ -259,6 +259,9 @@ def plot_garfield_track_response(ctx, gain, shaping, tick, tick_padding, electro
 @click.argument("pdffile")
 @click.pass_context
 def plot_response(ctx, responsefile, pdffile):
+    '''
+    Make some plots from a response file.
+    '''
     import wirecell.sigproc.response.persist as per
     import wirecell.sigproc.response.plots as plots
 

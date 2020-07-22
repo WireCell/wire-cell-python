@@ -15,9 +15,9 @@ setup(
         'Click',
         'numpy',
         'matplotlib',
-        'mayavi',
         'networkx',
-        'vtk',
+#        'mayavi',
+#        'vtk',
     ],
     entry_points = dict(
         console_scripts = [

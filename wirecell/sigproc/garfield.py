@@ -41,11 +41,11 @@ def fromtarfile(filename):
 # fixme: move to some util module
 def asgenerator(source):
     '''
-    If string, assume file, open proper generator, o.w. just return
+    If string, assume file name, open proper generator.
     '''
     if type(source) not in [type(""), type(u"")]:
         #print ('Source is not a string: %s' % type(source))
-        return source
+        raise ValueError('unknown garfield data source: "%s"' % source)
     if osp.splitext(source)[1] in [".tar", ".gz", ".tgz"]:
         return fromtarfile(source)
     raise ValueError('unknown garfield data source: "%s"' % source)

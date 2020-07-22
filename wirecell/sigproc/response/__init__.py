@@ -667,6 +667,7 @@ def rf1dtoschema(rflist, origin=10*units.cm, speed = 1.114*units.mm/units.us):
         for rf in inplane:
             pitchpos = (rf.region*pitch + rf.impact)
             wirepos = 0.0
+            #print(f'{letter} {planeid} {pitch} {location} {pitchpos}')
             par = schema.PathResponse(rf.response, pitchpos, wirepos)
             paths.append(par)
 
