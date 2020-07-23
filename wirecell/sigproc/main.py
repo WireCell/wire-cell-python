@@ -261,12 +261,14 @@ def plot_garfield_track_response(ctx, gain, shaping, tick, tick_padding, electro
 
 
 @cli.command("plot-response")
+@click.option("--region", default=None, type=float,
+              help="Set a region to demark as 'electrode 0'. def: none")
 @click.option("--trange", default='0,70',
               help="Set time range in us as comma pair. def: 0,70")
 @click.argument("responsefile")
 @click.argument("pdffile")
 @click.pass_context
-def plot_response(ctx, responsefile, pdffile, trange):
+def plot_response(ctx, responsefile, pdffile, region, trange):
     '''
     Make some plots from a response file.
     '''
@@ -275,7 +277,7 @@ def plot_response(ctx, responsefile, pdffile, trange):
 
     trange = list(map(int, trange.split(',')))
     fr = per.load(responsefile)
-    plots.plot_planes(fr, pdffile, trange)
+    plots.plot_planes(fr, pdffile, trange, region)
 
 
 @cli.command("plot-electronics-response")

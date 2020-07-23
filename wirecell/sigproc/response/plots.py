@@ -84,7 +84,7 @@ def lg10(current):
             else: c[tind, pind] = 0
     return c
 
-def plot_planes(fr, filename=None, trange=(0,70)):
+def plot_planes(fr, filename=None, trange=(0,70), region=None):
     '''
     Plot field response as time vs impact positions.
 
@@ -117,6 +117,9 @@ def plot_planes(fr, filename=None, trange=(0,70)):
         im = ax.pcolormesh(t/units.us, p/units.mm, lg10(c/units.picoampere),
                                vmin=-vlim, vmax=vlim,
                                cmap='jet') # also try seismic
+        if region:
+            ax.plot((trange[0],trange[1]), ( region,  region), color='black', linewidth=0.1)
+            ax.plot((trange[0],trange[1]), (-region, -region), color='black', linewidth=0.1)
         fig.colorbar(im, ax=[ax], shrink=0.9, pad=0.05)
 
         # for iwire in range(10):
