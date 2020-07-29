@@ -19,6 +19,7 @@ def get_plane(fr, planeid, reflect=True):
     print ('TBINS:', ntbins, tmin, tmax, tdelta, period)
 
     pitches = [path.pitchpos for path in pr.paths]
+    pitches.sort()
     pdelta = pitches[1] - pitches[0]
     if pdelta < 0:
         print ("plane %d has negative pitch delta: %f" %(planeid, pdelta))
@@ -109,6 +110,8 @@ def plot_planes(fr, filename=None, trange=(0,70), region=None):
         # ax.axis([65, 90, -20, 20])
         pr = fr.planes[planeid]
         pitches = [path.pitchpos for path in pr.paths]
+        pitches.sort()
+        dpitch = pitches[1]-pitches[0]
         pmax = max(map(abs, pitches))
         ax.axis([trange[0],trange[1], -pmax,pmax])
         ax.set_title('Induced Current %s-plane' % 'UVW'[planeid])
@@ -117,10 +120,15 @@ def plot_planes(fr, filename=None, trange=(0,70), region=None):
         im = ax.pcolormesh(t/units.us, p/units.mm, lg10(c/units.picoampere),
                                vmin=-vlim, vmax=vlim,
                                cmap='jet') # also try seismic
-        if region:
-            ax.plot((trange[0],trange[1]), ( region,  region), color='black', linewidth=0.1)
-            ax.plot((trange[0],trange[1]), (-region, -region), color='black', linewidth=0.1)
         fig.colorbar(im, ax=[ax], shrink=0.9, pad=0.05)
+        if region is not None:
+            if region == 0:
+                region = 5* dpitch
+            #                          start, stop, step
+            ax.set_yticks(numpy.arange(-pmax, pmax, 2*region))
+            ax.grid(color='black', which='major', linestyle='-', linewidth=.1)
+            ax.plot((trange[0],trange[1]), ( region,  region), color='black', linewidth=0.2)
+            ax.plot((trange[0],trange[1]), (-region, -region), color='black', linewidth=0.2)
 
         # for iwire in range(10):
         #     ax.axhline(-iwire*3*units.mm, linewidth=1, color='black')
