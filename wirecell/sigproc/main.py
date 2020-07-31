@@ -266,18 +266,34 @@ def plot_garfield_track_response(ctx, gain, shaping, tick, tick_padding, electro
 @click.option("--trange", default='0,70',
               help="Set time range in us as comma pair. def: 0,70")
 @click.argument("responsefile")
-@click.argument("pdffile")
+@click.argument("outfile")
 @click.pass_context
-def plot_response(ctx, responsefile, pdffile, region, trange):
+def plot_response(ctx, responsefile, outfile, region, trange):
     '''
-    Make some plots from a response file.
+    Plot per plane responses.
     '''
     import wirecell.sigproc.response.persist as per
     import wirecell.sigproc.response.plots as plots
 
     trange = list(map(int, trange.split(',')))
     fr = per.load(responsefile)
-    plots.plot_planes(fr, pdffile, trange, region)
+    plots.plot_planes(fr, outfile, trange, region)
+
+
+
+@cli.command("plot-spectra")
+@click.argument("responsefile")
+@click.argument("outfile")
+@click.pass_context
+def plot_spectra(ctx, responsefile, outfile):
+    '''
+    Plot per plane response spectra.
+    '''
+    import wirecell.sigproc.response.persist as per
+    import wirecell.sigproc.response.plots as plots
+
+    fr = per.load(responsefile)
+    plots.plot_specs(fr, outfile)
 
 
 @cli.command("plot-electronics-response")
