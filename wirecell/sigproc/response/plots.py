@@ -166,7 +166,7 @@ def lg10(current):
             else: c[tind, pind] = 0
     return c
 
-def plot_planes(fr, filename=None, trange=(0,70), region=None):
+def plot_planes(fr, filename=None, trange=(0,70), region=None, reflect=True):
     '''
     Plot field response as time vs impact positions.
 
@@ -185,7 +185,7 @@ def plot_planes(fr, filename=None, trange=(0,70), region=None):
 
     for planeid in range(3):
         vlim = vlims[planeid]
-        t, p, c = get_plane(fr, planeid, reflect=True) # change to false to debug
+        t, p, c = get_plane(fr, planeid, reflect=reflect)
         print (t.shape, p.shape, c.shape)
         ax = axes[planeid]
         # ax.axis([65, 90, -20, 20])
@@ -277,3 +277,5 @@ def plot_specs(fr, filename=None):
             print ("warning: saving to PDF takes an awfully long time.  Try PNG.")
 
         fig.savefig(filename)
+
+
