@@ -58,8 +58,8 @@ def impact_linspace_index(ls, pitchpos):
     nbins = len(ls)-1           # includes final HIGH-SIDE bin edge.
     d = ls[1]-ls[0]
     ind = int(round((pitchpos - ls[0])/d))
-    assert ind >= 0
-    assert ind < nbins
+    if ind <0 or ind >= nbins:
+        raise IndexError(f'out of range ls[0]:{ls[0]} d:{d} pp:{pitchpos} nbins:{nbins}')
 
     assert ind%2 == 0           # bad linspace
     if ind%10 == 0:             # wire or half way line
@@ -141,6 +141,7 @@ def get_current(fr, planeid, reflect):
     for path in pr.paths:
         assert path.current.size == ntbins
         pitchpos = path.pitchpos
+        print (f'plane:{planeid} pp:{pitchpos} nimps:{nimps} id:{imp_delta} im:{imp_min}')
         imps,ref_imps = impact_linspace_index(ilin, pitchpos)
         
         inds = list(imps)
