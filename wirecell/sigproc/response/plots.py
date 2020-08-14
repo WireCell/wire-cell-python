@@ -17,7 +17,7 @@ def time_linspace(fr, planeid):
     tmin = fr.tstart
     tmax = tmin + ntbins*period
     tdelta = (tmax-tmin)/ntbins
-    print ('TBINS:', ntbins, tmin, tmax, tdelta, period)
+    #print ('TBINS:', ntbins, tmin, tmax, tdelta, period)
     return numpy.linspace(tmin, tmax, ntbins, endpoint=False)
 
 def hz_linspace(fr, planeid):
@@ -31,7 +31,7 @@ def hz_linspace(fr, planeid):
     hzmin = 0
     hzmax = 1.0/period_s
     hzdelta = hzmax/nfbins
-    print (f'FBINS: {nfbins} {hzmin}Hz {hzmax/1e6}MHz {hzdelta/1000.0}kHz {period_s*1e6:f}us')
+    #print (f'FBINS: {nfbins} {hzmin}Hz {hzmax/1e6}MHz {hzdelta/1000.0}kHz {period_s*1e6:f}us')
     return numpy.linspace(hzmin, hzmax, nfbins, endpoint=False)
 
 
@@ -50,7 +50,7 @@ def impact_linspace(fr, planeid):
     nibins_f = 2*imax/idelta
     nibins = int(round(nibins_f))
     assert abs(nibins-nibins_f) < 1e-6;
-    print (f'IBINS: {nibins} +/-{imax:f} {idelta:f} {nibins_f:f}')
+    #print (f'IBINS: {nibins} +/-{imax:f} {idelta:f} {nibins_f:f}')
     return numpy.linspace(-imax, imax, nibins+1)
 
 def impact_linspace_index(ls, pitchpos):
@@ -129,10 +129,8 @@ def get_current(fr, planeid, reflect):
     ilin = impact_linspace(fr, planeid)
 
     nimps, ntbins = times.shape
-    print (f'{nimps} {ntbins}')
 
     currents = numpy.zeros_like(times)
-    print(f'{currents.shape}')
 
     imp_uniq = numpy.unique(numpy.sort(impacts.reshape(impacts.size)))
     imp_delta = imp_uniq[1]-imp_uniq[0]
@@ -141,7 +139,7 @@ def get_current(fr, planeid, reflect):
     for path in pr.paths:
         assert path.current.size == ntbins
         pitchpos = path.pitchpos
-        print (f'plane:{planeid} pp:{pitchpos} nimps:{nimps} id:{imp_delta} im:{imp_min}')
+        #print (f'plane:{planeid} pp:{pitchpos} nimps:{nimps} id:{imp_delta} im:{imp_min}')
         imps,ref_imps = impact_linspace_index(ilin, pitchpos)
         
         inds = list(imps)
@@ -187,7 +185,6 @@ def plot_planes(fr, filename=None, trange=(0,70), region=None, reflect=True):
     for planeid in range(3):
         vlim = vlims[planeid]
         t, p, c = get_plane(fr, planeid, reflect=reflect)
-        print (t.shape, p.shape, c.shape)
         ax = axes[planeid]
         # ax.axis([65, 90, -20, 20])
 
