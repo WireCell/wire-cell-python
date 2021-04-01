@@ -68,7 +68,7 @@ class FieldResponse(namedtuple("FieldResponse","planes axis origin tstart period
 
 class PlaneResponse(namedtuple("PlaneResponse","paths planeid location pitch")):
     '''
-    :param list paths: List of PathResponse objects.
+    :param list paths: List of PathResponse objects.  These MUST be sorted by pitchpos!
     :param int planeid: A numerical identifier for the plane,
         typically [0,1,2].
     :param float location: Location in drift direction of this plane
