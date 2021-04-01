@@ -212,6 +212,9 @@ def allplanes(store, pdffile):
                 ax.scatter(seg_z2[seg], seg_x2[seg], c=seg_col[seg], s=1, marker='.')
                 ax.set_title("AnodeID %d wires, seg %d, head (%d wires)" %
                              (anode.ident, seg, len(seg_col[seg])))
+                ax.set_xlabel("Z [meter]")
+                ax.set_ylabel("X [meter]")
+
             plt.tight_layout()
             pdf.savefig(fig)
             plt.close()
@@ -222,6 +225,9 @@ def allplanes(store, pdffile):
                 ax.scatter(seg_z1[seg], seg_x1[seg], c=seg_col[seg], s=1, marker='.')
                 ax.set_title("AnodeID %d wires, seg %d, tail (%d wires)" %
                              (anode.ident, seg, len(seg_col[seg])))
+                ax.set_xlabel("Z [meter]")
+                ax.set_ylabel("X [meter]")
+
             plt.tight_layout()
             pdf.savefig(fig)
             plt.close()
@@ -353,11 +359,15 @@ def allplanes(store, pdffile):
             fig, ax = plt.subplots(nrows=1, ncols=1)
             ax.scatter(wire_z1, wire_x1,s=1, c=wire_anode, marker='.')
             ax.set_title("AnodeID %d wires, tail" % anode.ident)
+            ax.set_xlabel("Z [meter]")
+            ax.set_ylabel("X [meter]")
             pdf.savefig(fig)
             plt.close()
             fig, ax = plt.subplots(nrows=1, ncols=1)
             ax.scatter(wire_z2, wire_x2,s=1, c=wire_anode, marker='.')
             ax.set_title("AnodeID %d wires, head" % anode.ident)
+            ax.set_xlabel("Z [meter]")
+            ax.set_ylabel("X [meter]")
             pdf.savefig(fig)
             plt.close()
             all_wire_x1 += wire_x1

@@ -169,6 +169,7 @@ milliampere = 1.e-3*ampere
 microampere = 1.e-6*ampere
 nanoampere = 1.e-9*ampere
 picoampere = 1.e-12*ampere
+femtoampere = 1.e-15*ampere
 
 #
 # Electric potential [E][Q^-1]

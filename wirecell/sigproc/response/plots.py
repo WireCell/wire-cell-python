@@ -59,7 +59,7 @@ def impact_linspace_index(ls, pitchpos):
     d = ls[1]-ls[0]
     ind = int(round((pitchpos - ls[0])/d))
     if ind <0 or ind >= nbins:
-        raise IndexError(f'out of range ls[0]:{ls[0]} d:{d} pp:{pitchpos} nbins:{nbins}')
+        raise IndexError(f'out of range, ind:{ind} ls[0]:{ls[0]} d:{d} pp:{pitchpos} nbins:{nbins}')
 
     assert ind%2 == 0           # bad linspace
     if ind%10 == 0:             # wire or half way line
@@ -153,7 +153,7 @@ def get_current(fr, planeid, reflect):
 
     return currents
 
-def lg10(current):
+def lg10_slow(current):
     # "log-10" style for response, see SP1 paper: https://arxiv.org/pdf/1802.08709.pdf
     (tdim, pdim) = current.shape
     c = numpy.zeros([tdim, pdim])
@@ -165,7 +165,86 @@ def lg10(current):
             else: c[tind, pind] = 0
     return c
 
-def plot_planes(fr, filename=None, trange=(0,70), region=None, reflect=True):
+def lg10(arr, eps = 1e-5, scale=None):
+    '''
+    Apply the "signed log" transform to an array.
+
+    Result is +/-log10(|arr|*scale) with the sign of arr preserved in
+    the result and any values that are in eps of zero set to zero.
+
+    If scale is not given then 1/eps is used.
+    '''
+    if not scale:
+        scale = 1/eps
+
+    shape = arr.shape
+    arr = numpy.array(arr).reshape(-1)
+    arr[numpy.logical_and(arr < eps, arr > -eps)] = 0.0
+    pos = arr>eps
+    neg = arr<-eps
+    arr[pos] = numpy.log10(arr[pos]*scale)
+    arr[neg] = -numpy.log10(-arr[neg]*scale)
+    return arr.reshape(shape)
+
+
+def plot_conductors(fr, filename=None, trange=(0,100),
+                    title="Response:", uselog10=False,
+                    show_regions = None):
+    '''
+    Plot per-wire/strip responses
+    '''
+
+    fig, axes = plt.subplots(3, 1, sharex=True, figsize=(8.0, 10.5))
+    for planeid in range(3):
+        pr = fr.planes[planeid]
+
+        # average over all current/paths in each wire/strip 
+        byregion = dict()
+        for path in pr.paths:
+            region = int(round(path.pitchpos/pr.pitch))
+            if region not in byregion:
+                #print (f'region:{region}, pitchpos:{path.pitchpos}, pitch:{pr.pitch}')
+                byregion[region] = dict(count=0, array=numpy.zeros_like(path.current))
+            byregion[region]['count'] += 1
+            byregion[region]['array'] += path.current
+        regions = list(byregion.keys())
+        regions.sort()
+
+        ax = axes[planeid]
+        ax.set_xlim(*trange)
+        ax.set_title(f'{title} %s-plane' % 'UVW'[planeid])
+        if uselog10:
+            ax.set_ylabel('current [log10(10*fA/e)]')
+        else:
+            ax.set_ylabel('current [fA/e]')
+
+        ax.set_xlabel('Time [us]')
+        if show_regions:
+            regions = show_regions
+        for reg in regions:
+            if reg < 0:
+                continue
+            resp = byregion[reg]['array']
+            count = byregion[reg]['count']
+            #print(f'{planeid} {reg} {count}')
+            resp /= count
+
+            resp_fa = resp/units.femtoampere
+            if uselog10:
+                resp_fa = lg10(resp_fa, 0.1)
+
+            ticks_us = numpy.linspace(fr.tstart, 
+                                      fr.tstart+fr.period*resp.size,
+                                      resp.size, endpoint=False)/units.microsecond
+            ax.plot(ticks_us, resp_fa, label=f'{reg}')
+        ax.legend(title="Regions", loc='lower left')
+    plt.tight_layout()
+    if filename:
+        print ("Saving to %s" % filename)
+        fig.savefig(filename)
+    
+
+def plot_planes(fr, filename=None, trange=(0,70), region=None, reflect=True, pretitle=""):
     '''
     Plot field response as time vs impact positions.
 
@@ -196,7 +275,7 @@ def plot_planes(fr, filename=None, trange=(0,70), region=None, reflect=True):
         # dpitch = pitches[1]-pitches[0]
         # pmax = max(map(abs, pitches))
         ax.set_xlim(*trange)
-        ax.set_title('Induced Current %s-plane' % 'UVW'[planeid])
+        ax.set_title(f'{pretitle} Induced Current ["signed log"] %s-plane' % 'UVW'[planeid])
         ax.set_ylabel('Pitch [mm]')
         ax.set_xlabel('Time [us]')
         im = ax.pcolormesh(t/units.us, p/units.mm, lg10(c/units.picoampere),

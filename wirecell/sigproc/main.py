@@ -312,12 +312,14 @@ def plot_response_compare_waveforms(ctx, plane, irange, trange, responsefile1, r
               help="Set a region to demark as 'electrode 0'. def: none")
 @click.option("--trange", default='0,70',
               help="Set time range in us as comma pair. def: 0,70")
+@click.option("--title", default='Response:',
+              help="An initial distinguishing title")
 @click.option("--reflect/--no-reflect", default=True,
               help="Apply symmetry reflection")
 @click.argument("responsefile")
 @click.argument("outfile")
 @click.pass_context
-def plot_response(ctx, responsefile, outfile, region, trange, reflect):
+def plot_response(ctx, responsefile, outfile, region, trange, title, reflect):
     '''
     Plot per plane responses.
     '''
@@ -326,7 +328,33 @@ def plot_response(ctx, responsefile, outfile, region, trange, reflect):
 
     trange = list(map(int, trange.split(',')))
     fr = per.load(responsefile)
-    plots.plot_planes(fr, outfile, trange, region, reflect)
+    plots.plot_planes(fr, outfile, trange, region, reflect, title)
+
+
+@cli.command("plot-response-conductors")
+@click.option("--trange", default='0,70',
+              help="Set time range in us as comma pair. def: 0,70")
+@click.option("--title", default='Response:',
+              help="An initial distinguishing title")
+@click.option("--log10/--no-log10", default=False,
+              help="Use 'signed log10' else linear scale")
+@click.option("--regions", default=None,
+              help="Comma separated list of regions, default is all")
+@click.argument("responsefile")
+@click.argument("outfile")
+@click.pass_context
+def plot_response(ctx, trange, title, log10, regions, responsefile, outfile):
+    '''
+    Plot per-conductor (wire/strip) respnonses.
+    '''
+    import wirecell.sigproc.response.persist as per
+    import wirecell.sigproc.response.plots as plots
+
+    trange = list(map(int, trange.split(',')))
+    if regions:
+        regions = list(map(int, regions.split(',')))
+    fr = per.load(responsefile)
+    plots.plot_conductors(fr, outfile, trange, title, log10, regions)
 
 
 
