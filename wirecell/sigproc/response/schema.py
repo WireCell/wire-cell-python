@@ -1,27 +1,33 @@
 #!/usr/bin/env python
-'''
-This module defines an object schema which strives to be generic
+'''This module defines an object schema which strives to be generic
 enough to describe various sets of field responses including:
 
-    - 0D :: responses which do not extend to inter-pitch regions and
+    - 1D :: responses which do not extend to inter-pitch regions and
       have no intra-pitch variation.  Responses come from averaged 2D
       field calculations, eg with Garfield.  This is the type
       originally used for LArSoft simulation and deconvoultion for
       some time.
 
-    - 1D :: responses defined on drift paths starting from
+    - 2D :: responses defined on drift paths starting from
       fine-grained points on a line perpendicular to drift and wire
       directions and which spans multiple wire regions.  Responses
       come from 2D field calculations, eg with Garfield.  This is the
       type used in the Wire Cell simulation as developed by Xiaoyue Li
       and Wire Cell deconvolution as developed by Xin Qian.
 
-    - 2D :: responses defined on drift paths starting from
-      fine-grained points on a plane perpendicular to nominal drift
-      direction and spanning multiple wire regions.  Responses come
-      from 3D field calculations, eg with LARF.  Simulation and
-      deconvolution using these type of responses are not yet
-      developed.
+    - 2.5D :: not supported directly by this schema but 2D responses
+      can be made by an average over 2D slices made perpendicular to
+      wires/strips in each plane.  These slices may hold 2D field
+      calculations or be slices of 3D calculations.  In either case,
+      some form of average along the wire/strip direction collapses
+      the dimensionality to 2D.
+
+    - 3D :: not supported directly by this schema, but responses
+      defined on drift paths starting from fine-grained points on a
+      plane perpendicular to nominal drift direction and spanning
+      multiple wire regions.  Responses come from 3D field
+      calculations, eg with LARF.  Simulation and deconvolution using
+      these type of responses are not yet developed.
 
 The schema is defined through a number of `namedtuple` collections.
 
@@ -31,11 +37,13 @@ with units must be in Wire Cell system of units.
 Coordinate System Notice: X-axis is along the direction counter to the
 nominal electron drift, Y-axis is upward, against gravity, Z-axis
 follows from the right-handed cross product of X and Y.  The X-origin
-is arbitrary.  In Wire Cell it will be taken from the "location" of
-the last (collection) plane.  A global, transverse origin is not
-specified but each path response is at a transverse location given in
-terms of wire and pitch distances (positions).  In Wire Cell an origin
-is set from which these are to be measured.
+is arbitrary.  In Wire Cell the convention is to take the "location"
+of the last (collection) plane (but beware for possible deviations).
+A global, transverse origin is not specified but each path response is
+at a transverse location given in terms of wire and pitch distances
+(positions).  In Wire Cell an origin is set from which these are to be
+measured.
+
 '''
 
 from collections import namedtuple
@@ -60,7 +68,7 @@ class FieldResponse(namedtuple("FieldResponse","planes axis origin tstart period
 
 class PlaneResponse(namedtuple("PlaneResponse","paths planeid location pitch")):
     '''
-    :param list paths: List of PathResponse objects.
+    :param list paths: List of PathResponse objects.  These MUST be sorted by pitchpos!
     :param int planeid: A numerical identifier for the plane,
         typically [0,1,2].
     :param float location: Location in drift direction of this plane
