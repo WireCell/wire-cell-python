@@ -2,8 +2,6 @@
 '''
 Build/install Wire Cell Toolkit Python
 
-FIXME: this currently is broken if installed in the wider context of a
-top-level wirecell package.
 '''
 
 from setuptools import setup, find_packages
@@ -27,6 +25,7 @@ setup(
             'wirecell-validate = wirecell.validate.main:main',
             'wirecell-pgraph = wirecell.pgraph.main:main',
             'wirecell-img = wirecell.img.main:main',
+            'wirecell-resp = wirecell.resp.__main__:main',
         ]
     )
 )

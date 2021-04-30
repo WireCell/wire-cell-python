@@ -24,127 +24,13 @@ from .. import units
 from . import response
 
 import numpy
-import tarfile
 
 import os.path as osp
 
-# fixme: move to some util module
-def fromtarfile(filename):
-    '''
-    Iterate on tarfile, returning (name,text) pair of each file.
-    '''
-    tf = tarfile.open(filename, 'r')
-    for name,member in sorted([(m.name,m) for m in tf.getmembers()]):
-        if member.isdir():
-            continue
-        yield (member.name, tf.extractfile(member).read().decode('utf-8'))
-# fixme: move to some util module
-def asgenerator(source):
-    '''
-    If string, assume file name, open proper generator.
-    '''
-    if type(source) not in [type(""), type(u"")]:
-        #print ('Source is not a string: %s' % type(source))
-        raise ValueError('unknown garfield data source: "%s"' % source)
-    if osp.splitext(source)[1] in [".tar", ".gz", ".tgz"]:
-        return fromtarfile(source)
-    raise ValueError('unknown garfield data source: "%s"' % source)
+from wirecell.util.fileio import load as source_loader
 
+from wirecell.resp.garfield import dataset_asdict
 
-def split_text_records(text):
-    '''
-    Return a generator that splits text by record separators.
-    '''
-    for maybe in text.split("\n% "):
-        if maybe.startswith("Created"):
-            yield maybe
-
-def parse_text_record(text, delay=0):
-    '''
-    Iterate on garfield text, returning one record.
-    '''
-    lines = text.split('\n')
-
-    ret = dict()
-
-    # Created 31/07/16 At 19.52.20 < none > SIGNAL   "Direct signal, group   1     "
-    created = lines[0].split()
-    ret['created'] = '%s %s' %(created[1], created[3])
-    ret['signal'] = None
-    if 'Direct signal' in lines[0]:
-        ret['signal'] = 'direct'
-    if 'Cross-talk' in lines[0]:
-        ret['signal'] = 'x-talk'
-
-    #   Group 1 consists of:
-    ret['group'] = int(lines[2].split()[1])
-
-    #      Wire 243 with label X at (x,y)=(-3,0.6) and at -110 V
-    wire = lines[3].split()
-    ret['wire_region'] = int(wire[1])
-    ret['label'] = wire[4]
-
-    pos = map(float, wire[6].split('=')[1][1:-1].split(','))
-    ret['wire_region_pos'] = tuple([p*units.cm for p in pos])
-    ret['bias_voltage'] = float(wire[9])
-
-    #  Number of signal records:  1000
-    ret['nbins'] = nbins = int(lines[4].split()[4])
-
-    #  Units used: time in micro second, current in micro Ampere.
-    xunit, yunit = lines[5].split(":")[1].split(",")
-    xunit = [x.strip() for x in xunit.split("in")]
-    yunit = [y.strip() for y in yunit.split("in")]
-
-    xscale = 1.0 # float(lines[7].split("=")[1]);
-    if "micro second" in xunit[1]:
-        xscale = units.us
-
-    yscale = 1.0 # float(lines[8].split("=")[1]);
-    if "micro Ampere" in yunit[1]:
-        yscale = units.microampere
-
-    ret['xlabel'] = xunit[0]
-    ret['ylabel'] = yunit[0]
-
-    xdata = list()
-    ydata = list()
-    #  + (  0.00000000E+00   0.00000000E+00
-    #  +     0.10000000E+00   0.00000000E+00
-    # ...
-    #  +     0.99800003E+02   0.00000000E+00
-    #  +     0.99900002E+02   0.00000000E+00 )
-    x0 = float(lines[9][4:].split()[0]) # first line, first column
-    x1 = float(lines[10][4:].split()[0]) # second line, first column
-    tbin = x1 - x0
-    for line in lines[9:9+nbins]:
-        xy = line[4:].split()
-        xdata.append(float(xy[0]) + int(delay)*tbin)
-        ydata.append(float(xy[1]))
-    lenx = len(xdata)
-    leny = len(ydata)
-    xdata = [i*tbin for i in range(int(delay))] + xdata
-    ydata0 = ydata[0]
-    ydata = [ydata0 for i in range(int(delay))] + ydata
-    xdata = xdata[:lenx] # trim the data
-    ydata = ydata[:leny]
-    if nbins != len(xdata) or nbins != len(ydata):
-        raise ValueError('parse error for "%s"' % wire)
-    ret['x'] = numpy.asarray(xdata)*xscale
-    ret['y'] = numpy.asarray(ydata)*yscale
-    return ret
-
-
-def parse_filename(filename):
-    '''
-    Try to parse whatever data is encoded into the file name.
-    '''
-    fname = osp.split(filename)[-1]
-    dist, plane = osp.splitext(fname)[0].split('_')
-    plane = plane.lower()
-    if plane == 'y':
-        plane = 'w'
-    return dict(impact=float(dist), plane=plane, filename=filename)
 
 def load(source, normalization = None, zero_wire_loc = 0.0, delay=0):
     '''Load Garfield data source (eg, tarball).
@@ -167,33 +53,20 @@ def load(source, normalization = None, zero_wire_loc = 0.0, delay=0):
     considered the central wire.
 
     '''
-    source = asgenerator(source)
+    source = source_loader(source, pattern="*.dat")
 
-    from collections import defaultdict
-    uniq = defaultdict(dict)
+    uniq = dataset_asdict(source)
 
-    for filename, text in source:
-
-        fnamedat = parse_filename(filename)
-
-        gen = split_text_records(text)
-        for rec in gen:
-            dat = parse_text_record(rec, delay)
-
-            key = tuple([filename] + [dat[k] for k in ['group', 'wire_region', 'label']])
-
-            old = uniq.get(key, None)
-            if old:             # sum up both signal types
-                ### debugging: central collection wire has both records but one is miniscule
-                #oldtot = sum(old['y'])
-                #if abs(oldtot) > 0.0: 
-                #    print ('found key already: "%s", sum=%e+%e"' %(key, sum(dat['y']), sum(old['y'])))
-                old['y'] += dat['y']
-                continue
-
-            dat.pop('signal')
-            dat.update(fnamedat)
-            uniq[key] = dat
+    # This following is a hack previously in the parser where it
+    # definitely does not belong.  I move it here where it still
+    # doesn't really belong but until we better factor this loader it
+    # will have to do.
+    if delay:
+        # Delay the FR by given number of sample periods.
+        print(f'delaying response by {delay}')
+        for key in uniq:
+            c = uniq[key]['y']
+            uniq[key]['y'] = numpy.hstack((numpy.zeros(delay)*c[0], c[:-delay]))
 
     ret = list()
     for plane, zwl in zip('uvw', zero_wire_loc):

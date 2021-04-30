@@ -126,7 +126,7 @@ def convert_garfield(ctx, origin, speed, normalization, zero_wire_locs,
     origin = eval(origin, units.__dict__)
     speed = eval(speed, units.__dict__)
     rflist = gar.load(garfield_fileset, normalization, zero_wire_locs, delay)
-    fr = res.rf1dtoschema(rflist, origin, speed)
+    fr = rf1dtoschema(rflist, origin, speed)
     per.dump(wirecell_field_response_file, fr)
 
 
