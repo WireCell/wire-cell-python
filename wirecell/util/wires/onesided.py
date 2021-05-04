@@ -69,7 +69,7 @@ def load(filename):
             if not line:
                 continue
             chunks = line.split()
-            print(chunks)
+            #print(chunks)
             ch, plane, wip = [int(x) for x in chunks[:3]]
             beg = [float(x)*units.cm for x in chunks[3:6]]
             end = [float(x)*units.cm for x in chunks[6:9]]
