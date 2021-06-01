@@ -11,6 +11,7 @@ of major WCT input data files including:
 
 - field response functions
 - wire geometry
+- diagnostic plots
 
 * Installation
 
@@ -42,8 +43,8 @@ irregular so a script is provided to help.  It will also install the
 
 * Command line interfaces
 
-Some functionality is available from the command line, with a command
-typically named after the module that provides the CLI.  For example:
+Each main ~wirecell.<module>~ exposes most of its functionality via a
+command line interface named ~wirecell-<module>~.  For example:
 
 #+BEGIN_EXAMPLE
   $ wirecell-sigproc --help

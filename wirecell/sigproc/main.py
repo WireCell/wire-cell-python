@@ -83,6 +83,34 @@ def fr2npz(gain, shaping, json_file, npz_file):
     numpy.savez(npz_file, **dat)
 
 
+@cli.command("frzero")
+@click.option("-n", "--number", default=0,
+              help="Number of strip to keep, default keeps just zero strip")              
+@click.option("-o", "--output",
+              default="/dev/stdout",
+              help="Output WCT file (.json or .json.bz2, def: stdout)")
+@click.argument("infile")
+@click.pass_context
+def frzero(ctx, number, output, infile):
+    '''
+    Given a WCT FR file, make a new one with off-center wires zeroed.
+    '''
+    import wirecell.sigproc.response.persist as per
+    import wirecell.sigproc.response.arrays as arrs
+    fr = per.load(infile)
+    for pr in fr.planes:
+        for path in pr.paths:
+
+            wire = int(path.pitchpos / pr.pitch)
+            if abs(wire) <= number:
+                print(f'keep wire: {wire}, pitch = {path.pitchpos} / {pr.pitch}')
+                continue
+
+            nc = len(path.current)
+            for ind in range(nc):
+                path.current[ind] = 0;
+    per.dump(output, fr)
+
 @cli.command("response-info")
 @click.argument("json-file")
 @click.pass_context
