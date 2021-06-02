@@ -1,6 +1,9 @@
-import click
+#!/usr/bin/env python3
 
+import math
+import click
 from wirecell import units
+from wirecell.util.functions import unitify, unitify_parse
 
 @click.group("util")
 @click.pass_context
@@ -191,6 +194,119 @@ def plot_sim(ctx, input_file, output_file, ticks, plot, tag, time_range, number,
         deps = wirecell.gen.sim.Depos(fp, ident=number)
         fig, axes = deps.plot()
         plt.savefig(output_file)
+
+
+@cli.command("depo-lines")
+@click.option("-e", "--electron-density", default="5000/cm",
+              help="Linear electron density on track (number of electrons per unit track length)")
+@click.option("-S", "--step-size", default="0.1*mm",
+              help="Distance between deposition of ionization electron groups")
+@click.option("-T", "--time", default="0*ns",
+              help="Time or uniform time range if two numbers over which the 't0' time for tracks are selected")
+@click.option("-t", "--tracks", default=1,
+              help="Number of tracks per depo set")
+@click.option("-s", "--sets", default=1,
+              help="Number of depo sets")
+@click.option("-c", "--corner", type=str, default="0,0,0",
+              help="One corner of a bounding box")
+@click.option("-c", "--diagonal", type=str, default="1*m,1*m,1*m",
+              help="A vector from origin to diagonally opposed corner of bounding box")
+@click.option("--track-speed", default="clight",
+              help="Speed of track")
+@click.option("-o", "--output",
+              type=click.Path(dir_okay=False, file_okay=True),
+              help="Numpy file (.npz) in which to save the results")
+def lines(electron_density, step_size, time, tracks, sets,
+          corner, diagonal, track_speed, output):
+    '''
+    Generate ideal line-source "tracks" of depos
+    '''
+    import numpy
+    from numpy.random import uniform, normal as gauss
+
+    if not output.endswith(".npz"):
+        print(f'unsupported file type: {output}')
+        return -1
+
+    time = unitify_parse(time)
+    track_speed = unitify(track_speed)
+    electron_density = unitify(electron_density)
+    step_size = unitify(step_size)
+    eperstep = electron_density * step_size
+
+    p0 = numpy.array(unitify_parse(corner))
+    p1 = numpy.array(unitify_parse(diagonal))
+    bb = list(zip(p0, p1))
+    pmid = 0.5 * (p0 + p1)
+
+    collect = dict()
+    for iset in range(sets):
+        last_id = 0
+
+        datas = list()
+        infos = list()
+        for itrack in range(tracks):
+
+            pt = numpy.array([uniform(a,b) for a,b in bb])
+            g3 = numpy.array([gauss(0, 1) for i in range(3)])
+            mag = math.sqrt(numpy.dot(g3,g3))
+            vdir = g3/mag
+            
+            t0 = (p0 - pt ) / vdir # may have zeros
+            t1 = (p1 - pt ) / vdir # may have zeros
+            
+            a0 = numpy.argmin(numpy.abs(t0))
+            a1 = numpy.argmin(numpy.abs(t1))
+
+            # points on either side bb walls
+            pmin = pt + t0[a0] * vdir
+            pmax = pt + t1[a1] * vdir
+
+            dp = pmax - pmin
+            pdist = math.sqrt(numpy.dot(dp, dp))
+            nsteps = int(round(pdist / step_size))
+
+            pts = numpy.linspace(pmin,pmax, nsteps+1, endpoint=True)
+            
+            if len(time) == 1:
+                time0 = time[0]
+            else:
+                time0 = uniform(time[0], time[1])
+
+            timef = nsteps*step_size/track_speed
+            times = numpy.linspace(time0, timef, nsteps+1, endpoint=True)
+
+            charges = numpy.zeros(nsteps+1) + eperstep
+
+            zeros = numpy.zeros(nsteps+1)
+
+            data = numpy.vstack([
+                times,
+                charges,
+                pts.T,
+                zeros,
+                zeros])
+
+            ids = numpy.arange(last_id, last_id + nsteps + 1)
+            last_id = ids[-1]
+
+            info = numpy.vstack([
+                ids,
+                zeros,
+                zeros,
+                zeros])
+
+            datas.append(data)
+            infos.append(info)
+
+        datas = numpy.vstack([d.T for d in datas])
+        collect[f'depo_data_{iset}'] = datas
+        infos = numpy.vstack([i.T for i in infos])
+        collect[f'depo_info_{iset}'] = infos
+
+    # fixme: nice to add support for bee and wct JSON depo files
+    print("saving:", list(collect.keys()))
+    numpy.savez(output, **collect) 
 
 def main():
     cli(obj=dict())
