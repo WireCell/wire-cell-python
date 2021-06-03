@@ -359,7 +359,7 @@ def graph(desc, maker = maker):
                     join(channel, conductor, 'channel', relationship="peer")
 
     for ipoint, point in enumerate(p.point):
-        G.node[point]['pos'] = desc.points[ipoint]
+        G.nodes[point]['pos'] = desc.points[ipoint]
 
     for gi_face in range(desc.nfaces):
         face = p.face[gi_face]
@@ -380,7 +380,7 @@ def graph(desc, maker = maker):
                 gi_wire, gwire = desc.wire_index_by_wip(gi_face, iplane_in_face, wip)
                 wire = p.wire[gi_wire]
                 join(plane, wire, 'wip', wip=wip)
-                G.node[wire]['pitchloc'] = gwire.ploc
+                G.nodes[wire]['pitchloc'] = gwire.ploc
 
                 # odd segments are on the "other" face.
                 spot_face = (gi_face + gwire.seg%2)%2

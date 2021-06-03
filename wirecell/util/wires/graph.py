@@ -10,7 +10,7 @@ def nodes_by_type(G, typename):
     '''
     Return a list of all nodes in G of the given type.
     '''
-    return [n for n in G.nodes if G.node[n]['type'] == typename]
+    return [n for n in G.nodes if G.nodes[n]['type'] == typename]
 
 
 def neighbors_by_type(G, seed, typename, radius=1):
@@ -19,9 +19,9 @@ def neighbors_by_type(G, seed, typename, radius=1):
     which are of the given typename.
     '''
     if radius == 1:
-        return set([n for n in networkx.neighbors(G, seed) if G.node[n]['type'] == typename])
+        return set([n for n in networkx.neighbors(G, seed) if G.nodes[n]['type'] == typename])
 
-    return set([n for n in networkx.ego_graph(G, seed, radius) if G.node[n]['type'] == typename])
+    return set([n for n in networkx.ego_graph(G, seed, radius) if G.nodes[n]['type'] == typename])
 
 def neighbors_by_path(G, seed, typenamepath):
     '''
@@ -69,7 +69,7 @@ def parent(G, child, parent_type):
     Return parent node of given type 
     '''
     for n in networkx.neighbors(G, child):
-        if G.node[n]['type'] == parent_type:
+        if G.nodes[n]['type'] == parent_type:
             return n
     return None
     
@@ -173,8 +173,8 @@ def to_celltree_wires(G, channel_ident, face='face0'):
             head, tail = pts[0:2]
             if G[wire][head]['endpoint'] == 1:
                 head, tail = pts[1], pts[0]
-            ecm = [r/units.cm for r in G.node[head]['pos']]
-            scm = [r/units.cm for r in G.node[tail]['pos']]
+            ecm = [r/units.cm for r in G.nodes[head]['pos']]
+            scm = [r/units.cm for r in G.nodes[tail]['pos']]
 
             chident = channel_ident(G, wire)
             one = [chident, iplane, iwire] + scm + ecm
@@ -219,8 +219,8 @@ def to_schema(G, P, channel_ident):
                 head, tail = pts[0:2]
                 if G[wire][head]['endpoint'] == 1:
                     head, tail = pts[1], pts[0]
-                hpos = G.node[head]['pos']
-                tpos = G.node[tail]['pos']
+                hpos = G.nodes[head]['pos']
+                tpos = G.nodes[tail]['pos']
                 h_id = m.make('point', sign*hpos.x, hpos.y, sign*hpos.z)
                 t_id = m.make('point', sign*tpos.x, tpos.y, sign*tpos.z)
 
@@ -285,8 +285,8 @@ def wires_graph(G, wires):
         pt1, pt2 = neighbors_by_type(G, wire, 'point')
         if G[wire][pt1]['endpoint'] == 2:
             pt1, pt2 = pt2, pt1
-        pos1 = G.node[pt1]['pos']
-        pos2 = G.node[pt2]['pos']
+        pos1 = G.nodes[pt1]['pos']
+        pos2 = G.nodes[pt2]['pos']
         pos[pt1] = (pos1.z, pos1.y)
         pos[pt2] = (pos2.z, pos2.y)
         newG.add_edge(pt1, pt2)
@@ -311,8 +311,8 @@ def conductors_graph(G, conductors):
             pt1, pt2 = neighbors_by_type(G, wire, 'point')        
             if G[wire][pt1]['endpoint'] == 2:
                 pt1, pt2 = pt2, pt1
-            pos1 = G.node[pt1]['pos']
-            pos2 = G.node[pt2]['pos']
+            pos1 = G.nodes[pt1]['pos']
+            pos2 = G.nodes[pt2]['pos']
             pos[pt1] = (sign*pos1.z, pos1.y)
             pos[pt2] = (sign*pos2.z, pos2.y)
             newG.add_edge(pt1, pt2, style=style, icolor=icond)

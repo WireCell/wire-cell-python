@@ -2,6 +2,7 @@ import sys
 import click
 import numpy
 from wirecell import units
+from wirecell.util.functions import unitify_parse
 
 @click.group("util")
 @click.pass_context
@@ -263,6 +264,7 @@ def gen_plot_wires(ctx, output_file):
 @cli.command("make-wires")
 @click.option('-d','--detector',
 #              type=click.Choice("microboone protodune dune apa".split()),
+              default="apa",
               type=click.Choice(['apa']),
               help="Set the target detector")
 # fixme: give interface to tweak individual parameters
@@ -426,15 +428,50 @@ def gravio(ctx, dotfile):
     open(dotfile,'w').write(dottext)
 
 @cli.command("make-wires-onesided")
+@click.option("--width", default=None, type=str,
+              help="Detector width")
+@click.option("--height", default=None, type=str,
+              help="Detector height")
+@click.option("--pitches", default=None, type=str,
+              help="Comma list of pitch distances")
+@click.option("--angles", default=None, type=str,
+              help="Comma list of angles")
+@click.option("--offsets", default=None, type=str,
+              help="Comma list of wire offsets")
+@click.option("--planex", default=None, type=str,
+              help="Comma list of plane X locations")
+@click.option("--mcpp", default=None, type=int,
+              help="Maximum number of channels in a plane")
+@click.option("-d", "--detector",
+              default="protodune",
+              type=click.Choice(["protodune", "microboone"]),
+              help="Set default parameter set")
 @click.argument("output-file")
 @click.pass_context
-def make_wires_onesided(ctx, output_file):
+def make_wires_onesided(ctx, **kwds):
     '''
     Generate a WCT wires file.
+
+    The named detector sets initial defaults.  If other options are
+    given they overwride.
     '''
+    output_file = kwds.pop("output_file")
+    detector = kwds.pop("detector")
+
     import wirecell.util.wires.generator as wgen
+    params = dict(getattr(wgen, f'{detector}_params'))
+
+    for key, val in kwds.items():
+        if val is None:
+            continue
+        if isinstance(val, str):
+            val = unitify_parse(val)
+            if len(val) == 1:
+                val = val[0]
+        params[key] = val
+
     import wirecell.util.wires.persist as wpersist
-    s = wgen.onesided_wrapped()           # fixme, expose different algs to CLI
+    s = wgen.onesided_wrapped(params)
     wpersist.dump(output_file, s)
 
 @cli.command("wire-channel-map")
