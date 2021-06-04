@@ -502,6 +502,22 @@ def wire_channel_map(ctx, input_file):
             wires.sort()
             click.echo("%s\t%s" %(c,wires))
 
+@cli.command("wire-summary")
+@click.option("-o", "--output", default="/dev/stdout",
+              help="Output file")
+@click.argument("wires")
+def wire_summary(output, wires):
+    '''
+    Produce a summary of detector response and wires.
+    '''
+    import json
+    import wirecell.util.wires.persist as wpersist
+    wstore = wpersist.load(wires)
+    import wirecell.util.wires.info as winfo
+    wdict = winfo.summary_dict(wstore)
+    with open(output, "w") as fp:
+        fp.write(json.dumps(wdict, indent=4))
+
 
 def main():
     cli(obj=dict())

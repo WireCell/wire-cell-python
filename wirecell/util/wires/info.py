@@ -47,7 +47,16 @@ class BoundingBox(object):
         self.minp = None
         self.maxp = None
 
+    @property
+    def asdict(self):
+        return dict(minp = self.minp, maxp = self.maxp)
+
     def __call__(self, p):
+        if hasattr(p, "minp") and hasattr(p, "maxp"): # is a bb
+            self(p.minp)
+            self(p.maxp)
+            return
+
         if self.minp is None:
             self.minp = dict(p)
             self.maxp = dict(p)
@@ -60,6 +69,7 @@ class BoundingBox(object):
         for c,v in self.maxp.items():
             if p[c] > v:
                 self.maxp[c] = p[c]
+
 
     def center(self):
         return {c:0.5*(self.minp[c]+self.maxp[c]) for c in "xyz"}
@@ -115,6 +125,79 @@ def pitch_mean_rms(wires):
 def format_pitch(p):
     pmm = tuple([pp/units.mm for pp in p])
     return "(%.3f +/- %.3f [%.3f<%.3f]) " % pmm
+
+def summary_dict(store):
+    '''
+    Summarize the wires in store returning a dict
+
+    Dict is a tree
+
+    det -> anode -> face -> plane
+
+    All three have key ["ident"] giving index number and "bb" giving
+    bounding box with minp/maxp points
+
+    Each plane has these keys:
+
+        - pitch :: the wire pitch, also pmin, pmax and prms
+
+        - nwires :: number of wires
+
+    '''
+    ret = list()
+    for det in todict(store):
+        ddict = dict()
+        ddict['id'] = det['ident']
+        ddict['anodes'] = list()
+        dbb = BoundingBox()
+
+        #print ('detector keys:',list(det.keys()))
+        for anode in det['anodes']:
+            adict = dict()
+            adict["id"] = anode["ident"]
+            adict['faces'] = list()
+            #print ('\tanode %s keys: %s' % (anode['ident'], list(anode.keys())))
+
+            abb = BoundingBox()
+
+            faces = anode['faces']
+            for face in faces:
+                fdict = dict()
+                fdict["id"] = face["ident"]
+                fdict['planes'] = list()
+                #print ('\t\tface %s keys: %s' % (face["ident"], list(face.keys())))
+
+                fbb = BoundingBox()
+
+                planes = face['planes']
+                for plane in planes:
+                    pdict = dict()
+                    pdict['id'] = plane['ident']
+                    #print ('\t\t\tplane %s keys: %s' % (plane["ident"], list(plane.keys())))
+
+                    wires = plane['wires']
+                    pdict['nwires'] = len(wires)
+                    pdict['pitch'], pdict['prms'], pdict['pmin'], pdict['pmax'] = pitch_mean_rms(wires)
+                    
+                    pbb = BoundingBox()
+                    for wire in wires:
+                        pbb(wire['head']);
+                        pbb(wire['tail']);
+                    fbb(pbb)
+                    pdict['bb'] = pbb.asdict
+                    fdict['planes'].append(pdict)
+
+                abb(fbb)
+                fdict['bb'] = fbb.asdict
+                adict['faces'].append(fdict)
+                
+            dbb(abb)
+            adict['bb'] = abb.asdict
+            ddict['anodes'].append(adict)
+            
+        ddict['bb'] = dbb.asdict
+        ret.append(ddict)
+    return ret
 
 def summary(store):
     '''
