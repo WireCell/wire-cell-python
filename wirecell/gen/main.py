@@ -300,9 +300,16 @@ def lines(electron_density, step_size, time, tracks, sets,
             infos.append(info)
 
         datas = numpy.vstack([d.T for d in datas])
-        collect[f'depo_data_{iset}'] = datas.T
         infos = numpy.vstack([i.T for i in infos])
-        collect[f'depo_info_{iset}'] = infos.T
+
+        # datas is now as (n,7)
+
+        timeorder = numpy.argsort(datas[:,0])
+        datas = datas[timeorder, :]
+        infos = infos[timeorder, :]
+
+        collect[f'depo_data_{iset}'] = datas
+        collect[f'depo_info_{iset}'] = infos
 
     # fixme: nice to add support for bee and wct JSON depo files
     print("saving:", list(collect.keys()))
