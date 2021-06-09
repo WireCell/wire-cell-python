@@ -199,7 +199,7 @@ def plot_sim(ctx, input_file, output_file, ticks, plot, tag, time_range, number,
 @cli.command("depo-lines")
 @click.option("-e", "--electron-density", default="5000/cm",
               help="Linear electron density on track (number of electrons per unit track length)")
-@click.option("-S", "--step-size", default="0.1*mm",
+@click.option("-S", "--step-size", default="1.0*mm",
               help="Distance between deposition of ionization electron groups")
 @click.option("-T", "--time", default="0*ns",
               help="Time or uniform time range if two numbers over which the 't0' time for tracks are selected")
@@ -305,11 +305,11 @@ def lines(electron_density, step_size, time, tracks, sets,
         # datas is now as (n,7)
 
         timeorder = numpy.argsort(datas[:,0])
-        datas = datas[timeorder, :]
-        infos = infos[timeorder, :]
+        datas = datas[timeorder]
+        infos = infos[timeorder]
 
-        collect[f'depo_data_{iset}'] = datas
-        collect[f'depo_info_{iset}'] = infos
+        collect[f'depo_data_{iset}'] = numpy.array(datas, dtype='float32')
+        collect[f'depo_info_{iset}'] = numpy.array(infos, dtype='int32')
 
     # fixme: nice to add support for bee and wct JSON depo files
     print("saving:", list(collect.keys()))

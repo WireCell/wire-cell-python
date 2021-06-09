@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+
+import os
 import sys
 import click
 import numpy
@@ -518,6 +521,97 @@ def wire_summary(output, wires):
     with open(output, "w") as fp:
         fp.write(json.dumps(wdict, indent=4))
 
+
+def frame_split_protodune(arr, name, pattern):
+    detector="protodune"
+    parts = name.split("_")
+    tag = parts[1] or "orig"
+    index = int(parts[2])
+
+    cranges = [0, 800, 1600, 2560]
+    for anodeid in range(6):
+        for planeid in range(3):
+            offset = 2560 * anodeid
+            a = offset + cranges[planeid]
+            b = offset + cranges[planeid+1]
+            parr = arr[a:b, :]
+
+            planeletter = "UVW"[planeid] # for format
+            path = pattern.format(**locals())
+            dname = os.path.dirname(path)
+            if dname and not os.path.exists(dname):
+                os.makedirs(dname)
+            aname = os.path.splitext(os.path.basename(path))[0]
+            tosave = {aname: parr}
+            numpy.savez_compressed(path, **tosave)
+                
+
+
+@cli.command('frame-split')
+@click.option("-f", "--format",
+              default="{detector}-{tag}-{index}-{anodeid}-{planeid}.npz",
+              help="Set the format for the output files")
+@click.argument("npzfile")
+def frame_split(format, npzfile):
+    '''
+    Split a file of frames, such as as produced by NumpyFrameSaver,
+    into per-plane Numpy files.
+
+    Available variables for the format are:
+    - detector :: the detector name devined from the input.
+    - tag :: the frame tag from the input, if tag is empty then "orig" is used.
+    - index :: the numeric cound from the array name
+    - anodeid :: the numberic ID of the anode 
+    - planeid :: the numeric ID of the plane (0=U, 1=V, 2=W)
+    - planeletter :: letter for the plane
+    '''
+    # add more detectors here
+    splitters = { 15360: frame_split_protodune }
+
+    fp = numpy.load(npzfile)
+    for aname in fp:
+        if not aname.startswith("frame_"):
+            continue
+        frame = fp[aname]
+        try:
+            meth = splitters[frame.shape[0]]
+        except KeyError:
+            print(f'unknown array shape: {frame.shape}')
+        meth(frame, aname, format)
+
+@cli.command("npz-to-img")
+@click.option("-o", "--output", type=str,
+              help="Output image file")
+@click.option("-a", "--array", type=str, default=None,
+              help="Array to plot")
+@click.argument("npzfile")
+def npz_to_img(output, array, npzfile):
+    '''
+    Make an image from an array in an numpy file.
+    '''
+    # fixme: expose options, aspect, pcolor, colobar, to cli
+
+    import matplotlib.pyplot as plt
+
+    if not output:
+        print("need output file")
+        return -1
+
+    fp = numpy.load(npzfile)
+    if not array:
+        array = list(fp.keys())[0]
+    arr = fp[array]
+
+    plt.imshow(arr)
+    plt.savefig(output)
+
+@cli.command("npzls")
+@click.argument("npzfile")
+def npzls(npzfile):
+    fp = numpy.load(npzfile)
+    for key in fp:
+        shape = fp[key].shape
+        print(f'{key:16s} {shape}')
 
 def main():
     cli(obj=dict())
