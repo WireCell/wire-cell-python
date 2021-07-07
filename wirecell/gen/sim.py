@@ -181,17 +181,16 @@ class Frame(object):
             print ("exent: %s, chind=(%d,%d) tick=(%d,%d)" % (str(extent), chind0, chind1, tick0,tickf) )
             
             farr = frame[chind0:chind1,tick0:tickf]
-            #vmax = max(abs(numpy.min(farr)), abs(numpy.max(farr)))
-            vmax=5
+            vmax = max(abs(numpy.min(farr)), abs(numpy.max(farr)))
 
-            # cmap = 'seismic'
+            cmap = 'seismic'
             # cmap = 'viridis'
             # cmap = 'gist_rainbow'
             # cmap = 'terrain'
             # cmap = 'coolwarm'
-            cmap = 'Spectral'
-            farr = numpy.ma.array(farr)
-            farr = numpy.ma.masked_where(farr == 0, farr)
+            # cmap = 'Spectral'
+            # farr = numpy.ma.array(farr)
+            # farr = numpy.ma.masked_where(farr == 0, farr)
             im = ax.imshow(farr, vmin=-vmax, vmax=vmax, cmap=cmap,
                            aspect='auto', extent=extent, interpolation='none')
             plt.colorbar(im, ax=ax)

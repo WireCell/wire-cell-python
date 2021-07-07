@@ -219,7 +219,7 @@ def plot_sim(ctx, input_file, output_file, ticks, plot, tag, time_range, number,
                 plt.close()
 
 @cli.command("depo-lines")
-@click.option("-e", "--electron-density", default="5000/cm",
+@click.option("-e", "--electron-density", default="5000/mm",
               help="Linear electron density on track (number of electrons per unit track length)")
 @click.option("-S", "--step-size", default="1.0*mm",
               help="Distance between deposition of ionization electron groups")
@@ -305,7 +305,7 @@ def depo_lines(electron_density, step_size, time, tracks, sets,
             times = numpy.linspace(time0, timef, nsteps+1, endpoint=True)
 
             dt = timef-time0
-            print(f'nsteps:{nsteps}, pdist:{pdist/units.mm:.1f} mm, dt={dt/units.ns:.1f} ns')
+            print(f'nsteps:{nsteps}, pdist:{pdist/units.mm:.1f} mm, dt={dt/units.ns:.1f} ns, {eperstep}')
 
             charges = numpy.zeros(nsteps+1) + eperstep
 
