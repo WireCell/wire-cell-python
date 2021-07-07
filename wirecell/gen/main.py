@@ -213,14 +213,20 @@ def plot_sim(ctx, input_file, output_file, ticks, plot, tag, time_range, number,
               help="A vector from origin to diagonally opposed corner of bounding box")
 @click.option("--track-speed", default="clight",
               help="Speed of track")
+@click.option("--seed", default="0,1,2,3,4", type=str,
+              help="A single integer or comma-list of integers to use as random seed")
 @click.option("-o", "--output",
               type=click.Path(dir_okay=False, file_okay=True),
               help="Numpy file (.npz) in which to save the results")
-def lines(electron_density, step_size, time, tracks, sets,
-          corner, diagonal, track_speed, output):
+def depo_lines(electron_density, step_size, time, tracks, sets,
+               corner, diagonal, track_speed, seed, output):
     '''
     Generate ideal line-source "tracks" of depos
     '''
+    seed = list(map(int, seed.split(",")))
+    import numpy.random
+    numpy.random.seed(seed)
+
     import numpy
     from numpy.random import uniform, normal as gauss
 
