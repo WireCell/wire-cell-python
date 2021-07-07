@@ -180,9 +180,9 @@ class Frame(object):
 class Depos(object):
     def __init__(self, fp, ident=0):
         # 7xN: t, q, x, y, z, dlong, dtran,
-        self.data = fp['depo_data_%d'%ident]
+        self.data = fp['depo_data_%d'%ident].T
         # 4xN: id, pdg, gen, child
-        self.info = fp['depo_info_%d'%ident]
+        self.info = fp['depo_info_%d'%ident].T
 
     @property
     def t(self):

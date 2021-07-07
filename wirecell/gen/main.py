@@ -140,13 +140,13 @@ def plot_test_boundaries(ctx, times, npz_file, pdf_file):
 @click.option("--tag", default='',
               help="The frame tag.")
 @click.option("-t", "--time-range", default='',
-                  help="The time range in ms.")
-@click.option("-n", "--number", default=0,
-                  help="The number of the frame or depo set to plot.")
+              help="The time range in ms.")
+@click.option("-n", "--number", default="0",
+              help="One or more comma separated frame or depo indices.")
 @click.option("-c", "--channel-groups", default='',
-                  help="Indices of channel groups as comma separated list.")
+              help="Indices of channel groups as comma separated list.")
 @click.option("-b", "--channel-boundaries", default='',
-                  help="Channels at which there are boundaries.")
+              help="Channels at which there are boundaries.")
 @click.pass_context
 def plot_sim(ctx, input_file, output_file, ticks, plot, tag, time_range, number, channel_groups, channel_boundaries):
     '''
@@ -157,6 +157,14 @@ def plot_sim(ctx, input_file, output_file, ticks, plot, tag, time_range, number,
     import numpy
     import matplotlib.pyplot as plt
     from matplotlib.backends.backend_pdf import PdfPages
+    from wirecell.util.plottools import NameSequence
+
+    if output_file.endswith("pdf"):
+        print(f'Saving to pdf: {output_file}')
+        Outer = PdfPages
+    else:
+        print(f'Saving to: {output_file}')
+        Outer = NameSequence
 
     if not time_range:
         if ticks:
@@ -166,35 +174,37 @@ def plot_sim(ctx, input_file, output_file, ticks, plot, tag, time_range, number,
 
     fp = numpy.load(input_file)
 
-    if 'frame' in plot:
-        print ("Frames: %s" %(', '.join([k for k in fp.keys() if k.startswith("frame")]), ))
-        fr = wirecell.gen.sim.Frame(fp, tag=tag, ident=number)
-        
-        channel_boundaries = wirecell.gen.sim.parse_channel_boundaries(channel_boundaries)
-        ch = wirecell.gen.sim.group_channel_indices(fr.channels, channel_boundaries)
-        print ("All channel groups: ", ch)
-        if channel_groups:
-            ch = [ch[int(ci)] for ci in channel_groups.split(",")]
-        print ("Using groups: ", ch)
-        
+    numbers = [int(i.strip()) for i in number.split(",") if i.strip()]
 
-        if ticks:
-            plotter = fr.plot_ticks
-            t0,tf = [int(t,10) for t in time_range.split(",")]
-        else:
-            plotter = fr.plot
-            t0,tf = [float(t)*units.ms for t in time_range.split(",")]
+    with Outer(output_file) as out:
+        for onenum in numbers:
+            if 'frame' in plot:
+                fr = wirecell.gen.sim.Frame(fp, tag=tag, ident=onenum)
 
+                channel_boundaries = wirecell.gen.sim.parse_channel_boundaries(channel_boundaries)
+                ch = wirecell.gen.sim.group_channel_indices(fr.channels, channel_boundaries)
+                print ("All channel groups: ", ch)
+                if channel_groups:
+                    ch = [ch[int(ci)] for ci in channel_groups.split(",")]
+                print ("Using groups: ", ch)
 
-        fig, axes = plotter(t0, tf, raw=False, chinds=ch)
-        plt.savefig(output_file)
+                if ticks:
+                    plotter = fr.plot_ticks
+                    t0,tf = [int(t,10) for t in time_range.split(",")]
+                else:
+                    plotter = fr.plot
+                    t0,tf = [float(t)*units.ms for t in time_range.split(",")]
 
-    if 'depo' in plot:
-        print ("Depos: %s" %(', '.join([k for k in fp.keys() if k.startswith("depo_data")]), ))
-        deps = wirecell.gen.sim.Depos(fp, ident=number)
-        fig, axes = deps.plot()
-        plt.savefig(output_file)
+                fig, axes = plotter(t0, tf, raw=False, chinds=ch)
+                out.savefig(fig)
+                plt.close()
 
+            if 'depo' in plot:
+
+                deps = wirecell.gen.sim.Depos(fp, ident=onenum)
+                fig, axes = deps.plot()
+                out.savefig(fig)
+                plt.close()
 
 @cli.command("depo-lines")
 @click.option("-e", "--electron-density", default="5000/cm",
