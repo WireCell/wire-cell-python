@@ -22,12 +22,18 @@ class NameSequence(object):
         If no format marker then the index marker is added between
         file base and extension (if any).
 
+        The first may give the starting index sequence or if None no
+        sequence will be used and the name will be kept as-is.
+
         This is a callable and it mimics PdfPages.
         '''
         self.base, self.ext = os.path.splitext(name)
         self.index = first
 
     def __call__(self):
+        if self.index is None:
+            return self.base + self.ext
+
         try:
             fn = self.base % self.index
         except TypeError:

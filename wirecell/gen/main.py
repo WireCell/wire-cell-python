@@ -177,6 +177,11 @@ def plot_sim(ctx, input_file, output_file, ticks, plot, tag, time_range, number,
     numbers = [int(i.strip()) for i in number.split(",") if i.strip()]
 
     with Outer(output_file) as out:
+        
+        # hack
+        if len(numbers) == 1 and hasattr(out, "index"):
+            out.index = None
+
         for onenum in numbers:
             if 'frame' in plot:
                 fr = wirecell.gen.sim.Frame(fp, tag=tag, ident=onenum)

@@ -207,27 +207,24 @@ class Depos(object):
         ax11 = fig.add_subplot(224, sharey=ax10)
         ax01 = fig.add_subplot(222, projection='3d')
 
-        
         ax00.hist(self.t/units.ms, 100)
+        ax00.set_title('depo times [ms]');
 
         ax10.scatter(self.x/units.m, self.z/units.m)
         ax11.scatter(self.y/units.m, self.z/units.m)
         ax01.scatter(self.x/units.m, self.y/units.m, self.z/units.m)
-
-        ax00.set_title('depo times [ms]');
 
         ax10.set_xlabel('x [m]');
         ax10.set_ylabel('z [m]');
         ax11.set_xlabel('y [m]');
         ax11.set_ylabel('z [m]');
 
-
         # fig, axes = plt.subplots(nrows=2, ncols=2)
         # axes[0,0].scatter(self.x/units.m, self.y/units.m, sharex=axes[1,0])
         # axes[1,0].scatter(self.x/units.m, self.z/units.m)
         # axes[1,1].scatter(self.y/units.m, self.z/units.m, sharey=axes[1,0])
         # axes[0,1].scatter(self.x/units.m, self.y/units.m, self.z/units.m)
-        return fig,(ax00,ax10,ax01,ax11)
+        return fig,(ax00,ax10, ax01,ax11)
 
 class NumpySaver(object):
     def __init__(self, filename):
