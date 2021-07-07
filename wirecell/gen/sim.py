@@ -22,55 +22,77 @@ def baseline_subtract(frame):
 
 
 def parse_channel_boundaries(cb):
-    if type(cb) != type(""):
-        return cb               # assume already parsed.
-    return tuple(map(int, cb.split(',')))
-    
+    '''
+    '''
+    if not cb:
+        return ()
+    if isinstance(cb, str):
+        return tuple(map(int, cb.split(',')))
+    return cb               # assume already parsed.
 
-def group_channel_indices(channels, boundaries=()):
+
+def group_channel_indices(channels):
     '''
     Given a list of channels, return a list of lists where each
-    sublist is a sequential set.  If a sequence of boundaries are
-    given, then force a grouping on that channel even if there's not
-    jump.
+    sublist is an inclusive sequential set.  
+
+    >>> group_channel_indices([0, 2,3,4, 7,8,9])
+    --> [(0, 0), (2, 4), (7, 9)]
+
     '''
-
     print ("Channel boundaries: %s" % str(boundaries))
+    channels = list(channels)     # we will
+    boundaries = list(boundaries) # mutate
+    out = list()
 
-    channels = numpy.asarray(channels)
-    chan_list = channels.tolist()
-    binds = list()
-    for b in boundaries:
-        try:
-            i = chan_list.index(b)
-        except ValueError:
+    start = channels.pop(0)
+    last = start
+    while channels:
+        one = channels.pop(0)
+        if one - last == 1:
+            last = one
             continue
-        binds.append(i)
+        out.append((start, last))
+        start = last = one
+    out.append((start,last))
 
-    chd = channels[1:] - channels[:-1]
-    chjumps = [-1] + list(numpy.where(chd>1)[0]) + [channels.size-1]
-    ret = list()
-    for a,b in zip(chjumps[:-1], chjumps[1:]):
-        #print a,b,channels[a+1:b+1]
-        a += 1
-        b += 1
+    return out
 
-        gotsome = 0
-        for bind in binds:
-            if a < bind and bind < b:
-                ret.append((a,bind))
-                ret.append((bind,b))
-                gotsome += 1
-        if gotsome == 0:
-            ret.append((a,b))
-    return ret
+    # channels = numpy.asarray(channels)
+    # chan_list = channels.tolist()
+    # binds = list()
+    # for b in boundaries:
+    #     try:
+    #         i = chan_list.index(b)
+    #     except ValueError:
+    #         continue
+    #     binds.append(i)
+
+    # chd = channels[1:] - channels[:-1]
+    # chjumps = [-1] + list(numpy.where(chd>1)[0]) + [channels.size-1]
+    # ret = list()
+    # for a,b in zip(chjumps[:-1], chjumps[1:]):
+    #     #print a,b,channels[a+1:b+1]
+    #     a += 1
+    #     b += 1
+
+    #     gotsome = 0
+    #     for bind in binds:
+    #         if a < bind and bind < b:
+    #             ret.append((a,bind))
+    #             ret.append((bind,b))
+    #             gotsome += 1
+    #     if gotsome == 0:
+    #         ret.append((a,b))
+    # return ret
 
 class Frame(object):
     def __init__(self, fp, ident=0, tag=''):
         def thing(n):
             arr = fp['%s_%s_%d' % (n, tag, ident)]
-            if n == 'frame':
-                return arr.T
+            # WCT NumpyFrameSaver saves as shape (nchan, ntick)
+            # if n == 'frame':
+            #     return arr.T
             return arr
 
         for n in 'frame channels tickinfo'.split():
@@ -84,11 +106,10 @@ class Frame(object):
         dense and chinds are taken as channel ranges.
         '''
         frame = self.frame
-        print ("Frame shape: %s" % str(frame.shape))
+        print ("Frame shape (nchan, ntick): %s" % str(frame.shape))
 
         if not raw:
             frame = baseline_subtract(frame)
-
 
         if not chinds:
             chinds = group_channel_indices(self.channels, self.channel_boundaries)
@@ -107,7 +128,7 @@ class Frame(object):
             ch1 = self.channels[chind[0]]
             ch2 = self.channels[chind[1]-1]
 
-            extent = (tick0, tickf, ch2, ch1)
+            extent = (ch1, ch2, tickf, tick0)
             print ("exent: %s" % str(extent))
 
             im = ax.imshow(frame[chind[0]:chind[1],tick0:tickf],
@@ -118,9 +139,10 @@ class Frame(object):
 
         return fig,axes
 
-    def plot(self, t0=None, tf=None, raw=True, chinds = ()):
+    def plot(self, t0=None, tf=None, raw=True, chinds=None):
 
         frame = self.frame
+        print ("Frame shape (nchan, ntick): %s" % str(frame.shape))
         if not raw:
             frame = baseline_subtract(frame)
 
@@ -137,10 +159,11 @@ class Frame(object):
         tick0 = int((t0-tstart)/tick)
         tickf = int((tf-tstart)/tick)
         
-        #print ("trange=[%.2f %.2f]ms ticks=[%d,%d]" % (t0/units.ms,tf/units.ms,tick0,tickf))
+        print ("trange=[%.2f %.2f]ms ticks=[%d,%d]" % (t0/units.ms,tf/units.ms,tick0,tickf))
 
         if not chinds:
             chinds = group_channel_indices(self.channels)
+        print(f'chinds: {chinds}')
         ngroups = len(chinds)
         fig, axes = plt.subplots(nrows=ngroups, ncols=1, sharex = True)
         if ngroups == 1:
@@ -155,15 +178,26 @@ class Frame(object):
             ch2 = self.channels[chind1-1]
 
             extent = (t0/units.ms, tf/units.ms, ch2, ch1)
-            print ("exent: %s, chind=(%d,%d)" % (str(extent), chind0, chind1) )
+            print ("exent: %s, chind=(%d,%d) tick=(%d,%d)" % (str(extent), chind0, chind1, tick0,tickf) )
+            
+            farr = frame[chind0:chind1,tick0:tickf]
+            #vmax = max(abs(numpy.min(farr)), abs(numpy.max(farr)))
+            vmax=5
 
-
-            #print (chind,extent, chind, tick0, tickf, frame.shape)
-            im = ax.imshow(frame[chind0:chind1,tick0:tickf],
+            # cmap = 'seismic'
+            # cmap = 'viridis'
+            # cmap = 'gist_rainbow'
+            # cmap = 'terrain'
+            # cmap = 'coolwarm'
+            cmap = 'Spectral'
+            farr = numpy.ma.array(farr)
+            farr = numpy.ma.masked_where(farr == 0, farr)
+            im = ax.imshow(farr, vmin=-vmax, vmax=vmax, cmap=cmap,
                            aspect='auto', extent=extent, interpolation='none')
             plt.colorbar(im, ax=ax)
-            if not ngroups:
-                ax.set_xlabel('time [ms]')
+            ax.set_xlabel('time [ms]')
+            ax.set_ylabel('channels')
+
 
         #plt.savefig(outfile)
         return fig,axes
@@ -210,9 +244,10 @@ class Depos(object):
         ax00.hist(self.t/units.ms, 100)
         ax00.set_title('depo times [ms]');
 
-        ax10.scatter(self.x/units.m, self.z/units.m)
-        ax11.scatter(self.y/units.m, self.z/units.m)
-        ax01.scatter(self.x/units.m, self.y/units.m, self.z/units.m)
+        s=0.01
+        ax10.scatter(self.x/units.m, self.z/units.m, s=s)
+        ax11.scatter(self.y/units.m, self.z/units.m, s=s)
+        ax01.scatter(self.x/units.m, self.y/units.m, self.z/units.m, s=s)
 
         ax10.set_xlabel('x [m]');
         ax10.set_ylabel('z [m]');

@@ -146,7 +146,7 @@ def plot_test_boundaries(ctx, times, npz_file, pdf_file):
 @click.option("-c", "--channel-groups", default='',
               help="Indices of channel groups as comma separated list.")
 @click.option("-b", "--channel-boundaries", default='',
-              help="Channels at which there are boundaries.")
+              help="Channels at which there are boundaries, eg 0,2560,5120 for 2 APAs")
 @click.pass_context
 def plot_sim(ctx, input_file, output_file, ticks, plot, tag, time_range, number, channel_groups, channel_boundaries):
     '''
@@ -186,12 +186,19 @@ def plot_sim(ctx, input_file, output_file, ticks, plot, tag, time_range, number,
             if 'frame' in plot:
                 fr = wirecell.gen.sim.Frame(fp, tag=tag, ident=onenum)
 
-                channel_boundaries = wirecell.gen.sim.parse_channel_boundaries(channel_boundaries)
-                ch = wirecell.gen.sim.group_channel_indices(fr.channels, channel_boundaries)
-                print ("All channel groups: ", ch)
                 if channel_groups:
                     ch = [ch[int(ci)] for ci in channel_groups.split(",")]
-                print ("Using groups: ", ch)
+                elif channel_boundaries:
+                    channel_boundaries = list(wirecell.gen.sim.parse_channel_boundaries(channel_boundaries))
+                    ch = [[channel_boundaries.pop(0),],]
+                    while channel_boundaries:
+                        one = channel_boundaries.pop(0)
+                        ch[-1].append(one-1)
+                        if channel_boundaries:
+                            ch.append([one])
+                else:
+                    ch = wirecell.gen.sim.group_channel_indices(fr.channels)
+                print ("Using channel groups: ", ch)
 
                 if ticks:
                     plotter = fr.plot_ticks
@@ -296,6 +303,9 @@ def depo_lines(electron_density, step_size, time, tracks, sets,
 
             timef = nsteps*step_size/track_speed
             times = numpy.linspace(time0, timef, nsteps+1, endpoint=True)
+
+            dt = timef-time0
+            print(f'nsteps:{nsteps}, pdist:{pdist/units.mm:.1f} mm, dt={dt/units.ns:.1f} ns')
 
             charges = numpy.zeros(nsteps+1) + eperstep
 

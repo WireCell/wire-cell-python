@@ -584,8 +584,24 @@ def frame_split(format, npzfile):
               help="Output image file")
 @click.option("-a", "--array", type=str, default=None,
               help="Array to plot")
+@click.option("-c", "--cmap", type=str, default="seismic",
+              help="Color map")
+@click.option("-b", "--baseline", default=None,
+              help="Apply median baseline subtraction or if number, subtract directly")
+@click.option("-m", "--mask", default=None, 
+              help="Value or range to mask, range is lower-edge inclusive")
+@click.option("--vmin", default=None, 
+              help="Minimum value (z/color axis)")
+@click.option("--vmax", default=None, 
+              help="Maximum value (z/color axis)")
+@click.option("--dpi", default=None,
+              help="The dots-per-inch resolution")
+@click.option("-z", "--zoom", default=None,
+              help="A zoom range as 'rmin:rmax,cmin:cmax'")
 @click.argument("npzfile")
-def npz_to_img(output, array, npzfile):
+def npz_to_img(output, array,
+               cmap, baseline, mask, vmin, vmax, dpi, zoom,
+               npzfile):
     '''
     Make an image from an array in an numpy file.
     '''
@@ -602,8 +618,39 @@ def npz_to_img(output, array, npzfile):
         array = list(fp.keys())[0]
     arr = fp[array]
 
-    plt.imshow(arr)
-    plt.savefig(output)
+    if baseline == "median":
+        print("subtracting median")
+        arr = arr - numpy.median(arr)
+    elif baseline is not None:
+        print(f"subtracting {baseline}")
+        arr = arr - float(baseline)
+
+    args = dict(cmap=cmap, aspect='auto', interpolation='none')
+
+    if vmin is not None:
+        args["vmin"] = vmin
+    if vmax is not None:
+        args["vmax"] = vmax
+    if mask:
+        mask = [float(m) for m in mask.split(",")]
+        arr = numpy.ma.array(arr)
+        if len(mask) == 1:
+            arr = numpy.ma.masked_where(arr == mask[0], arr)
+        else:
+            arr = numpy.ma.masked_where((arr >= mask[0]) & (arr < mask[1]), arr)
+    if zoom:
+        r,c = zoom.split(",")
+        rslc = slice(*[int(i) for i in r.split(":")])
+        cslc = slice(*[int(i) for i in c.split(":")])
+        arr = arr[rslc, cslc]
+
+    plt.imshow(arr, **args)
+    plt.colorbar()
+
+    args = dict()
+    if dpi:
+        args["dpi"] = int(dpi)
+    plt.savefig(output, **args)
 
 @cli.command("npzls")
 @click.argument("npzfile")
