@@ -598,9 +598,18 @@ def frame_split(format, npzfile):
               help="The dots-per-inch resolution")
 @click.option("-z", "--zoom", default=None,
               help="A zoom range as 'rmin:rmax,cmin:cmax'")
+@click.option("-X", "--xtitle", default=None,
+              help="X-axis title")
+@click.option("-Y", "--ytitle", default=None,
+              help="Y-axis title")
+@click.option("-Z", "--ztitle", default=None,
+              help="Z-axis title")
+@click.option("-T", "--title", default=None,
+              help="Overall title")
 @click.argument("npzfile")
 def npz_to_img(output, array,
                cmap, baseline, mask, vmin, vmax, dpi, zoom,
+               xtitle, ytitle, ztitle, title,
                npzfile):
     '''
     Make an image from an array in an numpy file.
@@ -645,7 +654,14 @@ def npz_to_img(output, array,
         arr = arr[rslc, cslc]
 
     plt.imshow(arr, **args)
-    plt.colorbar()
+    cb = plt.colorbar(label=ztitle)
+
+    if xtitle:
+        plt.xlabel(xtitle)
+    if ytitle:
+        plt.ylabel(ytitle)
+    if title:
+        plt.suptitle(title)
 
     args = dict()
     if dpi:

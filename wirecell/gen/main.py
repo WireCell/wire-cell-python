@@ -267,12 +267,17 @@ def depo_lines(electron_density, step_size, time, tracks, sets,
     bb = list(zip(p0, p1))
     pmid = 0.5 * (p0 + p1)
 
+    tinfot = numpy.dtype([('pmin','3float32'), ('pmax','3float32'),
+                          ('tmin', 'float32'), ('tmax', 'float32'),
+                          ('step','f4'),       ('eper','f4')])
+
     collect = dict()
     for iset in range(sets):
         last_id = 0
 
         datas = list()
         infos = list()
+        tinfos = numpy.zeros(tracks, dtype=tinfot)
         for itrack in range(tracks):
 
             pt = numpy.array([uniform(a,b) for a,b in bb])
@@ -306,6 +311,13 @@ def depo_lines(electron_density, step_size, time, tracks, sets,
 
             dt = timef-time0
             print(f'nsteps:{nsteps}, pdist:{pdist/units.mm:.1f} mm, dt={dt/units.ns:.1f} ns, {eperstep}')
+
+            tinfos["pmin"][itrack] = pmin
+            tinfos["pmax"][itrack] = pmax
+            tinfos["tmin"][itrack] = time0
+            tinfos["tmax"][itrack] = timef         
+            tinfos["step"][itrack] = step_size
+            tinfos["eper"][itrack] = eperstep
 
             charges = numpy.zeros(nsteps+1) + eperstep
 
@@ -341,6 +353,7 @@ def depo_lines(electron_density, step_size, time, tracks, sets,
 
         collect[f'depo_data_{iset}'] = numpy.array(datas, dtype='float32')
         collect[f'depo_info_{iset}'] = numpy.array(infos, dtype='int32')
+        collect[f'track_info_{iset}'] = tinfos
 
     # fixme: nice to add support for bee and wct JSON depo files
     print("saving:", list(collect.keys()))
