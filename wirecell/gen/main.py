@@ -319,7 +319,8 @@ def depo_lines(electron_density, step_size, time, tracks, sets,
             tinfos["step"][itrack] = step_size
             tinfos["eper"][itrack] = eperstep
 
-            charges = numpy.zeros(nsteps+1) + eperstep
+            # in terms of charge, negative is expected
+            charges = numpy.zeros(nsteps+1) + -eperstep
 
             zeros = numpy.zeros(nsteps+1)
 
