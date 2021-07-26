@@ -231,8 +231,8 @@ def plot_sim(ctx, input_file, output_file, ticks, plot, tag, time_range, number,
               help="Number of depo sets")
 @click.option("-c", "--corner", type=str, default="0,0,0",
               help="One corner of a bounding box")
-@click.option("-c", "--diagonal", type=str, default="1*m,1*m,1*m",
-              help="A vector from origin to diagonally opposed corner of bounding box")
+@click.option("-d", "--diagonal", type=str, default="1*m,1*m,1*m",
+              help="A vector from corner to diagonally opposed corner of bounding box")
 @click.option("--track-speed", default="clight",
               help="Speed of track")
 @click.option("--seed", default="0,1,2,3,4", type=str,
@@ -245,16 +245,14 @@ def depo_lines(electron_density, step_size, time, tracks, sets,
     '''
     Generate ideal line-source "tracks" of depos
     '''
-    seed = list(map(int, seed.split(",")))
-    import numpy.random
-    numpy.random.seed(seed)
-
-    import numpy
-    from numpy.random import uniform, normal as gauss
 
     if not output.endswith(".npz"):
         print(f'unsupported file type: {output}')
         return -1
+
+    seed = list(map(int, seed.split(",")))
+    import numpy.random
+    numpy.random.seed(seed)
 
     time = unitify_parse(time)
     track_speed = unitify(track_speed)
@@ -264,101 +262,63 @@ def depo_lines(electron_density, step_size, time, tracks, sets,
 
     p0 = numpy.array(unitify_parse(corner))
     p1 = numpy.array(unitify_parse(diagonal))
-    bb = list(zip(p0, p1))
-    pmid = 0.5 * (p0 + p1)
 
-    tinfot = numpy.dtype([('pmin','3float32'), ('pmax','3float32'),
-                          ('tmin', 'float32'), ('tmax', 'float32'),
-                          ('step','f4'),       ('eper','f4')])
+    from .depogen import lines
 
-    collect = dict()
-    for iset in range(sets):
-        last_id = 0
+    arrays = lines(tracks, sets, p0, p1, time, eperstep, step_size, track_speed)
 
-        datas = list()
-        infos = list()
-        tinfos = numpy.zeros(tracks, dtype=tinfot)
-        for itrack in range(tracks):
+    print("saving:", list(arrays.keys()))
+    numpy.savez(output, **arrays) 
 
-            pt = numpy.array([uniform(a,b) for a,b in bb])
-            g3 = numpy.array([gauss(0, 1) for i in range(3)])
-            mag = math.sqrt(numpy.dot(g3,g3))
-            vdir = g3/mag
-            
-            t0 = (p0 - pt ) / vdir # may have zeros
-            t1 = (p1 - pt ) / vdir # may have zeros
-            
-            a0 = numpy.argmin(numpy.abs(t0))
-            a1 = numpy.argmin(numpy.abs(t1))
+@cli.command("depo-sphere")
+@click.option("-r", "--radius", default="1*m",
+              help="Radius of the origin sphere)")
+@click.option("-e", "--electron-density", default="5000/mm",
+              help="Linear electron density on track (number of electrons per unit track length)")
+@click.option("-S", "--step-size", default="1.0*mm",
+              help="Distance between deposition of ionization electron groups")
+@click.option("-c", "--corner", type=str, default="0,0,0",
+              help="One corner of a bounding box")
+@click.option("-d", "--diagonal", type=str, default="1*m,1*m,1*m",
+              help="A vector from corner to diagonally opposed corner of bounding box")
+@click.option("-O", "--origin", type=str, default="0,0,0",
+              help="A vector to origin")
+@click.option("--seed", default="0,1,2,3,4", type=str,
+              help="A single integer or comma-list of integers to use as random seed")
+@click.option("-o", "--output",
+              type=click.Path(dir_okay=False, file_okay=True),
+              help="Numpy file (.npz) in which to save the results")
+def depo_sphere(radius, electron_density, step_size, 
+                corner, diagonal, origin, seed, output):
+    '''
+    Generate ideal line-source "tracks" of depos
+    '''
 
-            # points on either side bb walls
-            pmin = pt + t0[a0] * vdir
-            pmax = pt + t1[a1] * vdir
+    if not output.endswith(".npz"):
+        print(f'unsupported file type: {output}')
+        return -1
 
-            dp = pmax - pmin
-            pdist = math.sqrt(numpy.dot(dp, dp))
-            nsteps = int(round(pdist / step_size))
+    seed = list(map(int, seed.split(",")))
+    import numpy.random
+    numpy.random.seed(seed)
 
-            pts = numpy.linspace(pmin,pmax, nsteps+1, endpoint=True)
-            
-            if len(time) == 1:
-                time0 = time[0]
-            else:
-                time0 = uniform(time[0], time[1])
+    radius = unitify_parse(radius)[0]
+    electron_density = unitify(electron_density)
+    step_size = unitify(step_size)
+    eperstep = electron_density * step_size
 
-            timef = nsteps*step_size/track_speed
-            times = numpy.linspace(time0, timef, nsteps+1, endpoint=True)
+    p0 = numpy.array(unitify_parse(corner))
+    p1 = numpy.array(unitify_parse(diagonal))
+    origin = numpy.array(unitify_parse(origin))
 
-            dt = timef-time0
-            print(f'nsteps:{nsteps}, pdist:{pdist/units.mm:.1f} mm, dt={dt/units.ns:.1f} ns, {eperstep}')
+    from .depogen import sphere
 
-            tinfos["pmin"][itrack] = pmin
-            tinfos["pmax"][itrack] = pmax
-            tinfos["tmin"][itrack] = time0
-            tinfos["tmax"][itrack] = timef         
-            tinfos["step"][itrack] = step_size
-            tinfos["eper"][itrack] = eperstep
+    arrays = sphere(origin, p0, p1, radius=radius,
+                    eperstep=eperstep, step_size=step_size)
 
-            # in terms of charge, negative is expected
-            charges = numpy.zeros(nsteps+1) + -eperstep
+    numpy.savez(output, **arrays) 
 
-            zeros = numpy.zeros(nsteps+1)
 
-            data = numpy.vstack([
-                times,
-                charges,
-                pts.T,
-                zeros,
-                zeros])
-
-            ids = numpy.arange(last_id, last_id + nsteps + 1)
-            last_id = ids[-1]
-
-            info = numpy.vstack([
-                ids,
-                zeros,
-                zeros,
-                zeros])
-
-            datas.append(data)
-            infos.append(info)
-
-        datas = numpy.vstack([d.T for d in datas])
-        infos = numpy.vstack([i.T for i in infos])
-
-        # datas is now as (n,7)
-
-        timeorder = numpy.argsort(datas[:,0])
-        datas = datas[timeorder]
-        infos = infos[timeorder]
-
-        collect[f'depo_data_{iset}'] = numpy.array(datas, dtype='float32')
-        collect[f'depo_info_{iset}'] = numpy.array(infos, dtype='int32')
-        collect[f'track_info_{iset}'] = tinfos
-
-    # fixme: nice to add support for bee and wct JSON depo files
-    print("saving:", list(collect.keys()))
-    numpy.savez(output, **collect) 
 
 def main():
     cli(obj=dict())
