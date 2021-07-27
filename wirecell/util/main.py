@@ -522,6 +522,31 @@ def wire_summary(output, wires):
         fp.write(json.dumps(wdict, indent=4))
 
 
+def frame_split_apa(arr, name, pattern):
+    detector="protodune"
+    parts = name.split("_")
+    tag = parts[1] or "orig"
+    index = int(parts[2])
+
+    cranges = [0, 800, 1600, 2560]
+
+    for planeid in range(3):
+        anodeid = 0
+        offset = 2560 * anodeid
+        a = offset + cranges[planeid]
+        b = offset + cranges[planeid+1]
+        parr = arr[a:b, :]
+
+        planeletter = "UVW"[planeid] # for format
+        path = pattern.format(**locals())
+        dname = os.path.dirname(path)
+        if dname and not os.path.exists(dname):
+            os.makedirs(dname)
+        aname = os.path.splitext(os.path.basename(path))[0]
+        tosave = {aname: parr}
+        numpy.savez_compressed(path, **tosave)
+                
+
 def frame_split_protodune(arr, name, pattern):
     detector="protodune"
     parts = name.split("_")
@@ -566,8 +591,12 @@ def frame_split(format, npzfile):
     - planeletter :: letter for the plane
     '''
     # add more detectors here
-    splitters = { 15360: frame_split_protodune }
+    splitters = {
+        2560: frame_split_apa,
+        15360: frame_split_protodune
+    }
 
+    
     fp = numpy.load(npzfile)
     for aname in fp:
         if not aname.startswith("frame_"):
@@ -652,6 +681,9 @@ def npz_to_img(output, array,
         rslc = slice(*[int(i) for i in r.split(":")])
         cslc = slice(*[int(i) for i in c.split(":")])
         arr = arr[rslc, cslc]
+
+    if not arr.shape[0] or not arr.shape[1]:
+        raise ValueError("Array became zero")
 
     plt.imshow(arr, **args)
     cb = plt.colorbar(label=ztitle)

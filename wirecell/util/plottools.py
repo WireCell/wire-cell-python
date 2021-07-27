@@ -46,7 +46,7 @@ class NameSequence(object):
         Act like PdfPages
         '''
         fn = self()
-        plt.savefig(fn)
+        plt.savefig(fn, **kwds)
 
     def __enter__(self):
         return self

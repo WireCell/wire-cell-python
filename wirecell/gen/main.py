@@ -147,8 +147,10 @@ def plot_test_boundaries(ctx, times, npz_file, pdf_file):
               help="Indices of channel groups as comma separated list.")
 @click.option("-b", "--channel-boundaries", default='',
               help="Channels at which there are boundaries, eg 0,2560,5120 for 2 APAs")
+@click.option("--dpi", default=600,
+              help="Resolution of plots in dots per inch")
 @click.pass_context
-def plot_sim(ctx, input_file, output_file, ticks, plot, tag, time_range, number, channel_groups, channel_boundaries):
+def plot_sim(ctx, input_file, output_file, ticks, plot, tag, time_range, number, channel_groups, channel_boundaries, dpi):
     '''
     Make plots of sim quantities saved into numpy array files.
     '''
@@ -208,14 +210,14 @@ def plot_sim(ctx, input_file, output_file, ticks, plot, tag, time_range, number,
                     t0,tf = [float(t)*units.ms for t in time_range.split(",")]
 
                 fig, axes = plotter(t0, tf, raw=False, chinds=ch)
-                out.savefig(fig)
+                out.savefig(fig, dpi=dpi)
                 plt.close()
 
             if 'depo' in plot:
 
                 deps = wirecell.gen.sim.Depos(fp, ident=onenum)
                 fig, axes = deps.plot()
-                out.savefig(fig)
+                out.savefig(fig, dpi=dpi)
                 plt.close()
 
 @cli.command("depo-lines")
@@ -261,7 +263,7 @@ def depo_lines(electron_density, step_size, time, tracks, sets,
     eperstep = electron_density * step_size
 
     p0 = numpy.array(unitify_parse(corner))
-    p1 = numpy.array(unitify_parse(diagonal))
+    p1 = numpy.array(unitify_parse(diagonal)) + p0
 
     from .depogen import lines
 

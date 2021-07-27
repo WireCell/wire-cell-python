@@ -149,12 +149,12 @@ def sphere(origin, p0, p1,
         charges,
         points.T,
         zeros,
-        zeros]).T, order='C', dtype="float32")
+        zeros]).T, dtype="float32")
     info = numpy.array( numpy.vstack([
         numpy.arange(0, npoints),
         zeros,
         zeros,
-        zeros]).T, order='C', dtype="int32")
+        zeros]).T, dtype="int32")
 
     # must send out in shape (npts, 7) and (npts, 4)
     assert (data.shape[1] == 7)
