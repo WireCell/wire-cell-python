@@ -29,6 +29,7 @@ def lines(tracks, sets, p0, p1, time, eperstep, step_size, track_speed):
     bb = list(zip(p0, p1))
     pmid = 0.5 * (p0 + p1)
 
+    print(f"depo time: {time}")
 
     collect = dict()
     for iset in range(sets):
@@ -67,7 +68,7 @@ def lines(tracks, sets, p0, p1, time, eperstep, step_size, track_speed):
             else:
                 time0 = uniform(time[0], time[1])
 
-            timef = nsteps*step_size/track_speed
+            timef = time0 + nsteps*step_size/track_speed
             times = numpy.linspace(time0, timef, nsteps+1, endpoint=True)
 
             dt = timef-time0
