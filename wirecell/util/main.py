@@ -2,6 +2,7 @@
 
 import os
 import sys
+import json
 import click
 import numpy
 from wirecell import units
@@ -513,7 +514,6 @@ def wire_summary(output, wires):
     '''
     Produce a summary of detector response and wires.
     '''
-    import json
     import wirecell.util.wires.persist as wpersist
     wstore = wpersist.load(wires)
     import wirecell.util.wires.info as winfo
@@ -522,91 +522,75 @@ def wire_summary(output, wires):
         fp.write(json.dumps(wdict, indent=4))
 
 
-def frame_split_apa(arr, name, pattern):
-    detector="protodune"
-    parts = name.split("_")
-    tag = parts[1] or "orig"
-    index = int(parts[2])
-
-    cranges = [0, 800, 1600, 2560]
-
-    for planeid in range(3):
-        anodeid = 0
-        offset = 2560 * anodeid
-        a = offset + cranges[planeid]
-        b = offset + cranges[planeid+1]
-        parr = arr[a:b, :]
-
-        planeletter = "UVW"[planeid] # for format
-        path = pattern.format(**locals())
-        dname = os.path.dirname(path)
-        if dname and not os.path.exists(dname):
-            os.makedirs(dname)
-        aname = os.path.splitext(os.path.basename(path))[0]
-        tosave = {aname: parr}
-        numpy.savez_compressed(path, **tosave)
-                
-
-def frame_split_protodune(arr, name, pattern):
-    detector="protodune"
-    parts = name.split("_")
-    tag = parts[1] or "orig"
-    index = int(parts[2])
-
-    cranges = [0, 800, 1600, 2560]
-    for anodeid in range(6):
-        for planeid in range(3):
-            offset = 2560 * anodeid
-            a = offset + cranges[planeid]
-            b = offset + cranges[planeid+1]
-            parr = arr[a:b, :]
-
-            planeletter = "UVW"[planeid] # for format
-            path = pattern.format(**locals())
-            dname = os.path.dirname(path)
-            if dname and not os.path.exists(dname):
-                os.makedirs(dname)
-            aname = os.path.splitext(os.path.basename(path))[0]
-            tosave = {aname: parr}
-            numpy.savez_compressed(path, **tosave)
-                
-
 
 @cli.command('frame-split')
-@click.option("-f", "--format",
-              default="{detector}-{tag}-{index}-{anodeid}-{planeid}.npz",
-              help="Set the format for the output files")
+@click.option("-r", "--rebin", default=0, type=int,
+              help="Rebin the time/colums/X-axis by this many bins")
+@click.option("-t", "--tick-offset", default=0, type=int,
+              help="Shift the content by this many bins on time/colums/X-axis (prior to any rebin)")
+@click.option("-f", "--fpattern",
+              default=None,
+              help="Set the format for the output files, def: adds .npz to apattern")
+@click.option("-a", "--apattern",
+              default="{detector}-{tag}-{index}-{anodeid}-{planeid}",
+              help="Set the format for the array name")
+@click.option("-m", "--metadata",
+              default=None,
+              help="Additional metadata as JSON file to apply to patterns and save")
 @click.argument("npzfile")
-def frame_split(format, npzfile):
+def frame_split(rebin, tick_offset, fpattern, apattern, metadata, npzfile):
     '''
     Split a file of frames, such as as produced by NumpyFrameSaver,
     into per-plane Numpy files.
 
     Available variables for the format are:
-    - detector :: the detector name devined from the input.
-    - tag :: the frame tag from the input, if tag is empty then "orig" is used.
-    - index :: the numeric cound from the array name
-    - anodeid :: the numberic ID of the anode 
-    - planeid :: the numeric ID of the plane (0=U, 1=V, 2=W)
-    - planeletter :: letter for the plane
-    '''
-    # add more detectors here
-    splitters = {
-        2560: frame_split_apa,
-        15360: frame_split_protodune
-    }
 
+        - detector :: the detector name devined from the input.
+
+        - tag :: the frame tag from the input, empty implies "orig".
+
+        - index :: the numeric cound from the array name
+
+        - anodeid :: the numberic ID of the anode
+
+        - planeid :: the numeric ID of the plane (0=U, 1=V, 2=W)
+
+        - planeletter :: letter for the plane
+
+        - rebin :: amount of rebin or zero
+    '''
     
+    from .frame_split import guess_splitter, save_one
+
+    if metadata:
+        metadata = json.loads(open(metadata).read())
+    else:
+        metadata = dict()
+
     fp = numpy.load(npzfile)
     for aname in fp:
         if not aname.startswith("frame_"):
             continue
         frame = fp[aname]
-        try:
-            meth = splitters[frame.shape[0]]
-        except KeyError:
-            print(f'unknown array shape: {frame.shape}')
-        meth(frame, aname, format)
+        meth = guess_splitter(frame.shape[0])
+
+        parts = aname.split("_")
+        tag = parts[1] or "orig"
+        index = int(parts[2])
+
+        gots = meth(frame, tag, index, tick_offset, rebin)
+        for arr, md in gots:
+
+            md.update(**metadata)
+
+            aname = apattern.format(**md)
+            if fpattern:
+                fpath = fpattern.format(**md)
+            else:
+                fpath = aname + ".npz"
+
+            save_one(fpath, aname, arr, md)
+        
 
 @cli.command("npz-to-img")
 @click.option("-o", "--output", type=str,
@@ -657,10 +641,10 @@ def npz_to_img(output, array,
     arr = fp[array]
 
     if baseline == "median":
-        print("subtracting median")
+        #print("subtracting median")
         arr = arr - numpy.median(arr)
     elif baseline is not None:
-        print(f"subtracting {baseline}")
+        #print(f"subtracting {baseline}")
         arr = arr - float(baseline)
 
     args = dict(cmap=cmap, aspect='auto', interpolation='none')
