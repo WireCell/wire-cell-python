@@ -49,6 +49,25 @@ class Node (object):
     def dot_name(self, port=None):
         return self.tn.replace(":","_")
 
+    def dot_label_one(self, v, recur=True):
+        if isinstance(v,list):
+            siz = len(v)
+            psize = min(siz, 3)
+            last = ""
+            if siz > psize:
+                last = "..."
+            if recur:
+                vstr = ",".join([self.dot_label_one(vv, False) for vv in v[:psize]])
+            if not recur or psize < siz:
+                vstr = ",..."
+            v = "list(%d):[%s]"%(siz, vstr)
+            return v
+        if isinstance(v,dict):
+            v = "dict(%d):[%s]"%(len(v), self.dot_label_one(list(v.keys()), False))
+            return v
+        return str(v)
+
+
     def dot_label(self):
         ret = list()
         if "head" in self.ports:
@@ -57,10 +76,7 @@ class Node (object):
 
         body = [self.type, self.display_name]
         for k,v in sorted(self.attrs.items()):
-            if isinstance(v,list):
-                v = "list(%d)"%len(v)
-            if isinstance(v,dict):
-                v = "dict(%d)"%len(v)
+            v = self.dot_label_one(v)
             one = "%s = %s" % (k,v)
             body.append(one)
         body = r"\n".join(body)
@@ -136,7 +152,9 @@ def dotify(edge_dat, attrs):
            "rankdir=LR;",
            "\tnode[shape=record];"]
     for nn,node in sorted(nodes.items()):
-        ret.append('\t"%s"[label="%s"];' % (node.dot_name(), node.dot_label()))
+        nodestr = '\t"%s"[label="%s"];' % (node.dot_name(), node.dot_label())
+        #print(nodestr)
+        ret.append(nodestr)
     for e in edges:
         ret.append("\t%s;" % e)
     ret.append("}")
