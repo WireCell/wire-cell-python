@@ -537,11 +537,17 @@ def wire_summary(output, wires):
 @click.option("-m", "--metadata",
               default=None,
               help="Additional metadata as JSON file to apply to patterns and save")
-@click.argument("npzfile")
-def frame_split(rebin, tick_offset, fpattern, apattern, metadata, npzfile):
+@click.argument("archive")
+def frame_split(rebin, tick_offset, fpattern, apattern, metadata, archive):
     '''
-    Split a file of frames, such as as produced by NumpyFrameSaver,
-    into per-plane Numpy files.
+    Split an archive of frame arays into per-plane Numpy .npz files.
+
+    The archive file may be one of:
+
+        - .npz :: file as saved by NumpyFrameSaver
+
+        - .tar :: file as saved by FrameFileSink (or .tar.gz,
+          .tar.bz2)
 
     Available variables for the format are:
 
@@ -561,20 +567,23 @@ def frame_split(rebin, tick_offset, fpattern, apattern, metadata, npzfile):
     '''
     
     from .frame_split import guess_splitter, save_one
+    from . import ario
 
     if metadata:
         metadata = json.loads(open(metadata).read())
     else:
         metadata = dict()
 
-    fp = numpy.load(npzfile)
-    for aname in fp:
+    fp = ario.load(archive)
+    for aname in fp.keys():
         if not aname.startswith("frame_"):
+            #print(f'skip array: {aname}')
             continue
         frame = fp[aname]
         meth = guess_splitter(frame.shape[0])
 
         parts = aname.split("_")
+        print(f'splitting: {parts}')
         tag = parts[1] or "orig"
         index = int(parts[2])
 
