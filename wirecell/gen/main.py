@@ -154,6 +154,7 @@ def plot_sim(ctx, input_file, output_file, ticks, plot, tag, time_range, number,
     '''
     Make plots of sim quantities saved into numpy array files.
     '''
+    from wirecell.util import ario
     import wirecell.gen.sim
     from wirecell import units
     import numpy
@@ -174,7 +175,8 @@ def plot_sim(ctx, input_file, output_file, ticks, plot, tag, time_range, number,
         else:
             time_range = '0,5'
 
-    fp = numpy.load(input_file)
+    
+    fp = ario.load(input_file)
 
     numbers = [int(i.strip()) for i in number.split(",") if i.strip()]
 

@@ -39,13 +39,18 @@ class NameSequence(object):
         except TypeError:
             fn = '%s%04d' % (self.base, self.index)
         self.index += 1
-        return fn + self.ext
+
+        ret = fn + self.ext
+        return ret
 
     def savefig(self, *args, **kwds):
         '''
         Act like PdfPages
         '''
         fn = self()
+        dirn = os.path.dirname(fn)
+        if not os.path.exists(dirn):
+            os.makedirs(dirn)
         plt.savefig(fn, **kwds)
 
     def __enter__(self):
