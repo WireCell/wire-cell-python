@@ -47,20 +47,14 @@ class TarReader(dict):
     #     return [ti.name for ti in self.tf.getmembers()]
 
 
-class ZipReader:
+class ZipReader(dict):
 
     exts = ('.zip', '.npz')
 
     def __init__(self, filename):
         self.zf = zipfile.ZipFile(filename)
-
-    def __getitem__(self, name):
-        return self.zf.open(name).read()
-        pass
-
-    @functools.cache
-    def keys(self):
-        return self.zf.namelist();
+        for name in self.zf.namelist():
+            self[name] = self.zf.open(name).read()
 
 def reader(filename):
     for R in (TarReader, ZipReader):
