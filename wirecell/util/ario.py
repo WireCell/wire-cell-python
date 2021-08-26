@@ -88,7 +88,7 @@ class Reader(dict):
 
             key, ext = os.path.splitext(fname)
             if ext == ".json":
-                obj = joson.loads(dat.decode())
+                obj = json.loads(dat.decode())
             elif ext == ".npy":
                 a = io.BytesIO()
                 a.write(dat)

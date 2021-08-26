@@ -49,7 +49,7 @@ class NameSequence(object):
         '''
         fn = self()
         dirn = os.path.dirname(fn)
-        if not os.path.exists(dirn):
+        if dirn and not os.path.exists(dirn):
             os.makedirs(dirn)
         plt.savefig(fn, **kwds)
 

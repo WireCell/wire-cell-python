@@ -218,8 +218,8 @@ def uses_to_params(uses):
             print (type(one),one)
         tn = one[u"type"]
         if "name" in one and one['name']:
-            print (one["name"])
-            tn += ":" + one["name"]
+            # print (one["name"])
+            tn += ":" + str(one["name"])
         ret[tn] = one.get("data", {})
     return ret
 
@@ -270,7 +270,10 @@ def cmd_dotify(ctx, jpath, params, json_file, out_file):
     #     click.echo('Object must be of "type" Pgrapher or Pnode, got "%s"' % cfg["type"])
     #     sys.exit(1)
 
-    if cfg.get("type","") == "Pgrapher":    # the Pgrapher app holds edges in "data" attribute
+    graph_apps = ("Pgrapher", "TbbFlow")
+
+    # the Pgrapher app holds edges in "data" attribute
+    if cfg.get("type","") in graph_apps:
         print ('Pgrapher object found at jpath: "%s" with %d nodes' % (jpath, len(dat)))
         edges = cfg["data"]["edges"] 
         uses = dat # if Pgrapher, then original is likely the full config sequence.
