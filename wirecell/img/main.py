@@ -323,6 +323,20 @@ def wire_slice_activity(output, sliceid, cluster_tap_file):
     fig.savefig(output)
 
 
+@cli.command("anidfg")
+@click.option("-o", "--output", default="anidfg.gif", help="Output file")
+@click.argument("logfile")
+def anidfg(output, logfile):
+    '''
+    Produce an animated graph visualization from a log produced by
+    TbbFlow with "dfg" output.
+    '''
+    from . import anidfg
+    log = anidfg.parse_log(open(logfile))
+    ga = anidfg.generate_graph(log)
+    anidfg.render_graph(ga, output)
+
+
 def main():
     cli(obj=dict())
 
