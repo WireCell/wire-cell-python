@@ -20,11 +20,12 @@ def cli(ctx):
     '''
 
 class Node (object):
-    def __init__(self, tn, **attrs):
+    def __init__(self, tn, params=True, **attrs):
         if not attrs:
             print ("Node(%s) with no attributes"%tn)
 
         self.tn = tn
+        self._params = params
         tn = tn.split(":")
         self.type = tn[0]
         try:
@@ -75,10 +76,11 @@ class Node (object):
             ret.append(head)
 
         body = [self.type, self.display_name]
-        for k,v in sorted(self.attrs.items()):
-            v = self.dot_label_one(v)
-            one = "%s = %s" % (k,v)
-            body.append(one)
+        if self._params:
+            for k,v in sorted(self.attrs.items()):
+                v = self.dot_label_one(v)
+                one = "%s = %s" % (k,v)
+                body.append(one)
         body = r"\n".join(body)
         body = r"{%s}" % body
         ret.append(body)
@@ -98,10 +100,16 @@ def is_list_of_string(x):
     if not is_list(x): return False
     return all(map(is_string, x))
 
-def dotify(edge_dat, attrs):
+def dotify(edge_dat, attrs, params=True, services=True):
     '''
-    Return GraphViz text.  If attrs is a dictionary, append to the
-    node a list of its items.  
+    Return GraphViz text.
+
+    If attrs is a dictionary, append to the node a list of its items.
+
+    If params is True, show the attributes.
+
+    If services is True, include non DFP node components.
+
     '''
 
     nodes = dict()
@@ -110,12 +118,11 @@ def dotify(edge_dat, attrs):
         try:
             n = nodes[tn]
         except KeyError:
-            n = Node(tn, **attrs.get(tn, {}))
+            n = Node(tn, params, **attrs.get(tn, {}))
             nodes[tn] = n
         p = edge[end].get("port",0)
         n.add_port(end, p)
         return n,p
-
     
     edges = list()
     for edge in edge_dat:
@@ -124,29 +131,28 @@ def dotify(edge_dat, attrs):
         e = '"%s":out%d -> "%s":in%d' % (t.dot_name(),tp, h.dot_name(),hp)
         edges.append(e);
 
-    # Try to find any components refereneced.
-    for tn,n in list(nodes.items()):
-        for k,v in n.attrs.items():
-            tocheck = None
-            if is_string(v):
-                tocheck = [v]
-            if is_list_of_string(v):
-                tocheck = v
-            if not tocheck:
-                continue
-            for maybe in tocheck:
-                if maybe not in attrs:
+    # Try to find non DFP node components referenced.
+    if services:
+        for tn,n in list(nodes.items()):
+            for k,v in n.attrs.items():
+                tocheck = None
+                if is_string(v):
+                    tocheck = [v]
+                if is_list_of_string(v):
+                    tocheck = v
+                if not tocheck:
                     continue
+                for maybe in tocheck:
+                    if maybe not in attrs:
+                        continue
 
-                cn = nodes.get(maybe,None);
-                if cn is None:
-                    cn = Node(maybe, **attrs.get(maybe, {}))
-                    nodes[maybe] = cn
+                    cn = nodes.get(maybe,None);
+                    if cn is None:
+                        cn = Node(maybe, params, **attrs.get(maybe, {}))
+                        nodes[maybe] = cn
 
-                e = '"%s" -> "%s"[style=dashed,color=gray]' % (n.dot_name(), cn.dot_name())
-                edges.append(e)
-
-        
+                    e = '"%s" -> "%s"[style=dashed,color=gray]' % (n.dot_name(), cn.dot_name())
+                    edges.append(e)
 
     ret = ["digraph pgraph {",
            "rankdir=LR;",
@@ -159,6 +165,7 @@ def dotify(edge_dat, attrs):
         ret.append("\t%s;" % e)
     ret.append("}")
     return '\n'.join(ret);
+
 
 def jsonnet_try_path(path, rel):
     if not rel:
@@ -223,15 +230,18 @@ def uses_to_params(uses):
         ret[tn] = one.get("data", {})
     return ret
 
+# fixme: add tla related options so any .jsonnet can also be loaded
 @cli.command("dotify")
-@click.option("--jpath", default="",
+@click.option("--jpath", default="-1",
               help="A dot-delimited path into the JSON to locate a graph-like object")
 @click.option("--params/--no-params", default=True,
               help="Enable/disable the inclusion of contents of configuration parameters") 
+@click.option("--services/--no-services", default=True,
+              help="Enable/disable the inclusion 'service' (non-node) type components") 
 @click.argument("json-file")
 @click.argument("out-file")
 @click.pass_context
-def cmd_dotify(ctx, jpath, params, json_file, out_file):
+def cmd_dotify(ctx, jpath, params, services, json_file, out_file):
     '''Convert a WCT JSON cfg file to a GraphViz dot file.
 
     The JSON file needs to at least contain a list of edges found at
@@ -280,10 +290,9 @@ def cmd_dotify(ctx, jpath, params, json_file, out_file):
     else:
         edges = cfg["edges"] # Pnodes have edges as top-level attribute
         uses = cfg.get("uses", list())
-    attrs = dict()
-    if params:
-        attrs = uses_to_params(uses)
-    dtext = dotify(edges, attrs)
+
+    attrs = uses_to_params(uses)
+    dtext = dotify(edges, attrs, params, services)
     ext = os.path.splitext(out_file)[1][1:]
     dot = "dot -T %s -o %s" % (ext, out_file)
     proc = subprocess.Popen(dot, shell=True, stdin = subprocess.PIPE)
