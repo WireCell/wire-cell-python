@@ -20,7 +20,7 @@ setup(
     extras_require = {
         # parse TbbFlow logs and make anigif showing graph states
         'anidfg':  ["GraphvizAnim"] 
-    }
+    },
     entry_points = dict(
         console_scripts = [
             'wirecell-sigproc = wirecell.sigproc.main:main',
