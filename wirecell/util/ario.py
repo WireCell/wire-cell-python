@@ -35,7 +35,7 @@ class TarReader(dict):
                 mode += ':' + maybe_compressed
         tf = tarfile.open(filename, mode)
         for ti in tf.getmembers():
-            #print(f'load from {filename}: {ti.name}')
+            # print(f'load from {filename}: {ti.name}')
             self[ti.name] = tf.extractfile(ti).read()
 
     
@@ -56,7 +56,7 @@ class ZipReader(dict):
         for name in self.zf.namelist():
             self[name] = self.zf.open(name).read()
 
-def reader(filename):
+def _reader(filename):
     for R in (TarReader, ZipReader):
         for ext in R.exts:
             if filename.endswith(ext):
@@ -82,7 +82,7 @@ class Reader(dict):
         by its basename (latter is default to match numpy.load()
         behavior).
         '''
-        r = reader(filename)
+        r = _reader(filename)
         for fname, dat in r.items():
             #print (f'Reader: {fname}')
 
