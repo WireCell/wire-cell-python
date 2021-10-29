@@ -39,6 +39,13 @@ def load(filename, type='3view'):
             face = 0            # In ICARUS there is only one face.
             apa = tpc         # Apa and tpc are coceptually identical
             wid = wire          # kept the same from multitpc.py script
+            if type == 'coldbox':
+                apa = tpc % 2   # For the coldbox, "apa" refers to a whole CRU made up of two half-CRU objects in the gdml referred here by their "tcp" number 
+                jump_wire = chan - 1600*apa # set segment numbers for U wires jumpered across the middle of the CRU. Seg 0 and Seg 1 will correspond to the same offline channel numbers (128, 255) for the Top CRU (apa = 0) and (1728, 1855) for the bottom CRU (apa = 1)
+                if jump_wire >= 128 and jump_wire < 256 and tpc >= 2:
+                    seg = 1
+                else:
+                    seg = 0
 
             wpid = schema.wire_plane_id(plane, face, apa)
 
@@ -57,7 +64,7 @@ def load(filename, type='3view'):
         p1 = store.get("point", wire.tail)
         p2 = store.get("point", wire.head)
         # length = ( (p1.z - p2.z)**2 + (p1.y - p2.y)**2 )**0.5
-        if type == '3view' :
+        if type == '3view' or type == 'coldbox' :
             return 0.5*(p1.z + p2.z) + 0.5*(p2.y + p1.y)
         elif type == '3view_30deg' :
             if plane == 0:
