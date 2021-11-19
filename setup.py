@@ -31,6 +31,8 @@ setup(
             'wirecell-img = wirecell.img.main:main',
             'wirecell-resp = wirecell.resp.__main__:main',
             'wirecell-plot = wirecell.plot.__main__:main',
+            'wirecell-pytorch = wirecell.pytorch.__main__:main',
+            'wirecell-aux = wirecell.aux.__main__:main',
         ]
     )
 )
