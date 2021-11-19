@@ -78,7 +78,7 @@ def convert_icarustpc_wires(ctx, input_file, output_file):
 
 @cli.command("convert-dunevd-wires")
 @click.option('-t', '--type', default="3view",
-              help='2view, 3view, 3view_30deg')
+              help='2view, 3view, 3view_30deg, coldbox')
 @click.argument("input-file")
 @click.argument("output-file")
 @click.pass_context
