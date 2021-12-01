@@ -16,12 +16,14 @@ def gen_arrays():
     '''
     ret = {
         "rand1d": numpy.array(numpy.random.random((64,)), dtype='f4'),
-        "rand2d": numpy.array(numpy.random.random((8,8)), dtype='f4'),
+        "rand2d": numpy.array(numpy.random.random((8,3)), dtype='f4'),
         "imp1d": numpy.zeros(8*3, dtype='f4'),
         "imp2d": numpy.zeros((8,3), dtype='f4'),
+        "cimp2d": numpy.zeros((8,3), dtype='c8'),
     }
     ret["imp1d"][0] = 1.0
     ret["imp2d"][1,0] = 1.0
+    ret["cimp2d"][3,1] = 1.0
     return ret
 
 def gen_config(filename):
@@ -45,6 +47,21 @@ def gen_config(filename):
 		"dst" : "imp2d-fwd2d_r2c",
 		"op" : "fwd2d_r2c",
 		"src" : "imp2d"
+	},
+	{
+		"dst" : "cimp2d-fwd1b0",
+		"op" : "fwd1b0",
+		"src" : "cimp2d"
+	},
+	{
+		"dst" : "cimp2d-fwd1b1",
+		"op" : "fwd1b1",
+		"src" : "cimp2d"
+	},
+	{
+		"dst" : "imp2d-noop",
+		"op" : "noop",
+		"src" : "imp2d"
 	}
     ];
     open(filename, "w").write(json.dumps(ret, indent=4));
@@ -60,11 +77,11 @@ def get_arrays(filelst = None):
         return gen_arrays()
     ret = dict()
     for fname in filelst:
-        print(f'loading {fname}')
+        #print(f'loading {fname}')
         reader = ario.load(fname)
         for key in reader.keys():
             val = reader[key]
-            print(f'{key}: {type(val)}')
+            #print(f'{key}: {type(val)}')
             ret[key] = reader[key]
     return ret
 
@@ -182,28 +199,28 @@ def plot_plan_time(dats, func_name, measure='time'):
 #
 
 def fwd1d(arr):
-    return numpy.fft.fft(arr)
+    return numpy.array(numpy.fft.fft(arr), dtype='c8')
 def inv1d(arr):
-    return numpy.fft.ifft(arr)
+    return numpy.array(numpy.fft.ifft(arr), dtype='c8')
 def fwd2d(arr):
-    return numpy.fft.fft2(arr)
+    return numpy.array(numpy.fft.fft2(arr), dtype='c8')
 def inv2d(arr):
-    return numpy.fft.ifft2(arr)
+    return numpy.array(numpy.fft.ifft2(arr), dtype='c8')
 
 def fwd1d_r2c(arr):
-    return numpy.fft.fft(numpy.array(arr, dtype='c8'))
+    return fwd1d(numpy.array(arr, dtype='c8'))
 def inv1d_c2r(arr):
-    return numpy.real(numpy.fft.ifft(arr))
+    return numpy.real(inv1d(arr))
 def fwd2d_r2c(arr):
-    return numpy.fft.fft2(numpy.array(arr, dtype='c8'))
+    return fwd2d(numpy.array(arr, dtype='c8'))
 def inv2d_c2r(arr):
-    return numpy.real(numpy.fft.ifft2(arr))
+    return numpy.real(inv2d(arr))
 
 def fwd1b0(arr):
-    return numpy.fft.fft2(arr, axis=0)
+    return numpy.array(numpy.fft.fft2(arr, axes=(0,)), dtype='c8')
 def fwd1b1(arr):
-    return numpy.fft.fft2(arr, axis=1)
+    return numpy.array(numpy.fft.fft2(arr, axes=(1,)), dtype='c8')
 def inv1b0(arr):
-    return numpy.fft.ifft2(arr, axis=0)
+    return numpy.array(numpy.fft.ifft2(arr, axes=(0,)), dtype='c8')
 def inv1b1(arr):
-    return numpy.fft.ifft2(arr, axis=1)
+    return numpy.array(numpy.fft.ifft2(arr, axes=(1,)), dtype='c8')

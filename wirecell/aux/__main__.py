@@ -56,8 +56,11 @@ def run_idft(output, plugin, typename, config, command, array_files):
     for one in jsio.load(config):
         print(one)
         arr = arrays[one["src"]]
-        op = getattr(idft, one["op"])
-        py_out[one["dst"]] = op(arr)
+        op = getattr(idft, one["op"], None)
+        if op is None:          # literally no-op :D
+            py_out[one["dst"]] = arr
+        else:
+            py_out[one["dst"]] = op(arr)
 
     cmd = [command, "-o", output, "-c", config]
     if plugin:
@@ -78,22 +81,42 @@ def run_idft(output, plugin, typename, config, command, array_files):
         p = py_out.get(key, None);
         w = wc_out.get(key, None);
         if p is None:
-            print (f'missing {key} from numpy arrays')
+            print (f'fail: missing {key} from numpy arrays')
             err += 1
             continue
         if w is None:
-            print (f'missing {key} from wirecell arrays')
+            print (f'fail: missing {key} from wirecell arrays')
             err += 1
             continue
-        print(type(p), type(w))
         if p.shape != w.shape:
-            print (f'shapes python:{p.shape} wirecell:{w.shape}')
+            print (f'fail: shapes python:{p.shape} wirecell:{w.shape}')
             err += 1
-        l1 = numpy.sum(numpy.abs(p-w))
-        if l1 > 0.0001:
-            print (f'L1: {l1}')
+            continue
+        if p.dtype != w.dtype:
+            print (f'fail: dtypes python:{p.dtype} wirecell:{w.dtype}')
             err += 1
-            
+            continue
+        adiff = numpy.abs(p-w)
+        indmax = numpy.unravel_index(numpy.argmax(adiff), adiff.shape)
+        avg = 0.5*(p[indmax] + w[indmax])
+        amax = adiff[indmax]
+        if avg != 0:
+            amax /= avg
+
+        if amax > 1e-6:
+            print (f'Large max diff for {key} {p.shape}: {amax}')
+            print (f'numpy:\n{p}\nwirecell:\n{w}')
+            err += 1
+            continue
+        l1 = numpy.sum(adiff)/p.size
+        if l1 > 1e-6:
+            print (f'Large L1 for {key} {p.shape}: {l1}')
+            print (f'numpy:\n{p}\nwirecell:\n{w}')
+            err += 1
+            continue
+
+        print(f'pass: {key} {p.shape} {p.dtype}')
+        print (f'numpy:\n{p}\nwirecell:\n{w}')
     print (f'got {err} errors')
 
 
