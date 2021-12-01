@@ -1,11 +1,92 @@
+import os
 import json
 import numpy
 import matplotlib.pyplot as plt
 from collections import defaultdict
+from wirecell.util import ario
+import tarfile
 
 def load(filename):
     dat = json.loads(open(filename).read())
     return dat;
+
+def gen_arrays():
+    '''
+    Return dictionary of a few "canned" arrays
+    '''
+    ret = {
+        "rand1d": numpy.array(numpy.random.random((64,)), dtype='f4'),
+        "rand2d": numpy.array(numpy.random.random((8,8)), dtype='f4'),
+        "imp1d": numpy.zeros(8*3, dtype='f4'),
+        "imp2d": numpy.zeros((8,3), dtype='f4'),
+    }
+    ret["imp1d"][0] = 1.0
+    ret["imp2d"][1,0] = 1.0
+    return ret
+
+def gen_config(filename):
+    ret = [
+        {
+		"dst" : "rand1d-fwd1d_r2c",
+		"op" : "fwd1d_r2c",
+		"src" : "rand1d"
+	},
+	{
+		"dst" : "rand2d-fwd2d_r2c",
+		"op" : "fwd2d_r2c",
+		"src" : "rand2d"
+	},
+	{
+		"dst" : "imp1d-fwd1d_r2c",
+		"op" : "fwd1d_r2c",
+		"src" : "imp1d"
+	},
+	{
+		"dst" : "imp2d-fwd2d_r2c",
+		"op" : "fwd2d_r2c",
+		"src" : "imp2d"
+	}
+    ];
+    open(filename, "w").write(json.dumps(ret, indent=4));
+    return ret;
+
+
+def get_arrays(filelst = None):
+    '''
+    Return a dictionary of arrays from file names in filelst which is
+    expected to be a list of tar[.bz2|.gz] files.
+    '''
+    if not filelst:
+        return gen_arrays()
+    ret = dict()
+    for fname in filelst:
+        print(f'loading {fname}')
+        reader = ario.load(fname)
+        for key in reader.keys():
+            val = reader[key]
+            print(f'{key}: {type(val)}')
+            ret[key] = reader[key]
+    return ret
+
+def save_arrays(fname, arrays):
+    '''
+    Save arrays to tar stream fname.
+
+    Array names will have .npy appended if missing.
+    '''
+    # fixme: it would be nice to add this to ario
+    mode = "w"
+    if fname.endswith('.bz2'): mode += ":bz2"
+    if fname.endswith('.gz'): mode += ":gz"
+    tf = tarfile.open(fname, mode=mode, format=tarfile.GNU_FORMAT)
+    for name, arr in arrays.items():
+        # fixme: use tempfile
+        numpy.save("tmp.npy", arr);
+        if not name.endswith(".npy"):
+            name += ".npy"
+        tf.add("tmp.npy", name);
+        os.unlink("tmp.npy")
+    tf.close()
 
 def select_array(dat, func_name, first=False, inplace=True):
     '''
@@ -92,8 +173,37 @@ def plot_plan_time(dats, func_name, measure='time'):
         y = cold[measure]/(warm[measure]/warm['ntimes'])
         ax.plot(x, y, marker='o', label=label(dat))
     ax.legend()
+    return
 
-    
 
-    pass
-    
+
+#
+# DFT operators as labels
+#
+
+def fwd1d(arr):
+    return numpy.fft.fft(arr)
+def inv1d(arr):
+    return numpy.fft.ifft(arr)
+def fwd2d(arr):
+    return numpy.fft.fft2(arr)
+def inv2d(arr):
+    return numpy.fft.ifft2(arr)
+
+def fwd1d_r2c(arr):
+    return numpy.fft.fft(numpy.array(arr, dtype='c8'))
+def inv1d_c2r(arr):
+    return numpy.real(numpy.fft.ifft(arr))
+def fwd2d_r2c(arr):
+    return numpy.fft.fft2(numpy.array(arr, dtype='c8'))
+def inv2d_c2r(arr):
+    return numpy.real(numpy.fft.ifft2(arr))
+
+def fwd1b0(arr):
+    return numpy.fft.fft2(arr, axis=0)
+def fwd1b1(arr):
+    return numpy.fft.fft2(arr, axis=1)
+def inv1b0(arr):
+    return numpy.fft.ifft2(arr, axis=0)
+def inv1b1(arr):
+    return numpy.fft.ifft2(arr, axis=1)

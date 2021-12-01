@@ -60,7 +60,12 @@ def ntier_frames(output, files):
                 fig, ax = plt.subplots(nrows=1, ncols=1) # , sharex=True)
 
                 aname = f'frame_{tier}_{ident}'
-                arr = reader[aname]
+                try:
+                    arr = reader[aname]
+                except KeyError:
+                    print(f'No such key "{aname}".  Have: {len(reader)}')
+                    print(' '.join(reader.keys()))
+                    continue
                 print(aname, arr.shape)
                 arr = (arr.T - numpy.median(arr, axis=1).T).T
                 im = ax.imshow(arr, aspect='equal', interpolation='none')
