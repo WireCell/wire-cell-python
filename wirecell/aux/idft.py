@@ -17,6 +17,9 @@ def gen_arrays():
     ret = {
         "rand1d": numpy.array(numpy.random.random((64,)), dtype='f4'),
         "rand2d": numpy.array(numpy.random.random((8,3)), dtype='f4'),
+        "crand1d": numpy.array(numpy.random.random((64,)) + 1j*numpy.random.random((64,)), dtype='c8'),
+        "crand2d": numpy.array(numpy.random.random((8,3)) + 1j*numpy.random.random((8,3)), dtype='c8'),
+        "cbigrand2d": numpy.array(100*numpy.random.random((37,17)) + 100j*numpy.random.random((37,17)), dtype='c8'),
         "imp1d": numpy.zeros(8*3, dtype='f4'),
         "imp2d": numpy.zeros((8,3), dtype='f4'),
         "cimp2d": numpy.zeros((8,3), dtype='c8'),
@@ -29,40 +32,132 @@ def gen_arrays():
 def gen_config(filename):
     ret = [
         {
-		"dst" : "rand1d-fwd1d_r2c",
-		"op" : "fwd1d_r2c",
-		"src" : "rand1d"
+	    "dst" : "rand1d-fwd1d_r2c",
+	    "op" : "fwd1d_r2c",
+	    "src" : "rand1d"
 	},
 	{
-		"dst" : "rand2d-fwd2d_r2c",
-		"op" : "fwd2d_r2c",
-		"src" : "rand2d"
+	    "dst" : "rand2d-fwd2d_r2c",
+	    "op" : "fwd2d_r2c",
+	    "src" : "rand2d"
 	},
 	{
-		"dst" : "imp1d-fwd1d_r2c",
-		"op" : "fwd1d_r2c",
-		"src" : "imp1d"
+	    "dst" : "crand1d-fwd1d",
+	    "op" : "fwd1d",
+	    "src" : "crand1d"
 	},
 	{
-		"dst" : "imp2d-fwd2d_r2c",
-		"op" : "fwd2d_r2c",
-		"src" : "imp2d"
+	    "dst" : "crand1d-inv1d",
+	    "op" : "inv1d",
+	    "src" : "crand1d"
 	},
 	{
-		"dst" : "cimp2d-fwd1b0",
-		"op" : "fwd1b0",
-		"src" : "cimp2d"
+	    "dst" : "crand2d-fwd2d",
+	    "op" : "fwd2d",
+	    "src" : "crand2d"
 	},
 	{
-		"dst" : "cimp2d-fwd1b1",
-		"op" : "fwd1b1",
-		"src" : "cimp2d"
+	    "dst" : "crand2d-inv2d",
+	    "op" : "inv2d",
+	    "src" : "crand2d"
+	},
+
+	{
+	    "dst" : "cbigrand2d-fwd2d",
+	    "op" : "fwd2d",
+	    "src" : "cbigrand2d"
 	},
 	{
-		"dst" : "imp2d-noop",
-		"op" : "noop",
-		"src" : "imp2d"
-	}
+	    "dst" : "cbigrand2d-inv2d",
+	    "op" : "inv2d",
+	    "src" : "cbigrand2d"
+	},
+
+	{
+	    "dst" : "imp1d-fwd1d_r2c",
+	    "op" : "fwd1d_r2c",
+	    "src" : "imp1d"
+	},
+	{
+	    "dst" : "imp2d-fwd2d_r2c",
+	    "op" : "fwd2d_r2c",
+	    "src" : "imp2d"
+	},
+	{
+	    "dst" : "cimp2d-fwd1b0",
+	    "op" : "fwd1b0",
+	    "src" : "cimp2d"
+	},
+	{
+	    "dst" : "cimp2d-fwd1b1",
+	    "op" : "fwd1b1",
+	    "src" : "cimp2d"
+	},
+
+	{
+	    "dst" : "cimp2d-inv1b0",
+	    "op" : "inv1b0",
+	    "src" : "cimp2d"
+	},
+	{
+	    "dst" : "cimp2d-inv1b1",
+	    "op" : "inv1b1",
+	    "src" : "cimp2d"
+	},
+
+
+	{
+	    "dst" : "crand2d-fwd1b0",
+	    "op" : "fwd1b0",
+	    "src" : "crand2d"
+	},
+	{
+	    "dst" : "crand2d-fwd1b1",
+	    "op" : "fwd1b1",
+	    "src" : "crand2d"
+	},
+	{
+	    "dst" : "crand2d-inv1b0",
+	    "op" : "inv1b0",
+	    "src" : "crand2d"
+	},
+	{
+	    "dst" : "crand2d-inv1b1",
+	    "op" : "inv1b1",
+	    "src" : "crand2d"
+	},
+
+	{
+	    "dst" : "cbigrand2d-fwd1b0",
+	    "op" : "fwd1b0",
+	    "src" : "cbigrand2d"
+	},
+	{
+	    "dst" : "cbigrand2d-fwd1b1",
+	    "op" : "fwd1b1",
+	    "src" : "cbigrand2d"
+	},
+	{
+	    "dst" : "cbigrand2d-inv1b0",
+	    "op" : "inv1b0",
+	    "src" : "cbigrand2d"
+	},
+	{
+	    "dst" : "cbigrand2d-inv1b1",
+	    "op" : "inv1b1",
+	    "src" : "cbigrand2d"
+	},
+
+	{
+	    "dst" : "imp2d-noop",
+	    "op" : "noop",
+	    "src" : "imp2d"
+	},
+	{
+	    "dst" : "crand1d-inv1d_c2r",
+	    "op" : "inv1d_c2r",
+	    "src" : "crand1d"
+	},
     ];
     open(filename, "w").write(json.dumps(ret, indent=4));
     return ret;

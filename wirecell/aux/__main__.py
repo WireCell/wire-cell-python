@@ -24,6 +24,10 @@ def cli(ctx):
 
 
 @cli.command("run-idft")
+@click.option("-e", "--epsilon", default=1e-6, type=float,
+               help="Allowed error")
+@click.option("-V", "--verbosity", default=0, type=int,
+               help="Verbosity level")
 @click.option("-o", "--output", default="run-idft-out.tar.bz2",
                help="Output PDF file")
 @click.option("-p", "--plugin", default=None,
@@ -35,7 +39,7 @@ def cli(ctx):
 @click.option("-C", "--command", default="./build/aux/check_idft",
                help="The 'check_idft' command")
 @click.argument("array_files", nargs=-1)
-def run_idft(output, plugin, typename, config, command, array_files):
+def run_idft(epsilon, verbosity, output, plugin, typename, config, command, array_files):
     """
     Perform DFT transforms with check_idft and numpy and compare.
     """
@@ -46,7 +50,8 @@ def run_idft(output, plugin, typename, config, command, array_files):
     else:
         arrays = idft.get_arrays(array_files)
 
-    print(" ".join(arrays.keys()))
+    if verbosity>1:
+        print(" ".join(arrays.keys()))
 
     if not config:
         config = "run-idft-gen.json"
@@ -54,7 +59,8 @@ def run_idft(output, plugin, typename, config, command, array_files):
 
     py_out = dict()
     for one in jsio.load(config):
-        print(one)
+        if verbosity > 2:
+            print(one)
         arr = arrays[one["src"]]
         op = getattr(idft, one["op"], None)
         if op is None:          # literally no-op :D
@@ -70,8 +76,11 @@ def run_idft(output, plugin, typename, config, command, array_files):
     cmd += array_files
 
     cmdstr = " ".join(cmd)
-    print(f"Running: {cmdstr}")
+    if verbosity>0:
+        print(f"\nRunning: {cmdstr}...\n")
     subprocess.check_output(cmd)
+    if verbosity>0:
+        print(f"\n...done\n")
     wc_out = idft.get_arrays([output])
 
     keys = list(set(list(wc_out.keys()) + list(py_out.keys())))
@@ -80,44 +89,62 @@ def run_idft(output, plugin, typename, config, command, array_files):
     for key in keys:
         p = py_out.get(key, None);
         w = wc_out.get(key, None);
-        if p is None:
-            print (f'fail: missing {key} from numpy arrays')
+
+        def summary():
+            if verbosity < 1:
+                return
+            print (f'\tconfig: {one}')
+            print (f'\tshapes: numpy:{p.shape} wirecell:{w.shape}')
+            print (f'\tdtypes: numpy:{p.dtype} wirecell:{w.dtype}')
+            if verbosity < 2:
+                return
+            print (f'\tsum: numpy:{numpy.sum(p)}, wirecell:{numpy.sum(w)}')
+            print (f'\tnumpy:\n{p}\n\twirecell:\n{w}')
+            
+
+        def fail(what):
+            nonlocal err
             err += 1
+            print (f'fail: {key}: {what} (error #{err})')
+            summary()
+
+        if p is None:
+            fail("missing number array")
             continue
         if w is None:
-            print (f'fail: missing {key} from wirecell arrays')
-            err += 1
+            fail("missing wirecell array")
             continue
         if p.shape != w.shape:
-            print (f'fail: shapes python:{p.shape} wirecell:{w.shape}')
-            err += 1
+            fail('shape mismatch')
             continue
         if p.dtype != w.dtype:
-            print (f'fail: dtypes python:{p.dtype} wirecell:{w.dtype}')
-            err += 1
+            fail('dtype mismatch')
             continue
         adiff = numpy.abs(p-w)
+        asum = numpy.abs(p+w)
         indmax = numpy.unravel_index(numpy.argmax(adiff), adiff.shape)
         avg = 0.5*(p[indmax] + w[indmax])
         amax = adiff[indmax]
+
         if avg != 0:
             amax /= avg
 
-        if amax > 1e-6:
-            print (f'Large max diff for {key} {p.shape}: {amax}')
-            print (f'numpy:\n{p}\nwirecell:\n{w}')
-            err += 1
+        if amax > epsilon:
+            fail(f'large max diff: {amax}')
             continue
-        l1 = numpy.sum(adiff)/p.size
-        if l1 > 1e-6:
-            print (f'Large L1 for {key} {p.shape}: {l1}')
-            print (f'numpy:\n{p}\nwirecell:\n{w}')
-            err += 1
+
+        l1 = numpy.sum(adiff) / numpy.sum(asum)
+        if l1 > epsilon:
+            fail(f'large L1: {l1}')
             continue
 
         print(f'pass: {key} {p.shape} {p.dtype}')
-        print (f'numpy:\n{p}\nwirecell:\n{w}')
-    print (f'got {err} errors')
+        summary()
+
+    if err == 1:
+        print (f'1 error')
+    else:
+        print (f'{err} errors')
 
 
     # run check_idft, make output file
