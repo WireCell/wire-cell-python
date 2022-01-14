@@ -454,6 +454,25 @@ def convert_noise_spectra(ctx, format, inputfile, outputfile):
     from wirecell.sigproc.noise import persist
     persist.dump(outputfile, spectra)
 
+@cli.command("convert-electronics-response")
+@click.argument("inputfile")
+@click.argument("outputfile")
+@click.pass_context
+def convert_noise_spectra(ctx, inputfile, outputfile):
+    '''
+    Convert a table of electronics response function in some external format into WCT format.
+    '''
+    from wirecell.sigproc.response import load_text_electronics_response
+    loader = load_text_electronics_response
+    if not loader:
+        click.echo('Unknown format: "%s"' % format)
+        sys.exit(1)
+
+    elecresp = loader(inputfile)
+
+    from wirecell.sigproc.response import persist
+    persist.dump(outputfile, elecresp)
+
 @cli.command("plot-noise-spectra")
 @click.argument("spectrafile")
 @click.argument("plotfile")
