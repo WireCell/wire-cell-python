@@ -2,7 +2,7 @@
 '''
 Functions related to responses.
 '''
-from wirecell import units
+from wirecell import units, util
 
 from . import schema
 
@@ -10,6 +10,37 @@ import math
 import numpy
 import collections
 
+def load_text_electronics_response(filename):
+    '''
+    Load an electronics response function in text format:
+
+    <time unit> <amplitude unit>
+    ...         ...
+    Also ignore lines starting with '#' or empty
+    '''
+    lines=list()
+    with open(filename) as fp:
+        for line in fp.readlines():
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith("#"):
+                continue
+            lines.append(line)
+    meta = lines[0].split()
+    timeunit = util.unitify("1.0", meta[0])
+    gainunit = util.unitify("1.0", meta[1])
+    time_array = list()
+    amp_array = list()
+    for line in lines[1:]:
+        time = float(line.split()[0]) * timeunit
+        amplitude = float(line.split()[1]) * gainunit
+        time_array.append(time)
+        amp_array.append(amplitude)
+    data = dict()
+    data["times"] = time_array
+    data["amplitudes"] = amp_array
+    return data
 
 def electronics_no_gain_scale(time, gain, shaping=2.0*units.us, elec_type="cold"):
     '''
