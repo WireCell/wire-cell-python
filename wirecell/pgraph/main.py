@@ -242,26 +242,29 @@ def uses_to_params(uses):
 @click.argument("out-file")
 @click.pass_context
 def cmd_dotify(ctx, jpath, params, services, json_file, out_file):
-    '''Convert a WCT JSON cfg file to a GraphViz dot file.
+    '''Convert a WCT Jsonnet/JSON cfg file to a GraphViz dot or
+    rendered file.
 
-    The JSON file needs to at least contain a list of edges found at
-    the given jpath.  Use, eg, "-1" to locate the last element of a
-    configuration sequence which is typically the config for a
-    Pgrapher.  If indeed it is, its [jpath].data.edges attribution
-    will be located and the overall JSON data structure will be used
-    as a list of nodes.  Otherwise [jpath].edges will be used and
-    [jpath].uses will be used to provide an initial list of node
-    objects.
+    The JSON file (or the compiled Jsonnet) needs to at least contain
+    a list of edges found at the given jpath.  Use, eg, "-1" to locate
+    the last element of a configuration sequence which is typically
+    the config for a Pgrapher.  If indeed it is, its
+    [jpath].data.edges attribution will be located and the overall
+    JSON data structure will be used as a list of nodes.  Otherwise
+    [jpath].edges will be used and [jpath].uses will be used to
+    provide an initial list of node objects.
 
-    Example bash command using a full job config run from
-    wire-cell-toolkit/ source:
+    Example bash command assuming WIRECELL_PATH properly set
 
-    $ jsonnet -J cfg mycfg.jsonnet > mycfg.json
+    $ wirecell-pgraph dotify mycfg.jsonnet mycfg.pdf
 
-    $ wirecell-pgraph dotify --jpath=-1 mycfg.json mycfg.dot
+    Or piecewise 
+
+    $ wcsonnet mycfg.jsonnet > mycfg.json
+    
+    $ wirecell-pgraph dotify mycfg.json mycfg.dot
 
     $ dot -Tpdf -o mycfg.pdf mycfg.dot
-
     '''
     if json_file.endswith(".jsonnet"):
         import _jsonnet
