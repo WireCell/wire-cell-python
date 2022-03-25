@@ -66,35 +66,44 @@ def path(string):
 @cli.command(help='convert jsonnet to json and pdf')
 @click.argument('filename', type=click.Path(exists=True))
 @click.option('-o', '--output', default='wirecell.json', help='output json file name')
-@click.option('-V', '--ext', default='', help='external variables: A=a:B=b')
-def convert(filename, output, ext):
+@click.option('-V', '--ext-str', default='', help='external string variables: A=a:B=b')
+@click.option('--ext-code', default='', help='external code: C=1:D=2')
+def convert(filename, output, ext_str, ext_code):
     if (not filename.endswith('.jsonnet')):
         click.secho('Error: File must end with .jsonnet', fg='red')
         return
     
+    cmd = f'JSONNET_PATH=$WIRECELL_PATH jsonnet {filename} '
+
+    def update_dict_from_string(orig, string):
+        string_list = []
+        if (':' in string):
+            string_list = string.split(':')
+        elif (string != ''):
+            string_list = [string]
+        for item in string_list:
+            key, value = item.split('=')
+            orig.update({key: value})
+
     ext_variables = {
         'reality': 'data',
         'raw_input_label': 'daq',
-        'tpc_volume_label': '1',
+        'tpc_volume_label': '0',
         'epoch': 'dynamic',
         'signal_output_form': 'sparse'
     }
-    ext_from_cmd = []
-    if (':' in ext):
-        ext_from_cmd = ext.split(':')
-    elif (ext != ''):
-        ext_from_cmd = [ext]
-    for item in ext_from_cmd:
-        key, value = item.split('=')
-        ext_variables.update({key: value})
-    
-    cmd = f'JSONNET_PATH=$WIRECELL_PATH jsonnet {filename} '
+    update_dict_from_string(ext_variables, ext_str)    
     for (key, value) in ext_variables.items():
         cmd += f'-V {key}={value} '
     
+    ext_code_variables = {}
+    update_dict_from_string(ext_code_variables, ext_code)    
+    for (key, value) in ext_code_variables.items():
+        cmd += f'--ext-code {key}={value} '
+    
     cmd += f'-o {output}'
     
-    click.echo(click.style('jonnet->json:\n', fg='green') + cmd)
+    click.echo(click.style('jsonnet->json:\n', fg='green') + cmd)
     os.system(cmd)
 
     pdf = output.replace('.json', '.pdf')
