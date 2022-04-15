@@ -3,10 +3,11 @@
 Support for cluster related "tap" files.
 
 A "tap" file is a JSON such as written individually by JsonClusterTap
-or into a tar stream with CluterFileSink.
+or into a tar stream with ClusterFileSink.
 '''
 
 import json
+from pathlib import Path
 import networkx as nx
 from wirecell.util import ario
 
@@ -25,9 +26,14 @@ def load(filename):
     '''
     Yield a sequence of graphs loaded from file like object.
     '''
-
-    if filename.endswith(".json"):
-        return make_nxgraph(filename, json.load(open(filename)))
+    path = Path(filename)
+    if path.suffix in (".json",):
+        dat = json.load(open(filename))
+        if not isinstance(dat, list):
+            dat = [dat]
+        for count, one in enumerate(dat):
+            yield make_nxgraph(f'{path.stem}_{count}', one)
+        return
 
     for fname, fdata in ario.load(filename).items():
         yield make_nxgraph(fname, fdata)

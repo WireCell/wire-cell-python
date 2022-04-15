@@ -5,31 +5,72 @@ The wirecell-img main
 import os
 import json
 import click
+import pathlib
+from collections import Counter
+import numpy
 import matplotlib.pyplot as plt
-
 from wirecell import units
 
-@click.group("img")
+cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
+
+@click.group("img", **cmddef)
 @click.pass_context
 def cli(ctx):
     '''
     Wire Cell Toolkit Imaging Commands
+
+    A cluster file here may be one of:
+
+    - .json from img/JsonClusterTap
+    - .tar[.gz|.bz2] from sio/ClusterFileSink
+
     '''
 
+@cli.command("inspect")
+@click.argument("cluster-file")
+@click.pass_context
+def inspect(ctx, cluster_file):
+    '''
+    Inspect a cluster file
+    '''
+    from . import converter, tap
+
+    path = pathlib.Path(cluster_file)
+    if not path.exists():
+        print(f'no such file: {path}')
+        return
+
+    if path.name.endswith(".json"):
+        print ('JSON file assuming from JsonClusterTap')
+    elif '.tar' in path.name:
+        print ('TAR file assuming from ClusterFileSink')
+
+    graphs = list(tap.load(path.name))
+    print (f'number of graphs: {len(graphs)}')
+    for ig, gr in enumerate(graphs):
+        print(f'{ig}: {gr.number_of_nodes()} vertices, {gr.number_of_edges()} edges')
+        counter = Counter(dict(gr.nodes(data='code')).values())
+        for code, count in sorted(counter.items()):
+            q = ''
+            if code == 'b':
+                q = sum([n['value'] for c,n in gr.nodes(data=True) if n['code'] == code])
+            print(f'\t{code}: {count} nodes {q}')
+        
+
 @cli.command("paraview-blobs")
-@click.argument("cluster-tap-file")
+@click.argument("cluster-file")
 @click.argument("paraview-file")
 @click.pass_context
-def paraview_blobs(ctx, cluster_tap_file, paraview_file):
+def paraview_blobs(ctx, cluster_file, paraview_file):
     '''
-    Convert cluster files to a ParaView .vtu files of blobs
+    Convert a cluster file to a ParaView .vtu files of blobs
     '''
     from . import converter, tap
     from tvtk.api import write_data
     
     def do_one(gr, n=0):
         if 0 == gr.number_of_nodes():
-            click.echo("no verticies in %s" % cluster_tap_file)
+            click.echo("no verticies in %s" % cluster_file)
             return
         dat = converter.clusters2blobs(gr)
         fname = paraview_file
@@ -38,16 +79,17 @@ def paraview_blobs(ctx, cluster_tap_file, paraview_file):
         write_data(dat, fname)
         click.echo(fname)
 
-    for n, gr in enumerate(tap.load(cluster_tap_file)):
+    for n, gr in enumerate(tap.load(cluster_file)):
         do_one(gr, n)
 
     return
 
+
 @cli.command("paraview-activity")
-@click.argument("cluster-tap-file")
+@click.argument("cluster-file")
 @click.argument("paraview-file")
 @click.pass_context
-def paraview_activity(ctx, cluster_tap_file, paraview_file):
+def paraview_activity(ctx, cluster_file, paraview_file):
     '''
     Convert cluster files to ParaView .vti files of activity
     '''
@@ -60,7 +102,7 @@ def paraview_activity(ctx, cluster_tap_file, paraview_file):
             fname = fname%n
 
         if 0 == gr.number_of_nodes():
-            click.echo("no verticies in %s" % cluster_tap_file)
+            click.echo("no verticies in %s" % cluster_file)
             return
         alldat = converter.clusters2views(gr)
         for wpid, dat in alldat.items():
@@ -68,7 +110,7 @@ def paraview_activity(ctx, cluster_tap_file, paraview_file):
             write_data(dat, pname)
             click.echo(pname)
 
-    for n, gr in enumerate(tap.load(cluster_tap_file)):
+    for n, gr in enumerate(tap.load(cluster_file)):
         do_one(gr, n)
 
     return
@@ -84,7 +126,6 @@ def paraview_depos(ctx, depo_npz_file, paraview_file):
     '''
     from . import converter
     from tvtk.api import write_data
-    import numpy
     
     fp = numpy.load(open(depo_npz_file))
     dat = fp['depo_data_0']
@@ -107,8 +148,8 @@ def paraview_depos(ctx, depo_npz_file, paraview_file):
               help="The sampling technique to turn blob volumes into points")
 @click.option('-d', '--density', type=float, default=9.0,
               help="For samplings which care, specify target points per cc")
-@click.argument("cluster-tap-files", nargs=-1)
-def bee_blobs(output, geom, rse, sampling, density, cluster_tap_files):
+@click.argument("cluster-files", nargs=-1)
+def bee_blobs(output, geom, rse, sampling, density, cluster_files):
     '''
     Produce a Bee JSON file from a cluster file.
     '''
@@ -128,7 +169,7 @@ def bee_blobs(output, geom, rse, sampling, density, cluster_tap_files):
         uniform = lambda b : converter.blob_uniform_sample(b, density),
     )[sampling];
 
-    for ctf in cluster_tap_files:
+    for ctf in cluster_files:
         gr = list(tap.load(ctf))[0] # fixme: for now ignore subsequent graphs
         print ("got %d" % gr.number_of_nodes())
         if 0 == gr.number_of_nodes():
@@ -157,11 +198,11 @@ def bee_blobs(output, geom, rse, sampling, density, cluster_tap_files):
               help="For samplings which care, specify target points per cc")
 @click.option('-n', '--number', type=int, default=-1,
               help="The number of electrons per depo point")
-@click.argument("cluster-tap-files", nargs=-1)
-def json_depos(output, sampling, density, number, cluster_tap_files):
+@click.argument("cluster-files", nargs=-1)
+def json_depos(output, sampling, density, number, cluster_files):
     '''
-    Make one JSON depo file from the blobs in a set of 'cluster tap'
-    JSON files which are presumed to originate from one trigger.
+    Make one JSON depo file from the blobs in a set of cluster files
+    which are presumed to originate from one trigger.
     '''
     from . import tap, converter
 
@@ -174,7 +215,7 @@ def json_depos(output, sampling, density, number, cluster_tap_files):
         uniform = lambda b : converter.blob_uniform_sample(b, density),
     )[sampling];
 
-    for ctf in cluster_tap_files:
+    for ctf in cluster_files:
         gr = list(tap.load(ctf))[0] # fixme
         print ("got %d" % gr.number_of_nodes())
         if 0 == gr.number_of_nodes():
@@ -207,23 +248,34 @@ def json_depos(output, sampling, density, number, cluster_tap_files):
     json.dump(dat, open(output,'w', encoding="utf8"))
 
 
+def divine_planes(nch):
+    '''
+    Return list of channels in each plane based on total.
+    '''
+    if nch == 2560:             # protodune
+        return [400, 400, 400, 400, 480, 480]
+    if nch == 8256:             # microboone
+        return [2400, 2400, 3456]
+    raise ValueError(f'unknown number of channels: {nch}')
+
 @cli.command("activity")
 @click.option('-o', '--output', help="The output plot file name")
 @click.option('-s', '--slices', nargs=2, type=int, 
               help="Range of slice IDs")
 @click.option('-S', '--slice-line', type=int, default=-1,
               help="Draw a line down a slice")
-@click.argument("cluster-tap-file")
-def activity(output, slices, slice_line, cluster_tap_file):
+@click.argument("cluster-file")
+def activity(output, slices, slice_line, cluster_file):
     '''
     Plot activity
     '''
     from matplotlib.colors import LogNorm
     from . import tap, clusters, plots
-    gr = list(tap.load(cluster_tap_file))[0]
+    gr = list(tap.load(cluster_file))[0]
     cm = clusters.ClusterMap(gr)
     ahist = plots.activity(cm)
     arr = ahist.arr
+    print(f'channel x slice array shape: {arr.shape}')
     extent = list()
     if slices:
         arr = arr[:,slices[0]:slices[1]]
@@ -241,9 +293,8 @@ def activity(output, slices, slice_line, cluster_tap_file):
         ax.plot([slice_line, slice_line], [ahist.rangey[0], ahist.rangey[1]],
                 linewidth=0.1, color='black')
 
-    ## protodune only....
     boundary = 0
-    for chunk in [400, 400, 400, 400, 480, 480]:
+    for chunk in divine_planes(arr.shape[0]):
         boundary += chunk
         y = boundary + ahist.rangey[0]
         ax.plot(extent[:2], [y,y], color='gray', linewidth=0.1);
@@ -255,8 +306,14 @@ def activity(output, slices, slice_line, cluster_tap_file):
     ax.tick_params(which="major", length=7)
     ax.tick_params(which="minor", length=3)
 
-    plt.colorbar(im, ax=ax)
-    ax.set_title(cluster_tap_file)
+    try:
+        plt.colorbar(im, ax=ax)
+    except ValueError:
+        print("colorbar complains, probably have zero data")
+        print('total:', numpy.sum(arr))
+        return
+        pass
+    ax.set_title(cluster_file)
     ax.set_xlabel("slice ID")
     ax.set_ylabel("channel IDs")
     fig.savefig(output)
@@ -270,13 +327,13 @@ def activity(output, slices, slice_line, cluster_tap_file):
               help="Draw a line down a slice")
 @click.option('--found/--missed', default=True,
               help="Mask what blobs found or missed")
-@click.argument("cluster-tap-file")
-def blob_activity_mask(output, slices, slice_line, found, cluster_tap_file):
+@click.argument("cluster-file")
+def blob_activity_mask(output, slices, slice_line, found, cluster_file):
     '''
     Plot blobs as maskes on channel activity.
     '''
     from . import tap, clusters, plots
-    gr = list(tap.load(cluster_tap_file))[0] # fixme
+    gr = list(tap.load(cluster_file))[0] # fixme
     cm = clusters.ClusterMap(gr)
     ahist = plots.activity(cm)
     bhist = ahist.like()
@@ -302,7 +359,7 @@ def blob_activity_mask(output, slices, slice_line, found, cluster_tap_file):
     if slice_line > 0:
         ax.plot([slice_line, slice_line], [ahist.rangey[0], ahist.rangey[1]],
                 linewidth=0.1, color='black')
-    ax.set_title("%s %s" % (title, cluster_tap_file))
+    ax.set_title("%s %s" % (title, cluster_file))
     ax.set_xlabel("slice ID")
     ax.set_ylabel("channel IDs")
     fig.savefig(output)
@@ -311,13 +368,13 @@ def blob_activity_mask(output, slices, slice_line, found, cluster_tap_file):
 @cli.command("wire-slice-activity")
 @click.option('-o', '--output', help="The output plot file name")
 @click.option('-s', '--sliceid', type=int, help="The slice ID to plot")
-@click.argument("cluster-tap-file")
-def wire_slice_activity(output, sliceid, cluster_tap_file):
+@click.argument("cluster-file")
+def wire_slice_activity(output, sliceid, cluster_file):
     '''
     Plot the activity in one slice as wires and blobs
     '''
     from . import tap, clusters, plots
-    gr = tap.load(cluster_tap_file)
+    gr = tap.load(cluster_file)
     cm = clusters.ClusterMap(gr)
     fig, axes = plots.wire_blob_slice(cm, sliceid)
     fig.savefig(output)
