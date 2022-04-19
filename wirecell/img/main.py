@@ -33,7 +33,7 @@ def inspect(ctx, cluster_file):
     '''
     Inspect a cluster file
     '''
-    from . import converter, tap
+    from . import converter, tap, clusters
 
     path = pathlib.Path(cluster_file)
     if not path.exists():
@@ -45,16 +45,28 @@ def inspect(ctx, cluster_file):
     elif '.tar' in path.name:
         print ('TAR file assuming from ClusterFileSink')
 
-    graphs = list(tap.load(path.name))
+    graphs = list(tap.load(str(path)))
     print (f'number of graphs: {len(graphs)}')
     for ig, gr in enumerate(graphs):
+        cm = clusters.ClusterMap(gr)
+
         print(f'{ig}: {gr.number_of_nodes()} vertices, {gr.number_of_edges()} edges')
         counter = Counter(dict(gr.nodes(data='code')).values())
         for code, count in sorted(counter.items()):
-            q = ''
+            print(f'\t{code}: {count} nodes')
+
             if code == 'b':
                 q = sum([n['value'] for c,n in gr.nodes(data=True) if n['code'] == code])
-            print(f'\t{code}: {count} nodes {q}')
+                print(f'\t\ttotal charge: {q}')
+                continue
+
+            if code == 's':
+                q=0
+                for snode in cm.nodes_oftype('s'):
+                    sdat = cm.gr.nodes[snode]
+                    q += sum(sdat['activity'].values())
+                print(f'\t\ttotal charge: {q}')
+                continue
         
 
 @cli.command("paraview-blobs")
@@ -374,7 +386,7 @@ def wire_slice_activity(output, sliceid, cluster_file):
     Plot the activity in one slice as wires and blobs
     '''
     from . import tap, clusters, plots
-    gr = tap.load(cluster_file)
+    gr = next(tap.load(cluster_file))
     cm = clusters.ClusterMap(gr)
     fig, axes = plots.wire_blob_slice(cm, sliceid)
     fig.savefig(output)

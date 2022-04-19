@@ -157,7 +157,8 @@ def wire_blob_slice(cm, sliceid):
     cmap = plt.get_cmap('gist_rainbow')
     linewidth=0.1
     fig,axes = plt.subplots(nrows=1, ncols=len(by_face))
-
+    if len(by_face) == 1:
+        axes=[axes]
 
 
     for ind, (faceid, wdats) in enumerate(sorted(by_face.items())):
