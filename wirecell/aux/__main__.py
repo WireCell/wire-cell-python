@@ -5,7 +5,7 @@ Main CLI to wirecell.aux.
 
 import json
 import click
-from wirecell.util import ario, jsio, plottools
+from wirecell.util import jsio, plottools
 import numpy
 import matplotlib.pyplot as plt
 import tempfile

@@ -1,108 +1,213 @@
 #!/usr/bin/env python3
-'''
-Array / archive IO
+'''Array / archive IO
 
-This module provides a numpy.load() like dict'ish which can handle
-more than just .npz/zip archives and supports archives holding more
-than .npy files.
+Read-only dict-like, sometimes efficient, random access to files.
 
 '''
-import os
 import io
 import json
 import numpy
-import functools
+import pathlib
 import zipfile
 import tarfile
+from collections.abc import Mapping
 
-def npz_load(filename):
+def stem_if(fname, exts):
     '''
-    Load an npz file
+    Return stem if extension in exts
     '''
-    return numpy.load(filename)
+    stem, ext = fname.rsplit(".", 1)
+    if ext in exts:
+        return stem
+    return fname
 
-# XxxReader constructs on a file name and provides items as bytes and
-# list of archive names as keys().
+import gzip
+import bz2
+import lzma
+decompressors = dict(
+    gz = gzip.decompress,
+    bz2 = bz2.decompress,
+    xz = lzma.decompress
+)
 
-class TarReader(dict):
 
-    exts = ('.tar', '.tar.bz2', '.tar.gz', '.tar.xz')
+def transform(fname, data):
+    '''
+    Transform data from filename to object.
+    '''
+    fname, ext = fname.rsplit(".", 1)
+    if ext in decompressors:
+        data = decompressors[ext](data)
+        fname, ext = fname.rsplit(".", 1)
+    if ext.lower() in ("json",):
+        return json.loads(data)
+    if ext.lower() in ("npy","numpy"):
+        bio = io.BytesIO()
+        bio.write(data)
+        bio.seek(0)
+        return numpy.load(bio)
+    raise ValueError(f'unsupported member type: {ext}')
 
-    def __init__(self, filename):
+
+class Arf(Mapping):
+    '''
+    Base for common methods in Tar/Zip.
+
+    Subclass provide keymap() and greedy_load.
+    '''
+
+    def lazy_load(self, fileobj, infoobj):
+        '''
+        Return a callable that loads an object given a file and info
+        object.
+        '''
+        def loader():
+            return self.greedy_load(fileobj, infoobj)
+        return loader
+
+    def __getitem__(self, key):
+        val = self._index[key]
+        if self._lazy:
+            return val()
+        return val
+
+    def __iter__(self):
+        return iter(self._index)
+
+    def __len__(self):
+        return len(self._index)
+
+class Tar(Arf):
+    '''
+    Apply a mapping interface to a tar file
+    '''
+
+    def __init__(self, path, lazy=True):
+        '''
+        Create a Tar mapping on file path.  
+        '''
         mode = "r"
-        for maybe_compressed in ('bz2','gz','xz'):
-            if filename.endswith(".tar."+maybe_compressed):
-                mode += ':' + maybe_compressed
-        tf = tarfile.open(filename, mode)
+        if path.endswith(('.gz', '.tgz')):
+            mode += ':gz'
+            lazy = False
+        elif path.endswith(('.xz', '.txz')):
+            mode += ':xz'
+            lazy = False
+        elif path.endswith(('.bz2', '.tbz2')):
+            mode += ':bz2'
+            lazy = False
+        tf = tarfile.open(path, mode)
+        self._lazy = lazy
+        if lazy:
+            tran = self.lazy_load
+        else:
+            tran = self.greedy_load
+        self._index = dict()
+        self.member_names = dict()
         for ti in tf.getmembers():
-            # print(f'load from {filename}: {ti.name}')
-            self[ti.name] = tf.extractfile(ti).read()
-
-    
-    # def __getitem__(self, name):
-    #     return self.
-
-    # @functools.cache
-    # def keys(self):
-    #     return [ti.name for ti in self.tf.getmembers()]
+            key = self.keymap(ti)
+            if not key:
+                continue
+            self._index[key] = tran(tf, ti)
+            self.member_names[key] = ti.name
 
 
-class ZipReader(dict):
-
-    exts = ('.zip', '.npz')
-
-    def __init__(self, filename):
-        self.zf = zipfile.ZipFile(filename)
-        for name in self.zf.namelist():
-            self[name] = self.zf.open(name).read()
-
-def _reader(filename):
-    for R in (TarReader, ZipReader):
-        for ext in R.exts:
-            if filename.endswith(ext):
-                return R(filename)
-    raise ValueError(f'no reader for {filename}')
-    
-
-class Reader(dict):
-    '''
-    Mimic a numpy.load() dict'ish for various archve formats
-    '''
-
-    # Known archive file member object formats and their resolution
-    # order when guessing.
-    formats = ("npy", "json")
-
-    def __init__(self, filename, keep_extension=False):
+    def keymap(self, ti):
         '''
-        Construct a reader on an archive file name.
-
-        If keep_extension is True then archive object is retrieved via
-        its archive file name including extension and otherwise just
-        by its basename (latter is default to match numpy.load()
-        behavior).
+        Return lookup key.
         '''
-        r = _reader(filename)
-        for fname, dat in r.items():
-            #print (f'Reader: {fname}')
+        if not ti.isfile():
+            return
+        # strip internal compression extension
+        key = stem_if(ti.name, ('gz', 'xz', 'bz2'))
+        # strip of object extension
+        key = stem_if(key, ('npy', 'json'))
+        return key
 
-            key, ext = os.path.splitext(fname)
-            if ext == ".json":
-                obj = json.loads(dat.decode())
-            elif ext == ".npy":
-                a = io.BytesIO()
-                a.write(dat)
-                a.seek(0)
-                obj = numpy.load(a)
-                #print(f'{key}: {obj.shape} {obj.dtype}')
-            else:
-                obj = dat       # as-is
-            if keep_extension:
-                key = fname
-            self[key] = obj
-                
-def load(filename):
+    def greedy_load(self, tf, ti):
+        '''
+        Immediately load the TarInfo ti from TarFile tf and return
+        object.
+        '''
+        data = tf.extractfile(ti).read()
+        return transform(ti.name, data)
+
+
+class Zip(Arf):
+    '''
+    Apply a mapping interface to a zip file.
+
+    This will lazy load.
+    '''
+    def __init__(self, path, lazy=True):
+
+        zf = zipfile.ZipFile(path)
+        self._lazy = lazy
+        if lazy:
+            tran = self.lazy_load
+        else:
+            tran = self.greedy_load
+        self._index = dict()
+        self.member_names = dict()
+        for zi in zf.infolist():
+            key = self.keymap(zi)
+            if not key:
+                continue
+            self._index[key] = tran(zf, zi)
+            self.member_names[key] = zi.filename
+
+    def keymap(self, zi):
+        '''
+        Return lookup key.
+        '''
+        if zi.is_dir():
+            return
+        # strip internal compression extension
+        key = stem_if(zi.filename, ('gz', 'xz', 'bz2'))
+        # strip of object extension
+        key = stem_if(key, ('npy', 'json'))
+        return key
+
+    def greedy_load(self, zf, zi):
+        '''
+        Immediately load the ZipInfo zi from ZipFile zf and return
+        object.
+        '''
+        data = zf.open(zi.filename).read()
+        return transform(zi.filename, data)
+
+
+class Pixz:
+    pass
+
+
+def reader_class(path):
+    '''
+    Make a reader class based on parsing a path
+    '''
+    path = pathlib.Path(path)
+    if not path.exists():
+        raise ValueError(f'no such file: {path.name}')
+    if path.name.endswith(('.tar', '.tar.gz', '.tar.bz2', '.tar.xz', '.tgz', '.txz', '.tbz2')):
+        return Tar
+    if path.name.endswith(('.zip', '.npz')):
+        return Zip
+    if path.name.endswith(('.tix', '.tar.pixz', '.tpxz')):
+        return Pixz
+
+    raise ValueError(f'unsupported archive type: {path.name}')    
+    
+
+def load(path, lazy=True):
     '''
     Load a file into a dict of fledged objects.
+
+    If lazy, delay loading until a key is accessed.  Compressed tar
+    archives which lack indices (eg, non-pixz) can not be lazy loaded
+    and will always be greedy-loaded.  If application intends to load
+    the entire archive then greedy-loading it faster.
     '''
-    return Reader(filename)
+    Reader = reader_class(path)
+    ret = Reader(path, lazy)
+    #print(list(ret.keys()))
+    return ret

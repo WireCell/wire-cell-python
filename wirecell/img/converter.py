@@ -148,6 +148,17 @@ def get_slice(gr, bnode):
             return other
     return None
 
+def get_neighbors_oftype(gr, node, code, with_data=False):
+    'Return neighbors of channel type'
+    ret = list()
+    for other in gr[node]:
+        odat = gr.nodes[other]
+        if odat['code'] == code:
+            if with_data:
+                ret.append((other,odat))
+            else:
+                retu.append(other)
+    return ret
 
 def clusters2views(gr):
     from tvtk.api import tvtk, write_data
@@ -170,17 +181,16 @@ def clusters2views(gr):
         if snode is None:
             raise ValueError("bad graph structure")
         wpid = ndata['wpid']
-        
 
         sdat = gr.nodes[snode]
         snum = sdat['ident']
         perwpid[wpid].allind.append(snum)
-        sact = sdat['activity']
+        sigs = sdat['signal']
         val = 0.0
-        chids = ndata['chids']
+        chids = [d[1]["ident"] for d in get_neighbors_oftype(gr, node, 'c', True)]
         perwpid[wpid].allchs += chids
         for chid in chids:
-            val += float(sact[str(chid)])
+            val += float(sigs[str(chid)]['val'])
         perwpid[wpid].values.append((snum,chids,val))
     all_imgdat=dict()
     for wpid, dat in perwpid.items():

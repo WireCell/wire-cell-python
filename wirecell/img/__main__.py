@@ -19,10 +19,8 @@ def cli(ctx):
     '''
     Wire Cell Toolkit Imaging Commands
 
-    A cluster file here may be one of:
-
-    - .json from img/JsonClusterTap
-    - .tar[.gz|.bz2] from sio/ClusterFileSink
+    A cluster file is produced by ClusterFileSink and is an archive
+    holding JSON or Numpy or as a special case may be a single JSON.
 
     '''
 
@@ -64,7 +62,8 @@ def inspect(ctx, cluster_file):
                 q=0
                 for snode in cm.nodes_oftype('s'):
                     sdat = cm.gr.nodes[snode]
-                    q += sum(sdat['activity'].values())
+                    sig = sdat['signal']
+                    q += sum([v['val'] for v in sig.values()])
                 print(f'\t\ttotal charge: {q}')
                 continue
         
@@ -268,7 +267,8 @@ def divine_planes(nch):
         return [400, 400, 400, 400, 480, 480]
     if nch == 8256:             # microboone
         return [2400, 2400, 3456]
-    raise ValueError(f'unknown number of channels: {nch}')
+    print(f'not a canonical number of channels in a known detector: {nch}')
+    return [nch]
 
 @cli.command("activity")
 @click.option('-o', '--output', help="The output plot file name")

@@ -1,9 +1,11 @@
 #!/usr/bin/env python
 '''
-Support for cluster related "tap" files.
+I/O for cluster files.
 
-A "tap" file is a JSON such as written individually by JsonClusterTap
-or into a tar stream with ClusterFileSink.
+A cluster file is an archive (zip or tar, compressed or not) holding
+an ICluster graph as a JSON object or as a set of Numpy arrays.  As a
+special case, a bare .json file can be read for a single cluster
+graph.
 '''
 
 import json
@@ -28,13 +30,22 @@ def load(filename):
     '''
     path = Path(filename)
     if path.suffix in (".json",):
-        dat = json.load(open(filename))
+        dat = ario.transform(filename, open(filename).read())
         if not isinstance(dat, list):
             dat = [dat]
         for count, one in enumerate(dat):
             yield make_nxgraph(f'{path.stem}_{count}', one)
         return
 
-    for fname, fdata in ario.load(filename).items():
-        yield make_nxgraph(fname, fdata)
+    arf = ario.load(filename, False)
+    for key in arf:
+        member = arf.member_names[key]
+        if '.json' in member:
+            dat = arf[key]
+            if not isinstance(dat, list):
+                dat = [dat]
+            for count, one in enumerate(dat):
+                yield make_nxgraph(f'{path.stem}_{count}', one)
+        else:
+            raise ValueError("Cluster graphs in Numpy format not yet supported")
 
