@@ -5,6 +5,16 @@ A module to produce paraview / vtk objects
 import math
 import numpy
 from collections import defaultdict
+from wirecell import units
+
+def undrift(pts, speed=1.6*units.mm/units.us):
+    '''
+    Convert the x coordinate from time to space domain according to
+    drift speed.
+    '''
+    pts = numpy.array(pts)
+    pts[:,0] *= speed
+    return pts
 
 
 def extrude(pts, dx):
@@ -78,7 +88,7 @@ def depos2pts(arr):
 
 
 
-def clusters2blobs(gr):
+def clusters2blobs(gr, speed = 1.6*units.mm/units.us):
     '''
     Given a graph object return a tvtk data object with blbos.
     '''
@@ -95,10 +105,11 @@ def clusters2blobs(gr):
         thickness = 1.0
         for key,val in ndata.items():
             if key == 'corners':
-                pts = orderpoints(val)
+                pts = undrift(val, speed)
+                pts = orderpoints(pts)
                 continue
             if key == 'span':
-                thickness = val
+                thickness = val*speed
                 continue
             if key == 'code':
                 continue

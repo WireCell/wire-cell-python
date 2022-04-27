@@ -10,6 +10,7 @@ from collections import Counter
 import numpy
 import matplotlib.pyplot as plt
 from wirecell import units
+from wirecell.util.functions import unitify
 
 cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
 
@@ -69,21 +70,28 @@ def inspect(ctx, cluster_file):
         
 
 @cli.command("paraview-blobs")
+@click.option("-s", "--speed", default="1.6*mm/us",
+              help="Drift speed (with units)")
 @click.argument("cluster-file")
 @click.argument("paraview-file")
 @click.pass_context
-def paraview_blobs(ctx, cluster_file, paraview_file):
+def paraview_blobs(ctx, speed, cluster_file, paraview_file):
     '''
     Convert a cluster file to a ParaView .vtu files of blobs
+
+    A drift speed is used to convert the "x" dimension from time to
+    distance.  Default "1.6*mm/us".
     '''
     from . import converter, tap
     from tvtk.api import write_data
+
+    speed = unitify(speed)
     
     def do_one(gr, n=0):
         if 0 == gr.number_of_nodes():
             click.echo("no verticies in %s" % cluster_file)
             return
-        dat = converter.clusters2blobs(gr)
+        dat = converter.clusters2blobs(gr, speed)
         fname = paraview_file
         if '%' in paraview_file:
             fname = paraview_file%n
