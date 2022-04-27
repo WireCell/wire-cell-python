@@ -7,14 +7,38 @@ import numpy
 from collections import defaultdict
 from wirecell import units
 
-def undrift(pts, speed=1.6*units.mm/units.us):
+def undrift_points(pts, speed=1.6*units.mm/units.us):
     '''
-    Convert the x coordinate from time to space domain according to
-    drift speed.
+    Return pts as numpy array with the x coordinates multiplied by the
+    speed.
     '''
     pts = numpy.array(pts)
     pts[:,0] *= speed
     return pts
+
+
+def undrift(grs, speed=1.6*units.mm/units.us):
+    '''
+    Convert values in the graph or list of graphs gr which are along
+    the drift direction from time to distance given the speed.
+    '''
+    is_list=True
+    if not isinstance(grs, list):
+        grs = [grs]
+        is_list = False
+
+    ret = list()
+    for gr in grs:
+        for node, ndata in gr.nodes.data():
+            if ndata['code'] != 'b':
+                continue;
+            ndata['corners'] = undrift_points(ndata['corners'], speed)
+            ndata['span'] *= speed
+        ret.append(gr)
+
+    if is_list:
+        return ret
+    return ret[0]
 
 
 def extrude(pts, dx):
@@ -88,7 +112,7 @@ def depos2pts(arr):
 
 
 
-def clusters2blobs(gr, speed = 1.6*units.mm/units.us):
+def clusters2blobs(gr):
     '''
     Given a graph object return a tvtk data object with blbos.
     '''
@@ -105,11 +129,10 @@ def clusters2blobs(gr, speed = 1.6*units.mm/units.us):
         thickness = 1.0
         for key,val in ndata.items():
             if key == 'corners':
-                pts = undrift(val, speed)
-                pts = orderpoints(pts)
+                pts = orderpoints(val)
                 continue
             if key == 'span':
-                thickness = val*speed
+                thickness = val
                 continue
             if key == 'code':
                 continue
