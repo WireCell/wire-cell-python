@@ -89,11 +89,14 @@ def depos2pts(arr):
     Convert numpy array like which comes from 'depo_data_0' key of npz
     file from NumpyDepoSaver to tvtk unstructured grid.
     '''
-    from tvtk.api import tvtk, write_data
+    from tvtk.api import tvtk
 
+    # (7,n)
     npts = arr.shape[1]
     # t,q,x,y,z,dl,dt
+    # (N,)
     q = arr[1,:].reshape(npts)
+    # (N,3)
     pts = arr[2:5,:].T
 
     indices = list(range(npts))
@@ -116,7 +119,7 @@ def clusters2blobs(gr):
     '''
     Given a graph object return a tvtk data object with blbos.
     '''
-    from tvtk.api import tvtk, write_data
+    from tvtk.api import tvtk
 
     all_points = list()
     blob_cells = list()
@@ -195,7 +198,7 @@ def get_neighbors_oftype(gr, node, code, with_data=False):
     return ret
 
 def clusters2views(gr):
-    from tvtk.api import tvtk, write_data
+    from tvtk.api import tvtk
 
     class Perwpid:
         def __init__(self):

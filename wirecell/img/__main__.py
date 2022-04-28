@@ -70,7 +70,7 @@ def inspect(ctx, cluster_file):
         
 
 @cli.command("paraview-blobs")
-@click.option("-s", "--speed", default="1.6*mm/us",
+@click.option("--speed", default="1.6*mm/us",
               help="Drift speed (with units)")
 @click.argument("cluster-file")
 @click.argument("paraview-file")
@@ -84,6 +84,9 @@ def paraview_blobs(ctx, speed, cluster_file, paraview_file):
     '''
     from . import converter, tap
     from tvtk.api import write_data
+
+    if not paraview_file.endswith(".vtu"):
+        print ("warning: blobs are written as UnstructuredGrid and paraview expects a .vtu extension")
 
     speed = unitify(speed)
     
@@ -106,7 +109,7 @@ def paraview_blobs(ctx, speed, cluster_file, paraview_file):
 
 
 @cli.command("paraview-activity")
-@click.option("-s", "--speed", default="1.6*mm/us",
+@click.option("--speed", default="1.6*mm/us",
               help="Drift speed (with units)")
 @click.argument("cluster-file")
 @click.argument("paraview-file")
@@ -118,6 +121,9 @@ def paraview_activity(ctx, speed, cluster_file, paraview_file):
     from . import converter, tap
     from tvtk.api import write_data
     
+    if not paraview_file.endswith(".vti"):
+        print("warning: activity is saved as an image and paraview expects a .vti extension")
+
     speed = unitify(speed)
 
     def do_one(gr, n=0):
@@ -142,18 +148,36 @@ def paraview_activity(ctx, speed, cluster_file, paraview_file):
 
 
 @cli.command("paraview-depos")
+@click.option("--speed", default="1.6*mm/us",
+              help="Apply a drift speed")
 @click.argument("depo-npz-file")
 @click.argument("paraview-file")
 @click.pass_context
-def paraview_depos(ctx, depo_npz_file, paraview_file):
+def paraview_depos(ctx, speed, depo_npz_file, paraview_file):
     '''
-    Convert an NPZ file to a ParaView .vtu file of depos
+    Convert an NPZ file to a ParaView .vtp file of depos.
+
+    If depos are pre-drift then speed should be set to 0.
+
+    The default is non-zero assuming the depos are post-drift and the
+    speed will be used to modify the depo "x" coordinate based on its
+    "t".  Using zero speed on post-drift depos causes them all to
+    appear "bunched up" on the response plane.
     '''
     from . import converter
     from tvtk.api import write_data
     
-    fp = numpy.load(open(depo_npz_file))
+    if not paraview_file.endswith(".vtp"):
+        print("Warning: depos are saved as PolyData, paraview expects a .vtp extension")
+
+    speed = unitify(speed)
+
+    fp = numpy.load(depo_npz_file)
     dat = fp['depo_data_0']
+
+    # ((t,q,x,y,z,dl,dt), N)
+    dat[2] -= dat[0]*speed
+
     ugrid = converter.depos2pts(dat);
     write_data(ugrid, paraview_file)
     click.echo(paraview_file)
@@ -171,7 +195,7 @@ def paraview_depos(ctx, depo_npz_file, paraview_file):
               help="The '<run> <subrun> <event>' numbers as a triple of integers")
 @click.option('-s', '--sampling', type=click.Choice(["center","uniform"]), default="uniform",
               help="The sampling technique to turn blob volumes into points")
-@click.option("-S", "--speed", default="1.6*mm/us",
+@click.option("--speed", default="1.6*mm/us",
               help="Drift speed (with units)")
 @click.option('-d', '--density', type=float, default=9.0,
               help="For samplings which care, specify target points per cc")
@@ -225,7 +249,7 @@ def bee_blobs(output, geom, rse, sampling, speed, density, cluster_files):
               help="The sampling technique to turn blob volumes into points")
 @click.option('-d', '--density', type=float, default=9.0,
               help="For samplings which care, specify target points per cc")
-@click.option("-S", "--speed", default="1.6*mm/us",
+@click.option("--speed", default="1.6*mm/us",
               help="Drift speed (with units)")
 @click.option('-n', '--number', type=int, default=-1,
               help="The number of electrons per depo point")
