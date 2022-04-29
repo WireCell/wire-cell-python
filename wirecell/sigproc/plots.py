@@ -72,8 +72,8 @@ def one_electronics(gain, shaping, tick=0.1*units.us, elec_type="cold"):
     '''
     Plot one electronics response function
     '''
-    tmax = 10*units.us
-    nticks = tmax/tick
+    tmax = 10.0*units.us
+    nticks = int(tmax/tick)
     times = numpy.linspace(0, tmax, nticks)
     res = response.electronics(times, gain, shaping, elec_type)
     fig, axes = plt.subplots(1, 1)
@@ -85,7 +85,7 @@ def one_electronics(gain, shaping, tick=0.1*units.us, elec_type="cold"):
     axes.set_title('Electronics response for gain=%.1f mV/fC, peaking=%.1f us' % \
                     (gain/(units.mV/units.fC), shaping/units.us))
     axes.set_xlabel('Sample time [$\mu$s]')
-    axes.set_ylabel('Response')
+    axes.set_ylabel('Amplitude (mV/fC)')
     return fig
 
 

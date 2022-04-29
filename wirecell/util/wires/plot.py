@@ -151,7 +151,11 @@ def allplanes(store, pdffile):
                     wires_in_plane = [store.wires[wind] for wind in plane.wires]
                     wires = [w for w in wires_in_plane if w.segment == 0]
                     def pt(w): return store.points[w.head]
+                    def pt2(w): return store.points[w.tail]
                     wires.sort(key=lambda a: pt(a).z)
+                    #sometimes sort by head doesn't work when wire indexing is from high z to low z and many wires' heads at same z
+                    #sort by tail after sort by head will fix this issue (or vice versa)
+                    wires.sort(key=lambda b: pt2(b).z) 
                     def add_edge(w):
                         p = pt(w)
                         print (p,w.channel)
