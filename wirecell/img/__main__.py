@@ -72,16 +72,20 @@ def inspect(ctx, cluster_file):
 
 @cli.command("paraview-blobs")
 @click.option("--speed", default="1.6*mm/us",
-              help="Drift speed (with units)")
+              help="Drift speed (with units, signed)")
+@click.option("--response", default="0*cm",
+              help="Location of reponse plane (with units, signed)")
 @click.argument("cluster-file")
 @click.argument("paraview-file")
 @click.pass_context
-def paraview_blobs(ctx, speed, cluster_file, paraview_file):
+def paraview_blobs(ctx, speed, response, cluster_file, paraview_file):
     '''
     Convert a cluster file to a ParaView .vtu files of blobs
 
     A drift speed is used to convert the "x" dimension from time to
-    distance.  Default "1.6*mm/us".
+    distance.  Default "1.6*mm/us".  Sign of speed indicates if drift
+    is in positive or negative X-direction.  Response gives location
+    of the response plane
     '''
     from . import converter, tap
     from tvtk.api import write_data
@@ -90,10 +94,11 @@ def paraview_blobs(ctx, speed, cluster_file, paraview_file):
         print ("warning: blobs are written as UnstructuredGrid and paraview expects a .vtu extension")
 
     speed = unitify(speed)
-    print(f"drift speed: {speed/(units.mm/units.us)} mm/us")
+    response = unitify(response)
+    print(f"drift speed: {speed/(units.mm/units.us):.3f} mm/us, response plane at x={response/units.cm:.1f} cm")
     
     def do_one(gr, n=0):
-        gr = converter.undrift(gr, speed)
+        gr = converter.undrift(gr, speed, response)
         if 0 == gr.number_of_nodes():
             click.echo("no verticies in %s" % cluster_file)
             return
