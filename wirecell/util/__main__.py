@@ -40,12 +40,12 @@ def convert_oneside_wires(ctx, input_file, output_file):
 
 
 @cli.command("convert-multitpc-wires")
-@click.option('--duoface/--no-duoface', default=True,
-              help="Allow two faces in an anode or not")
+@click.option("--face-style", default=None,
+              help="Set convention for face per anode (eg 'sbnd').")
 @click.argument("input-file")
 @click.argument("output-file")
 @click.pass_context
-def convert_multitpc_wires(ctx, duoface, input_file, output_file):
+def convert_multitpc_wires(ctx, face_style, input_file, output_file):
     '''
     Convert a "multitpc" wire description file into one suitable for
     WCT.
@@ -59,11 +59,11 @@ def convert_multitpc_wires(ctx, duoface, input_file, output_file):
     And, further the order of rows of identical channel number express
     progressively higher segment count.
 
-    (Optional) if "--no-duoface" is enabled, we enforce each anode
-    to have one face. This function is designed for SBND
+    (Optional) "--face-style" allows user to choose a different naming
+    convention for numbering face. Currently, only "sbnd" is supported.
     '''
     from wirecell.util.wires import multitpc, persist
-    store = multitpc.load(input_file, duoface=duoface)
+    store = multitpc.load(input_file, face_style=face_style)
     persist.dump(output_file, store)
 
 @cli.command("convert-icarustpc-wires")

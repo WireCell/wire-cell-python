@@ -12,7 +12,7 @@ import matplotlib.patches as mpatches
 
 from collections import defaultdict, namedtuple
 
-def load(filename, duoface):
+def load(filename, face_style):
     '''
     Load a "multitpc" geometry file.
 
@@ -100,14 +100,14 @@ def load(filename, duoface):
             if beg[1] > end[1]:
                 beg,end = end,beg # always point upward in Y
 
-            if duoface: # default
+            if face_style=="sbnd": # enforce SBND style
+                face = tpc
+                apa = tpc
+                wid = wire
+            else:
                 face = (1+tpc)%2    # "front" face is 0.
                 apa = tpc//2        # pure conjecture
                 wid = wire          # this too
-            else: # enforce one face
-                face = 0
-                apa = tpc
-                wid = wire
 
             wpid = schema.wire_plane_id(plane, face, apa)
 
