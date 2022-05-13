@@ -6,7 +6,9 @@ Main CLI for things related to wire-cell-toolkit/pytorch/
 import click
 import torch
 
-@click.group()
+cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
+
+@click.group(**cmddef)
 @click.pass_context
 def cli(ctx):
     '''

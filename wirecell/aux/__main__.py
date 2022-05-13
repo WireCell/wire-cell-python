@@ -14,7 +14,9 @@ import subprocess
 from wirecell.aux import idft, sysinfo
 from matplotlib.backends.backend_pdf import PdfPages
 
-@click.group()
+cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
+
+@click.group(**cmddef)
 @click.pass_context
 def cli(ctx):
     '''

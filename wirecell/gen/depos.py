@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 from wirecell import units
+from wirecell.util import ario
 
 import numpy
 import matplotlib.pyplot as plt
@@ -9,8 +10,15 @@ import json
 import bz2
 
 
+# the depo "data" arrays
 #        0123456
-columns="xyzqtsn"
+columns="tqxyzLT"
+# Note: some old format used another ordering and included "s" and
+# "n".
+
+# the depo "info" arrays have columns:
+# (id, pdg, gen, child)
+
 
 def todict(depos):
     'Return a dictionary of arrays instead of a 2D array.'
@@ -23,40 +31,14 @@ def remove_zero_steps(depos):
     '''
     For some reason sometimes zero steps are taken.  This removes them
     '''
-    ret = list()
-    for depo in depos:
-        if depo[5] == 0.0:
-            continue
-        ret.append(depo)
-    return numpy.asarray(ret)
-
-
-def load(filename, jpath="depos"):
-    '''
-    Load a CWT JSON depo file and return numpy array of depo info.
-    '''
-
-    if filename.endswith(".json"):
-        fopen = open
-    elif filename.endswith(".bz2"):
-        fopen = bz2.BZ2File
-    else:
-        return None
-
-    with fopen(filename) as fp:
-        jdat = json.loads(fp.read())
-
-    depos = list()
-    for jdepo in jdat["depos"]:
-        depo = tuple([jdepo.get(key,0.0) for key in columns])
-        depos.append(depo)
-    return numpy.asarray(depos)
+    keep = depos['s'] > 0.0
+    for key in depos:
+        depos[key] = depos[key][keep]
+    return depos
 
 
 def apply_units(depos, distance_unit, time_unit, energy_unit, step_unit=None, electrons_unit="1.0"):
     'Apply units to a deposition array, return a new one'
-
-    print "dtese=", distance_unit, time_unit, energy_unit, step_unit, electrons_unit,
 
     depos = numpy.copy(depos)
 
@@ -74,6 +56,28 @@ def apply_units(depos, distance_unit, time_unit, energy_unit, step_unit=None, el
         depos[:,ind] *= unit
     return depos
 
+
+def load(depofile, index=0, generation=0):
+    '''
+    Return depos of index and generation in file.
+
+    A dictionary of 1D arrays is returned.  Keys are as in
+    depos.columns.  Arrays are Ndepos in size.
+
+    Generation 0 is the "youngest" and it's "prior" depos, if they
+    exist, have generation=1, etc.
+    '''
+    fp = ario.load(depofile)
+    dat = fp[f'depo_data_{index}']
+    nfo = fp[f'depo_info_{index}']
+
+    if dat.shape[0] == 7:
+        dat = dat.T
+    if nfo.shape[0] == 4:
+        nfo = nfo.T
+
+    indices = nfo[:,2] == generation
+    return todict(dat[indices,:])
 
 
 def dump(output_file, depos, jpath="depos"):
@@ -127,116 +131,113 @@ def center(depos, point):
     return move(depos, offset)
 
 
-#          0123456
-# columns="xyzqtsn"
-def plot_hist(h, xlab, output):
+
+def _abc_hist(a, b, c, da, db):
+    '''
+    Plot b vs a weighted by c in da x db bins.  Return axis
+    '''
+    a = a/da
+    b = b/db
+
+    amm = (numpy.min(a), numpy.max(a))
+    bmm = (numpy.min(b), numpy.max(b))
+    print(f'bounds: {bmm} x {amm}')
+
+    na = int(amm[1] - amm[0])
+    nb = int(bmm[1] - bmm[0])
+
+    aedges = numpy.linspace(amm[0], amm[1], na)
+    bedges = numpy.linspace(bmm[0], bmm[1], nb)
+
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    ax.set_xlabel(xlab)
-    ax.semilogy(h[1][:-1], h[0])
-    fig.savefig(output)
-    
 
-def plot_s(depos, output):
-    depos = todict(depos)
-    s = depos["s"]/units.cm
-    h = numpy.histogram(s, 1000, (0, 0.05))
-    plot_hist(h, "step [cm]", output)
-def plot_q(depos, output):
-    depos = todict(depos)
-    q = depos["q"]/units.MeV
-    h = numpy.histogram(q, 1000, (0, 0.2))
-    plot_hist(h, "deposit [MeV]", output)
-def plot_n(depos, output):
-    depos = todict(depos)
-    n = depos["n"]
-    h = numpy.histogram(n, 1000, (0, 10000))
-    plot_hist(h, "number [electrons]", output)
-def plot_deds(depos, output):
-    depos = todict(remove_zero_steps(depos))
-    q = depos["q"]/units.MeV
-    s = depos["s"]/units.cm
-    h = numpy.histogram(q/s, 1000, (0,10))
-    plot_hist(h, "q/s [MeV/cm]", output)
-def plot_dnds(depos, output):
-    depos = todict(remove_zero_steps(depos))
-    s = depos["s"]/units.cm
-    n = depos["n"]
-    h = numpy.histogram(n/s, 500, (0,5.0e5))
-    plot_hist(h, "n/s [#/cm]", output)
+    hist, abins, bbins = numpy.histogram2d(a, b, bins=(aedges, bedges), weights=c)
+    im = ax.imshow(numpy.ma.masked_where(hist==0, hist), interpolation='none')
+    plt.colorbar(im, ax=ax)
+    return ax
 
+def plot_qxz(depos, output):
+    'Plot colz q as X vs Z'
+    q = numpy.abs(depos["q"])
+    x = depos["x"]
+    z = depos["z"]
 
-def plot_xz_weighted(x, z, w, title, output):
-    x = x/units.mm
-    z = z/units.mm
-    xmm = (numpy.min(x), numpy.max(x))
-    zmm = (numpy.min(z), numpy.max(z))
+    ax = _abc_hist(x, z, q, units.cm, units.cm)
+    ax.set_title("depo electrons")
+    ax.set_xlabel("X [cm]")
+    ax.set_ylabel("Z [cm]")
+    plt.savefig(output, dpi=300)
 
-    # assuming data is in WCT SoU we want mm bins 
-    nx = int((xmm[1] - xmm[0])/units.mm)
-    nz = int((zmm[1] - zmm[0])/units.mm)
-    print ("%d x %d pixels: " % (nx, nz))
+def plot_qxt(depos, output):
+    'Plot colz q as X vs T'
+    q = numpy.abs(depos["q"])
+    x = depos["x"]
+    t = depos["t"]
 
-    xedges = numpy.linspace(xmm[0], xmm[1], nx)
-    zedges = numpy.linspace(zmm[0], zmm[1], nz)
+    ax = _abc_hist(x, t, q, units.cm, units.us)
+    ax.set_title("depo electrons")
+    ax.set_xlabel("X [cm]")
+    ax.set_ylabel("T [us]")
+    plt.savefig(output, dpi=300)
+
+def plot_qzt(depos, output):
+    'Plot colz q as Z vs T'
+    q = numpy.abs(depos["q"])
+    z = depos["z"]
+    t = depos["t"]
+
+    ax = _abc_hist(z, t, q, units.cm, units.us)
+    ax.set_title("depo electrons")
+    ax.set_xlabel("Z [cm]")
+    ax.set_ylabel("T [us]")
+    plt.savefig(output, dpi=300)
+
+def plot_t(depos, output):
+    'Plot t histogram weighted by q'
+    q = numpy.abs(depos["q"])
+    t = depos["t"]
+
+    fig, ax = plt.subplots(1,1, tight_layout=True)
+    ax.hist(t/units.us, bins=1000)
+    ax.set_xlabel('T [us]')
+    plt.savefig(output)
+
+def plot_x(depos, output):
+    'Plot x histogram weighted by q'
+    q = numpy.abs(depos["q"])
+    x = depos["x"]
+
+    fig, ax = plt.subplots(1,1, tight_layout=True)
+    ax.hist(x/units.cm, bins=1000)
+    ax.set_xlabel('X [cm]')
+    plt.savefig(output)
+
+def _plot_abc(title, a, b, c, atit, btit, ctit, output, cmap='viridis'):
+    '''
+    Plot b vs a colored by c.
+    '''
+    cmap = plt.cm.get_cmap(cmap)
+
+    # cmax = float(numpy.max(c))
+    # colors = [cmap(cv/cmax) for cv in c]
 
     fig = plt.figure()
     ax = fig.add_subplot(111)
     ax.set_title(title)
 
-    h = ax.hist2d(x,z,bins=(xedges, zedges), weights=w)
-    ax.set_xlabel("X [mm]")
-    ax.set_ylabel("Z [mm]")
-    plt.colorbar(h[3], ax=ax)
+    ax.set_xlabel(atit)
+    ax.set_ylabel(btit)
+    sc = ax.scatter(a, b, c=c, cmap=cmap)
+    plt.colorbar(sc)
     fig.savefig(output)
-
-
-def plot_qxz(depos, output):
-    'Plot colz q as X vs Z'
-    depos = todict(remove_zero_steps(depos))
-    x = depos["x"]
-    z = depos["z"]
-    q = depos["q"]/units.MeV
-    plot_xz_weighted(x, z, q, "q [MeV] per mm$^2$", output)
-
-
-def plot_qsxz(depos, output):
-    'Plot colz q/s as X vs Z'
-    depos = todict(remove_zero_steps(depos))
-    x = depos["x"]
-    z = depos["z"]
-    q = depos["q"]/units.MeV
-    s = depos["s"]/units.cm
-    plot_xz_weighted(x, z, q/s, "q/s [MeV/cm] per mm$^2$", output)
     
 
-def plot_nxz(depos, output):
-    "Plot colz number as X vs Z (transverse)"
-    depos = todict(remove_zero_steps(depos))
-    x = depos["x"]
-    z = depos["z"]
-    n = depos["n"]
-    plot_xz_weighted(x, z, n, "number e- per mm$^2$", output)
+def plot_xzqscat(depos, output):
+    'Plot charge as scatter plot'
 
-def plot_nscat(depos, output):
-    'Plot number as scatter plot'
-    depos = todict(remove_zero_steps(depos))
-    x = depos["x"]/units.mm
-    z = depos["z"]/units.mm
-    n = depos["n"]
-
-    nmax = float(numpy.max(n))
-    cmap = plt.get_cmap('seismic')
-
-    sizes = [20.0*nv/nmax for nv in n]
-    colors = [cmap(nv/nmax) for nv in n]
-
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    ax.set_title("electrons")
-
-    ax.set_xlabel("X [mm]")
-    ax.set_ylabel("Z [mm]")
-    #plt.colorbar(h[3], ax=ax)
-    ax.scatter(x, z, c=colors, edgecolor=colors, s=sizes)
-    fig.savefig(output)
+    _plot_abc('Charge',
+              depos["x"]/units.mm, 
+              depos["z"]/units.mm, 
+              numpy.abs(depos["q"]),
+              "x [mm]", "z [mm]", "q [ele]", output)

@@ -11,6 +11,7 @@ import numpy
 import matplotlib.pyplot as plt
 from wirecell import units
 from wirecell.util.functions import unitify
+from wirecell.util import ario
 
 cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
 
@@ -89,6 +90,7 @@ def paraview_blobs(ctx, speed, cluster_file, paraview_file):
         print ("warning: blobs are written as UnstructuredGrid and paraview expects a .vtu extension")
 
     speed = unitify(speed)
+    print(f"drift speed: {speed/(units.mm/units.us)} mm/us")
     
     def do_one(gr, n=0):
         gr = converter.undrift(gr, speed)
@@ -148,12 +150,16 @@ def paraview_activity(ctx, speed, cluster_file, paraview_file):
 
 
 @cli.command("paraview-depos")
-@click.option("--speed", default="1.6*mm/us",
+@click.option("-g", "--generation", default=0,
+              help="The depo generation index")
+@click.option("-i", "--index", default=0,
+              help="The depos set index in the file")
+@click.option("--speed", default=None,
               help="Apply a drift speed")
-@click.argument("depo-npz-file")
+@click.argument("depo-file")
 @click.argument("paraview-file")
 @click.pass_context
-def paraview_depos(ctx, speed, depo_npz_file, paraview_file):
+def paraview_depos(ctx, generation, index, speed, depo_file, paraview_file):
     '''
     Convert an NPZ file to a ParaView .vtp file of depos.
 
@@ -166,19 +172,18 @@ def paraview_depos(ctx, speed, depo_npz_file, paraview_file):
     '''
     from . import converter
     from tvtk.api import write_data
+    import wirecell.gen.depos as deposmod
     
     if not paraview_file.endswith(".vtp"):
         print("Warning: depos are saved as PolyData, paraview expects a .vtp extension")
 
-    speed = unitify(speed)
-
-    fp = numpy.load(depo_npz_file)
-    dat = fp['depo_data_0']
-
-    # ((t,q,x,y,z,dl,dt), N)
-    dat[2] -= dat[0]*speed
-
-    ugrid = converter.depos2pts(dat);
+    depos = deposmod.load(depo_file, index, generation)
+    if speed is not None:
+        speed = unitify(speed)
+        print(f'applying speed: {speed/(units.mm/units.us)} mm/us')
+        depos['x'] -= speed*depos['t']
+    
+    ugrid = converter.depos2pts(depos);
     write_data(ugrid, paraview_file)
     click.echo(paraview_file)
     return

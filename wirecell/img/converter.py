@@ -7,13 +7,13 @@ import numpy
 from collections import defaultdict
 from wirecell import units
 
-def undrift_points(pts, speed=1.6*units.mm/units.us):
+def undrift_points(pts, speed=1.6*units.mm/units.us, index=0):
     '''
-    Return pts as numpy array with the x coordinates multiplied by the
-    speed.
+    Return pts as numpy array with the index coordinates multiplied
+    by the speed.
     '''
     pts = numpy.array(pts)
-    pts[:,0] *= speed
+    pts[:,index] *= speed
     return pts
 
 
@@ -84,20 +84,16 @@ def orderpoints(pointset):
     return [p for a,p in byang]
 
 
-def depos2pts(arr):
+def depos2pts(depos):
     '''
-    Convert numpy array like which comes from 'depo_data_0' key of npz
-    file from NumpyDepoSaver to tvtk unstructured grid.
+    Convert depos dict of numpy arrays tvtk unstructured grid.
     '''
     from tvtk.api import tvtk
 
-    # (7,n)
-    npts = arr.shape[1]
-    # t,q,x,y,z,dl,dt
-    # (N,)
-    q = arr[1,:].reshape(npts)
-    # (N,3)
-    pts = arr[2:5,:].T
+    q = depos['q']
+    npts = len(q)
+
+    pts = numpy.vstack((depos['x'], depos['y'], depos['z'])).T
 
     indices = list(range(npts))
 
@@ -110,6 +106,15 @@ def depos2pts(arr):
 
     ret.point_data.add_array(q)
     ret.point_data.get_array(1).name = 'charge'
+
+    ret.point_data.add_array(depos['t'])
+    ret.point_data.get_array(2).name = 'time'
+
+    ret.point_data.add_array(depos['T'])
+    ret.point_data.get_array(3).name = 'DT'
+
+    ret.point_data.add_array(depos['L'])
+    ret.point_data.get_array(4).name = 'DL'
 
     return ret
 
@@ -211,7 +216,10 @@ def clusters2views(gr):
             continue;
         bnode = get_blob(gr, node)
         if bnode is None:
-            raise ValueError("bad graph structure")
+            #raise ValueError("bad graph structure")
+            #print ("no blob")
+            continue
+
         #x = gr.nodes[bnode]['corners'][0][0] # "t"
         #eckses.append(x)
         snode = get_slice(gr, bnode)

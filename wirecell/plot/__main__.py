@@ -8,7 +8,9 @@ from wirecell.util import ario, plottools
 import numpy
 import matplotlib.pyplot as plt
 
-@click.group()
+cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
+
+@click.group(**cmddef)
 @click.pass_context
 def cli(ctx):
     '''
