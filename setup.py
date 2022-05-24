@@ -33,6 +33,7 @@ setup(
             'wirecell-plot = wirecell.plot.__main__:main',
             'wirecell-pytorch = wirecell.pytorch.__main__:main',
             'wirecell-aux = wirecell.aux.__main__:main',
+            'wirecell-test = wirecell.test.__main__:main',
         ]
     )
 )
