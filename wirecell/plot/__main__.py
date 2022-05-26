@@ -73,6 +73,26 @@ def ntier_frames(output, files):
                 out.savefig(fig)
 
     
+
+@cli.command("frame")
+@click.option("-n", "--name", default="wave",
+              help="The frame plot name")
+@click.argument("datafile")
+@click.argument("output")
+@click.pass_context
+def frame(ctx, name, datafile, output):
+    '''
+    Plot per channel spectra for frame file
+    '''
+    import wirecell.plot.frames
+    mod = getattr(wirecell.plot.frames, name)
+    dat = ario.load(datafile)
+    with plottools.pages(output) as out:
+        mod(dat, out)
+
+    
+
+
 def main():
     cli(obj=dict())
 
