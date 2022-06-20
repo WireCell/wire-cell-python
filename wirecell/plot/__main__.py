@@ -19,10 +19,12 @@ def cli(ctx):
 
 
 @cli.command("ntier-frames")
+@click.option("--cmap", default="seismic",
+              help="Set the color map")
 @click.option("-o", "--output", default="ntier-frames.pdf",
               help="Output file")
 @click.argument("files", nargs=-1)
-def ntier_frames(output, files):
+def ntier_frames(cmap, output, files):
     '''
     Plot a number of per tier frames.
 
@@ -59,6 +61,12 @@ def ntier_frames(output, files):
             for tier, reader in zip(tiers, readers):
                 fig, ax = plt.subplots(nrows=1, ncols=1) # , sharex=True)
 
+                vmin=-25
+                vmax=+25
+                if tier.startswith(("gauss", "wiener")):
+                    vmin=-0
+                    vmax=+10000
+
                 aname = f'frame_{tier}_{ident}'
                 try:
                     arr = reader[aname]
@@ -68,7 +76,8 @@ def ntier_frames(output, files):
                     continue
                 print(aname, arr.shape)
                 arr = (arr.T - numpy.median(arr, axis=1).T).T
-                im = ax.imshow(arr, aspect='equal', interpolation='none')
+                im = ax.imshow(arr, aspect='equal', interpolation='none',
+                               cmap=cmap, vmin=vmin, vmax=vmax)
                 plt.colorbar(im, ax=ax)
                 out.savefig(fig)
 

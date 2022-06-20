@@ -14,6 +14,7 @@ def plot(dat, out):
     planes = dat['planes']
     nsamples = dat['nsamples']
     wirelen = dat['wirelens']
+    periods = dat['periods']
 
     fig,ax = plt.subplots(1,1)
     for ind, freqname in enumerate(keyswith("freqs_")):
@@ -22,9 +23,11 @@ def plot(dat, out):
         amps = dat[f'amps_{num}']
         E = numpy.sum(amps**2)
         l = wirelen[ind]/units.m
+        p = periods[ind]/units.us
+        pln = "uvw"[planes[ind]]
         ax.plot(freq / units.MHz, amps,
-                label=f'plane={planes[ind]} w={l}m n={nsamples[ind]} [{freq.size}] E={E:.2e}')
-    ax.set_title("Spectra")
+                label=f'{pln}: p={p}us w={l}m ns={nsamples[ind]} nf={freq.size} E={E:.2e}')
+    ax.set_title("Input spectra")
     ax.set_xlabel("frequency [MHz]")
     ax.set_ylabel("amp")
     plt.legend()
