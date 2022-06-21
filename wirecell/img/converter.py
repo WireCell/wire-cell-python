@@ -5,6 +5,44 @@ A module to produce paraview / vtk objects
 import math
 import numpy
 from collections import defaultdict
+from wirecell import units
+
+def undrift_points(pts, speed=1.6*units.mm/units.us, response_plane=0, time_index=0):
+    '''
+    Scale the time_index of pts from time to space relative to
+    response_plane given a speed.
+
+    Speed is signed!  Positive speed means the electrons drift in the
+    positive X direction.  Use negative speed otherwise.
+    '''
+    pts = numpy.array(pts)
+    time = pts[:,time_index]
+    pts[:,time_index] = response_plane - speed*time
+    return pts
+
+
+def undrift(grs, speed=1.6*units.mm/units.us, response_plane=0):
+    '''
+    Convert values in the graph or list of graphs gr which are along
+    the drift direction from time to distance given the speed.
+    '''
+    is_list=True
+    if not isinstance(grs, list):
+        grs = [grs]
+        is_list = False
+
+    ret = list()
+    for gr in grs:
+        for node, ndata in gr.nodes.data():
+            if ndata['code'] != 'b':
+                continue;
+            ndata['corners'] = undrift_points(ndata['corners'], speed, response_plane)
+            ndata['span'] *= speed
+        ret.append(gr)
+
+    if is_list:
+        return ret
+    return ret[0]
 
 
 def extrude(pts, dx):
@@ -50,17 +88,16 @@ def orderpoints(pointset):
     return [p for a,p in byang]
 
 
-def depos2pts(arr):
+def depos2pts(depos):
     '''
-    Convert numpy array like which comes from 'depo_data_0' key of npz
-    file from NumpyDepoSaver to tvtk unstructured grid.
+    Convert depos dict of numpy arrays tvtk unstructured grid.
     '''
-    from tvtk.api import tvtk, write_data
+    from tvtk.api import tvtk
 
-    npts = arr.shape[1]
-    # t,q,x,y,z,dl,dt
-    q = arr[1,:].reshape(npts)
-    pts = arr[2:5,:].T
+    q = depos['q']
+    npts = len(q)
+
+    pts = numpy.vstack((depos['x'], depos['y'], depos['z'])).T
 
     indices = list(range(npts))
 
@@ -74,6 +111,15 @@ def depos2pts(arr):
     ret.point_data.add_array(q)
     ret.point_data.get_array(1).name = 'charge'
 
+    ret.point_data.add_array(depos['t'])
+    ret.point_data.get_array(2).name = 'time'
+
+    ret.point_data.add_array(depos['T'])
+    ret.point_data.get_array(3).name = 'DT'
+
+    ret.point_data.add_array(depos['L'])
+    ret.point_data.get_array(4).name = 'DL'
+
     return ret
 
 
@@ -82,7 +128,7 @@ def clusters2blobs(gr):
     '''
     Given a graph object return a tvtk data object with blbos.
     '''
-    from tvtk.api import tvtk, write_data
+    from tvtk.api import tvtk
 
     all_points = list()
     blob_cells = list()
@@ -148,9 +194,20 @@ def get_slice(gr, bnode):
             return other
     return None
 
+def get_neighbors_oftype(gr, node, code, with_data=False):
+    'Return neighbors of channel type'
+    ret = list()
+    for other in gr[node]:
+        odat = gr.nodes[other]
+        if odat['code'] == code:
+            if with_data:
+                ret.append((other,odat))
+            else:
+                retu.append(other)
+    return ret
 
 def clusters2views(gr):
-    from tvtk.api import tvtk, write_data
+    from tvtk.api import tvtk
 
     class Perwpid:
         def __init__(self):
@@ -163,24 +220,26 @@ def clusters2views(gr):
             continue;
         bnode = get_blob(gr, node)
         if bnode is None:
-            raise ValueError("bad graph structure")
+            #raise ValueError("bad graph structure")
+            #print ("no blob")
+            continue
+
         #x = gr.nodes[bnode]['corners'][0][0] # "t"
         #eckses.append(x)
         snode = get_slice(gr, bnode)
         if snode is None:
             raise ValueError("bad graph structure")
         wpid = ndata['wpid']
-        
 
         sdat = gr.nodes[snode]
         snum = sdat['ident']
         perwpid[wpid].allind.append(snum)
-        sact = sdat['activity']
+        sigs = sdat['signal']
         val = 0.0
-        chids = ndata['chids']
+        chids = [d[1]["ident"] for d in get_neighbors_oftype(gr, node, 'c', True)]
         perwpid[wpid].allchs += chids
         for chid in chids:
-            val += float(sact[str(chid)])
+            val += float(sigs[str(chid)]['val'])
         perwpid[wpid].values.append((snum,chids,val))
     all_imgdat=dict()
     for wpid, dat in perwpid.items():

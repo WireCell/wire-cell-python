@@ -8,7 +8,9 @@ import click
 
 from wirecell import units
 
-@click.group("sigproc")
+cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
+
+@click.group("sigproc", **cmddef)
 @click.pass_context
 def cli(ctx):
     '''

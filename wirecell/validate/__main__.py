@@ -6,7 +6,9 @@ import click
 
 from wirecell import units
 
-@click.group("validate")
+cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
+
+@click.group("validate", **cmddef)
 @click.pass_context
 def cli(ctx):
     '''

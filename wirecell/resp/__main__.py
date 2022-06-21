@@ -8,7 +8,9 @@ from wirecell.util.fileio import load as source_loader
 from wirecell import units
 import numpy
 
-@click.group()
+cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
+
+@click.group(**cmddef)
 @click.pass_context
 def cli(ctx):
     '''

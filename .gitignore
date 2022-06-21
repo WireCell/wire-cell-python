@@ -12,3 +12,7 @@ test_*.png
 test_*.pdf
 build
 dist
+*.vti
+*.vtu
+*.json
+data

@@ -8,7 +8,9 @@ import numpy
 from wirecell import units
 from wirecell.util.functions import unitify_parse
 
-@click.group("util")
+cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
+
+@click.group("util", **cmddef)
 @click.pass_context
 def cli(ctx):
     '''
@@ -651,7 +653,8 @@ def npz_to_img(output, array,
 
     if baseline == "median":
         #print("subtracting median")
-        arr = arr - numpy.median(arr)
+        #arr = arr - numpy.median(arr)
+        arr = (arr.T - numpy.median(arr, axis=1)).T
     elif baseline is not None:
         #print(f"subtracting {baseline}")
         arr = arr - float(baseline)
