@@ -11,8 +11,12 @@ import subprocess
 import click
 
 from wirecell import units
+from wirecell.util import jsio
+from wirecell.util.cli import jsonnet_loader
 
-@click.group("pgraph")
+cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
+
+@click.group("pgraph", **cmddef)
 @click.pass_context
 def cli(ctx):
     '''
@@ -167,32 +171,32 @@ def dotify(edge_dat, attrs, params=True, services=True):
     return '\n'.join(ret);
 
 
-def jsonnet_try_path(path, rel):
-    if not rel:
-        raise RuntimeError('Got invalid filename (empty string).')
-    if rel[0] == '/':
-        full_path = rel
-    else:
-        full_path = os.path.join(path, rel)
-    if full_path[-1] == '/':
-        raise RuntimeError('Attempted to import a directory')
+# def jsonnet_try_path(path, rel):
+#     if not rel:
+#         raise RuntimeError('Got invalid filename (empty string).')
+#     if rel[0] == '/':
+#         full_path = rel
+#     else:
+#         full_path = os.path.join(path, rel)
+#     if full_path[-1] == '/':
+#         raise RuntimeError('Attempted to import a directory')
 
-    if not os.path.isfile(full_path):
-        return full_path, None
-    with open(full_path) as f:
-        return full_path, f.read()
+#     if not os.path.isfile(full_path):
+#         return full_path, None
+#     with open(full_path) as f:
+#         return full_path, f.read()
 
 
-def jsonnet_import_callback(path, rel):
-    paths = [path] + os.environ.get("WIRECELL_PATH","").split(":")
-    for maybe in paths:
-        try:
-            full_path, content = jsonnet_try_path(maybe, rel)
-        except RuntimeError:
-            continue
-        if content:
-            return full_path, content
-    raise RuntimeError('File not found')
+# def jsonnet_import_callback(path, rel):
+#     paths = [path] + os.environ.get("WIRECELL_PATH","").split(":")
+#     for maybe in paths:
+#         try:
+#             full_path, content = jsonnet_try_path(maybe, rel)
+#         except RuntimeError:
+#             continue
+#         if content:
+#             return full_path, content
+#     raise RuntimeError('File not found')
 
 
 
@@ -232,51 +236,56 @@ def uses_to_params(uses):
 
 # fixme: add tla related options so any .jsonnet can also be loaded
 @cli.command("dotify")
-@click.option("--jpath", default="-1",
-              help="A dot-delimited path into the JSON to locate a graph-like object")
+@jsonnet_loader
+@click.option("--dpath", default="-1",
+              help="A dot-delimited path into the data structure to locate a graph-like object")
 @click.option("--params/--no-params", default=True,
               help="Enable/disable the inclusion of contents of configuration parameters") 
 @click.option("--services/--no-services", default=True,
               help="Enable/disable the inclusion 'service' (non-node) type components") 
-@click.argument("json-file")
+@click.argument("in-file")
 @click.argument("out-file")
 @click.pass_context
-def cmd_dotify(ctx, jpath, params, services, json_file, out_file):
-    '''Convert a WCT Jsonnet/JSON cfg file to a GraphViz dot or
-    rendered file.
+def cmd_dotify(ctx, jpath, tla, ext, dpath, params, services, in_file, out_file):
+    '''Convert a WCT cfg to a GraphViz dot or rendered file.
 
-    The JSON file (or the compiled Jsonnet) needs to at least contain
-    a list of edges found at the given jpath.  Use, eg, "-1" to locate
-    the last element of a configuration sequence which is typically
-    the config for a Pgrapher.  If indeed it is, its
-    [jpath].data.edges attribution will be located and the overall
-    JSON data structure will be used as a list of nodes.  Otherwise
-    [jpath].edges will be used and [jpath].uses will be used to
-    provide an initial list of node objects.
+    The config file may be JSON of Jsonnet.  It is expected to be in
+    the form of a WCT configuration sequence with one (typically last)
+    entry holding an object with a .data.edges key (eg a TbbFlow or
+    Pgraph config object).  If a non-standard structure is given, the
+    object with .edges can be located with --dpath
 
     Example bash command assuming WIRECELL_PATH properly set
 
     $ wirecell-pgraph dotify mycfg.jsonnet mycfg.pdf
 
-    Or piecewise 
+    Or piecewise
 
     $ wcsonnet mycfg.jsonnet > mycfg.json
-    
+
     $ wirecell-pgraph dotify mycfg.json mycfg.dot
 
     $ dot -Tpdf -o mycfg.pdf mycfg.dot
-    '''
-    if json_file.endswith(".jsonnet"):
-        import _jsonnet
-        jtext = _jsonnet.evaluate_file(json_file, import_callback=jsonnet_import_callback)
-    else:
-        jtext = open(json_file).read()
 
-    dat = json.loads(jtext)
+    If jsonnet is given the usual: -A/--tla, -J/--jpath args can be
+    given.
+    '''
+    jpath = jsio.wash_path(jpath)
+    kwds = jsio.tla_pack(tla, jpath)
+    kwds.update(jsio.tla_pack(ext, jpath, 'ext_'))
+    dat = jsio.load(in_file, jpath, **kwds)
+
+    # if json_file.endswith(".jsonnet"):
+    #     import _jsonnet
+    #     jtext = _jsonnet.evaluate_file(json_file, import_callback=jsonnet_import_callback)
+    # else:
+    #     jtext = open(json_file).read()
+    # dat = json.loads(jtext)
+
     try: 
-        cfg = resolve_path(dat, jpath)
+        cfg = resolve_path(dat, dpath)
     except Exception:
-        click.echo('failed to resolve path "%s" in object:\n' % (jpath))
+        click.echo('failed to resolve path "%s" in object:\n' % (dpath))
         sys.exit(1)
 
     # if cfg["type"] not in ["Pgrapher", "Pnode"]:
@@ -287,7 +296,7 @@ def cmd_dotify(ctx, jpath, params, services, json_file, out_file):
 
     # the Pgrapher app holds edges in "data" attribute
     if cfg.get("type","") in graph_apps:
-        print ('Pgrapher object found at jpath: "%s" with %d nodes' % (jpath, len(dat)))
+        print ('Pgrapher object found at dpath: "%s" with %d nodes' % (dpath, len(dat)))
         edges = cfg["data"]["edges"] 
         uses = dat # if Pgrapher, then original is likely the full config sequence.
     else:

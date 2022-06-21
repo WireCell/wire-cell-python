@@ -5,7 +5,7 @@ Main CLI to wirecell.aux.
 
 import json
 import click
-from wirecell.util import ario, jsio, plottools
+from wirecell.util import jsio, plottools
 import numpy
 import matplotlib.pyplot as plt
 import tempfile
@@ -14,7 +14,9 @@ import subprocess
 from wirecell.aux import idft, sysinfo
 from matplotlib.backends.backend_pdf import PdfPages
 
-@click.group()
+cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
+
+@click.group(**cmddef)
 @click.pass_context
 def cli(ctx):
     '''

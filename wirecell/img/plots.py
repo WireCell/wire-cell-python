@@ -51,7 +51,7 @@ def activity(cm):
     slices = set()
     for snode in cm.nodes_oftype('s'):
         sdat = cm.gr.nodes[snode]
-        for c in sdat['activity'].keys():
+        for c in sdat['signal']:
             channels.add(int(c))
         slices.add(sdat['ident'])
     
@@ -66,8 +66,9 @@ def activity(cm):
     for snode in cm.nodes_oftype('s'):
         sdat = cm.gr.nodes[snode]
         si = sdat['ident']
-        for c,v in sdat['activity'].items():
+        for c,sig in sdat['signal'].items():
             ci = int(c)
+            v = sig['val']
             hist.fill(si+.1, ci+.1, v)
 
     return hist
@@ -119,13 +120,15 @@ def wire_blob_slice(cm, sliceid):
 
     snodes = cm.find('s', ident=sliceid)
     if len(snodes) != 1:
-        print ("Unexpected number of slices with ID: %d, found %d" % (sliceid, len(snodes)))
-        return
+        print('slice IDs:')
+        print([cm.gr.nodes[s]['ident'] for s in cm.find('s')])
+        raise ValueError(f'Unexpected number of slices with ID: {sliceid}, found {len(snodes)}')
     snode = snodes[0]
     by_face = defaultdict(list)
     sdata = cm.gr.nodes[snode]
-    for cdat,cval in sdata["activity"].items():
+    for cdat,sig in sdata["signal"].items():
         chid = int(cdat)
+        cval = sig['val']
         cnode = cm.channel(chid)
         cdata = cm.gr.nodes[cnode]
         wnodes = cm.neighbors_oftype(cnode, 'w')
@@ -157,7 +160,8 @@ def wire_blob_slice(cm, sliceid):
     cmap = plt.get_cmap('gist_rainbow')
     linewidth=0.1
     fig,axes = plt.subplots(nrows=1, ncols=len(by_face))
-
+    if len(by_face) == 1:
+        axes=[axes]
 
 
     for ind, (faceid, wdats) in enumerate(sorted(by_face.items())):

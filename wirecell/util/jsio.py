@@ -6,6 +6,7 @@ Uniform wrapper over json/jsonnet loading
 import os
 import json
 from _jsonnet import evaluate_file, evaluate_snippet
+from pathlib import Path
 
 def clean_paths(paths, add_cwd=True):
     '''Return list of paths made absolute with cwd as first .
@@ -82,7 +83,7 @@ class ImportCallback(object):
                 return full_path, content
         raise RuntimeError('File not found')
 
-def load_jsonnet(fname, paths):
+def load_jsonnet(fname, paths, **kwds):
     fname = resolve(fname, paths)
     ic = ImportCallback(paths)
     try:
@@ -94,6 +95,9 @@ def load_jsonnet(fname, paths):
 def load(fname, paths=(), **kwds):
     '''
     Load json of jsonnet file, returning data.
+
+    See https://jsonnet.org/ref/bindings.html for list of kwds known
+    to the jsonnet loader.
     '''
 
     fmt = os.path.splitext(fname)[-1]
@@ -110,3 +114,91 @@ def load(fname, paths=(), **kwds):
         except RuntimeError as err:
             raise RuntimeError(f"in file: {fname}") from err
     return json.loads(text)
+
+
+def scalar_typify(val):
+    '''
+    Return tuple (value, iscode)
+
+    If iscode is true if value should be considered for tla_codes.
+
+    The value is turned into a string.
+    '''
+    if not isinstance(val, str):
+        return (str(val), True)
+    try:
+        junk = float(val)
+        return (val, True)
+    except ValueError:
+        pass
+    if val.lower() in ("true", "yes", "on"):
+        return ("true", True)
+    if val.lower() in ("false", "no", "off"):
+        return ("false", True)
+    return (val, False)
+
+def tla_pack(tlas, paths=(), pre='tla_'):
+    '''
+    Convert strings in form key=val, key=code or key=filename into
+    kwds ready to give to jsonnet.evaluate_file().
+
+    The paths list of directories will be searched to dtermine if a
+    key provides a filename.
+
+    This function can be used for ext vars by passing pre="ext_".
+    '''
+    vars = dict()
+    codes = dict()
+
+    for one in tlas:
+        try:
+            key,val = one.split("=",1)
+        except ValueError as err:
+            raise ValueError("Did you forget to specify the TLA variable?") from err
+        
+        # Does it look like code?
+        if val[0] in '{["]}':
+            codes[key] = val
+            continue
+
+        # Maybe a file?
+        chunks = val.split(".")
+        if len(chunks) > 1:
+            ext = chunks[-1]
+            if ext in [".jsonnet", ".json", ".schema"]:
+                fname = resolve(val, paths)
+                codes[key] = load(fname, paths)
+                continue
+
+        # Must be some scalar value
+        val, iscode = scalar_typify(val)
+        if iscode:
+            codes[key] = val
+        else:
+            vars[key] = val
+
+    # these keywords are what jsonnet.evaluate_file() expects
+    return {pre+'vars':vars, pre+'codes': codes}
+        
+def wash_path(path):
+    '''
+    Given one or more strings that are directory paths or :-separated
+    lists of such, return a flat list of paths, in order, that
+    actually are directories and exist.
+    '''
+    if isinstance(path, str):
+        path = [path]
+    parts = list()
+    for one in path:
+        parts += one.split(":")
+    ret = list()
+    for one in parts:
+        p = Path(one)
+        if not p.exists():
+            print(f'skipping missing directory: {one}')
+            continue
+        if not p.is_dir():
+            print(f'skipping non-directory: {one}')
+            continue
+        ret.append(str(p.absolute()))
+    return ret

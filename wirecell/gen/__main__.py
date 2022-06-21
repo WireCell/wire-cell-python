@@ -5,7 +5,9 @@ import click
 from wirecell import units
 from wirecell.util.functions import unitify, unitify_parse
 
-@click.group("util")
+cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
+
+@click.group("util", **cmddef)
 @click.pass_context
 def cli(ctx):
     '''
@@ -71,21 +73,38 @@ def move_depos(ctx, json_path, center, offset,
     deposmod.dump(output_file, depos)
 
 @cli.command("plot-depos")
-@click.option("-j", "--json_path", default='depos',
-                  help="Data structure path to the deposition array in the input file.")
-@click.option("-p", "--plot", default='nxz',
-                  help="The plot to make.")
+@click.option("-g", "--generation", default=0,
+              help="The depo generation index")
+@click.option("-i", "--index", default=0,
+              help="The depos set index in the file")
+@click.option("-p", "--plot", default='qxz',
+              help="The plot to make.")
+@click.option("-s", "--speed", default=None,
+              help="Apply drift speed correction, give with units like '1.6*mm/us'.")
 @click.argument("input-file")
 @click.argument("output-file")
 @click.pass_context
-def plot_depos(ctx, json_path, plot,
-                   input_file, output_file):
+def plot_depos(ctx, generation, index, plot,
+               speed,
+               input_file, output_file):
     '''
-    Make a plot from a WCT JSON depo file
+    Make a plot from a WCT depo file.
+
+    If speed is given, each depo's X position is reduced by the time*speed.
     '''
-    import depos as deposmod
+    import wirecell.gen.depos as deposmod
+
     plotter = getattr(deposmod, "plot_"+plot)
-    depos = deposmod.load(input_file)
+    depos = deposmod.load(input_file, index, generation)
+    if 't' not in depos or len(depos['t']) == 0:
+        print(f'No depos for index={index} and generation={generation} in {input_file}')
+        return
+    if speed is not None:
+        speed = unitify(speed)
+        print(f'applying speed: {speed/(units.mm/units.us)} mm/us')
+        depos['x'] -= speed*depos['t']
+
+    #depos = deposmod.remove_zero_steps(depos)
     plotter(depos, output_file)
 
 @cli.command("plot-test-boundaries")

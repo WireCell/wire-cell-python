@@ -8,7 +8,9 @@ from wirecell.util import ario, plottools
 import numpy
 import matplotlib.pyplot as plt
 
-@click.group()
+cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
+
+@click.group(**cmddef)
 @click.pass_context
 def cli(ctx):
     '''
@@ -17,12 +19,42 @@ def cli(ctx):
     ctx.ensure_object(dict)
 
 
+def good_cmap(diverging=True, color=True):
+    '''
+    An opinionated selection of the available colormaps.
+
+    Diverging picks a cmap with central value as white, o.w. zero is
+    white.  If color is False then a grayscale is used.
+
+    https://matplotlib.org/stable/tutorials/colors/colormaps.html
+    '''
+    if diverging:
+        if color: return "seismic"
+        return "seismic"        # no gray diverging?
+    if color: return "Reds"
+    return "Greys"
+    
+def tier_cmap(tier, color=True):
+    '''
+    Return a good color map for the given data tier
+    '''
+    for diverging in ('orig', 'raw'):
+        if tier.startswith(diverging):
+            return good_cmap(True, color)
+    for sequential in ('gauss', 'wiener'):
+        if tier.startswith(sequential):
+            return good_cmap(False, color)
+    return good_cmap()
+
 
 @cli.command("ntier-frames")
 @click.option("--cmap", default="seismic",
               help="Set the color map")
 @click.option("-o", "--output", default="ntier-frames.pdf",
               help="Output file")
+@click.option("-c", "--cmap",
+              multiple=True,
+              help="Give color map as tier=cmap")
 @click.argument("files", nargs=-1)
 def ntier_frames(cmap, output, files):
     '''
@@ -37,6 +69,8 @@ def ntier_frames(cmap, output, files):
     else:
         print(f'Saving to: {output}')
         Outer = plottools.NameSequence
+
+    cmaps = {kv[0]:kv[1] for kv in [x.split("=") for x in cmap]}
 
     readers = [ario.load(f) for f in files]
 
@@ -76,8 +110,11 @@ def ntier_frames(cmap, output, files):
                     continue
                 print(aname, arr.shape)
                 arr = (arr.T - numpy.median(arr, axis=1).T).T
-                im = ax.imshow(arr, aspect='equal', interpolation='none',
-                               cmap=cmap, vmin=vmin, vmax=vmax)
+                cmap = cmaps.get(tier, "viridis")
+                im = ax.imshow(arr, aspect='equal', interpolation='none', cmap=cmap)
+                plt.title(tier)
+                plt.xlabel("time samples")
+                plt.ylabel("channel IDs")
                 plt.colorbar(im, ax=ax)
                 out.savefig(fig)
 
