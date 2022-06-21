@@ -7,7 +7,7 @@ import os
 import numpy as np
 from matplotlib.backends.backend_pdf import PdfPages
 import matplotlib.pyplot as plt
-
+import numpy
 
 class NameSequence(object):
     def __init__(self, name, first=0):
@@ -59,3 +59,34 @@ class NameSequence(object):
         return
         
         
+def pages(name):
+    if name.endswith(".pdf"):
+        return PdfPages(name)
+    return NameSequence(name)
+
+
+def lg10(arr, eps = None, scale=None):
+    '''
+    Apply the "signed log" transform to an array.
+
+    Result is +/-log10(|arr|*scale) with the sign of arr preserved in
+    the result and any values that are in eps of zero set to zero.
+
+    If eps is not given it is the smalles absolute value
+
+    If scale is not given then 1/eps is used.
+    '''
+    if eps is None:
+        eps = numpy.min(numpy.abs(arr))
+
+    if not scale:
+        scale = 1/eps
+
+    shape = arr.shape
+    arr = numpy.array(arr).reshape(-1)
+    arr[numpy.logical_and(arr < eps, arr > -eps)] = 0.0
+    pos = arr>eps
+    neg = arr<-eps
+    arr[pos] = numpy.log10(arr[pos]*scale)
+    arr[neg] = -numpy.log10(-arr[neg]*scale)
+    return arr.reshape(shape)
