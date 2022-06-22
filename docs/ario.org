@@ -1,0 +1,31 @@
+#+title: ~wirecell.util.ario~
+
+The ~ario.load(path)~ function returns a ~dict~-like object which provides
+functionality similar to ~numpy.load()~ but which works on a number of
+archive formats (~.zip~, ~.tar~ with internal or external or no
+compression and ~.npz~) and a number of object file formats (~.json~ as
+well as ~.npy~).
+
+Supported archives include ~.zip~, ~.npz~ and ~.tar~ and also tar files with
+various compression.  The ~.tar~ loader also supports the use of files
+being internally compressed and the decompression can be handled
+transparently.
+
+If the format allows for it, ~ario~ will create or use an existing
+archive index to allow for fast random access.  Files that do not
+support indexing are decompressed and loaded in their entirety into
+memory.
+
+Compressed file formats supporting efficient random access by ~ario~
+have these extensions:
+
+- ~.zip~
+- ~.npz~
+- ~.tar~ with internal compressed files
+- ~.tix~ aka ~.tar.pixz~ aka ~.tpxz~ tar files with ~pixz~ indexes
+
+Compressed file formats leading to their entire contents being
+greedily loaded have these extensions:
+
+- ~.tar.{xz,gz,bz2}~ and popular aliases (~.txz, .tgz, .tbz2~)
+

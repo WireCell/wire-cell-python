@@ -67,3 +67,7 @@ completion:
   $ wirecell-<TAB><TAB>
 #+end_example
 
+* Documentation
+
+In addition to the online ~-h/--help~ for main and sub commands, some
+notes on specific commands are in [[file:docs/]].

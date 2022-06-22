@@ -1,0 +1,58 @@
+#+title: ~wirecell-gen~
+
+The ~wirecell-gen~ CLI provides commands related to WCT sim (the ~gen/~
+subpackage).  See main and command help.
+
+#+begin_example
+wirecell-gen -h
+#+end_example
+
+* Depo examples
+
+Histogram predrift (~-g1~) absolute X positions.
+
+#+begin_example
+wirecell-gen plot-depos -p x -g1 drifted-depos.npz predrift-x.pdf
+#+end_example
+
+Histogram postdrift (~-g0~) relative X positions assigned from time and speed.
+
+#+begin_example
+wirecell-gen plot-depos -p x -g0 --t0 "0*ns" --speed '-1.56*mm/us' drifted-depos.npz postdrift-ts.pdf
+#+end_example
+
+Again but with an ad-hoc correction to t0 to make aligned with predrift-X
+
+#+begin_example
+wirecell-gen plot-depos -p x -g0 --t0 "-3487.8875*mm / (1.56*mm/us)" --speed '-1.56*mm/us' drifted-depos.npz postdrift-tsa.pdf
+#+end_example
+
+The assigned postdrift-X is $x = (t+t_0)/s$ where $t$ is drifted depo
+time, $t_0$ is an arbitrary time offset and $s$ is a drift speed.
+
+The predrift-X is given in an absolute coordinates system while
+postdrift-X assignment gives a relative position.  The ad-hoc
+correction accounts for the absolute location of the response plane
+and the direction of the drift.
+
+The exceedingly exact number ~-3487.8875*mm~ came from peaking into the
+configuration for the detector being simulated:
+
+#+begin_example
+wcsonnet layers/mids/pdsp/variants/nominal.jsonnet|jq '.geometry.drifts[].faces[].response'|sort -u
+-3487.8875
+3487.8875
+-3773.6125
+3773.6125
+#+end_example
+
+Without looking into which PDSP APA face the depos collected, each
+response plane location was tried and the resulting postdrift-X
+distribution compared to predrift-X.
+
+The drifted depos also have absolute time:
+
+#+begin_example
+wirecell-gen plot-depos -p t -g0 drifted-depos.npz postdrift-time.pdf
+#+end_example
+

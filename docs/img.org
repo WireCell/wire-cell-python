@@ -1,0 +1,40 @@
+#+title: ~wirecell-img~
+
+The ~wirecell-img~ CLI provides commands related to WCT 3D imaging (the
+~img/~ subpackage).  See main and command help.
+
+#+begin_example
+wirecell-img -h
+#+end_example
+
+* Blobs
+
+Blobs exist in cluster files.  Each blob shares a time with that of
+its slice and that time is measured relative to a frame time.
+
+#+begin_example
+$ wirecell-img plot-blobs -p t \
+  clusters-img-3.zip \
+  cluster%d-anode3-blobs-t.pdf
+#+end_example
+
+The blob times may be compared against drifted depo times and
+converted into an X-coordinate in order to compare both in a Cartesian
+space which is coherent with Y and Z coordinates.  To do this, a drift
+~speed~ and a starting ~t0~ need to be given.
+
+The ~t0~ should be the ~start_time~ given to the ductor (~DepoTransform~)
+and the ~speed~ should be the nominal or bulk drift speed.  This example
+converts WCT depo and cluster files to VTK files so the two data
+sets should "line up" when viewed in Paraview.
+
+#+begin_example
+$ wirecell-img paraview-depos \
+  --speed '1.56*mm/us' --t0 '314*us' \
+  drifted-depos.npz drifted-depos.vtp
+
+$ wirecell-img paraview-blobs \
+  --speed '1.56*mm/us' \
+  clusters-img-5.zip clusters-img-5.vtu
+#+end_example
+

@@ -241,3 +241,21 @@ def plot_xzqscat(depos, output):
               depos["z"]/units.mm, 
               numpy.abs(depos["q"]),
               "x [mm]", "z [mm]", "q [ele]", output)
+
+def plot_tzqscat(depos, output):
+    'Plot charge as scatter plot'
+
+    _plot_abc('Charge',
+              depos["t"]/units.us, 
+              depos["z"]/units.mm, 
+              numpy.abs(depos["q"]),
+              "t [mus]", "z [mm]", "q [ele]", output)
+
+def plot_tyqscat(depos, output):
+    'Plot charge as scatter plot'
+
+    _plot_abc('Charge',
+              depos["t"]/units.us, 
+              depos["y"]/units.mm, 
+              numpy.abs(depos["q"]),
+              "t [mus]", "y [mm]", "q [ele]", output)

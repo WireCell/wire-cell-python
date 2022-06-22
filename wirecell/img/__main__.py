@@ -26,6 +26,48 @@ def cli(ctx):
 
     '''
 
+@cli.command("plot-blobs")
+@click.option("--speed", default=None,
+              help="Assign x position based on drift speed, use units like '1.6*mm/us'.")
+@click.option("--t0", default="0*ns",
+              help="Arbitrary additive time used in drift speed assignment, use units")
+@click.option("-p", "--plot", default='x',
+              type=click.Choice(["t","x","y","z","tx","ty","tz"]),
+              help="The plot to make.")
+@click.argument("cluster-file")
+@click.argument("plot-file")
+@click.pass_context
+def plot_blobs(ctx, speed, t0, plot, cluster_file, plot_file):
+    '''
+    Produce plots related to blobs in cluster.
+    '''
+    from . import tap, converter
+    import wirecell.img.plot_blobs as plotters
+    plotter = getattr(plotters, "plot_"+plot)
+
+    if speed is not None:
+        speed_units = unitify(speed)
+        t0 = unitify(t0)
+
+    def do_one(gr, n=0):
+        if speed is not None:
+            gr = converter.undrift(gr, speed_units, t0)
+
+        if 0 == gr.number_of_nodes():
+            click.echo("no verticies in %s" % cluster_file)
+            return
+
+        fig = plotter(gr)
+        pname = plot_file
+        if '%' in pname:
+            pname = pname % n
+        fig.savefig(pname)
+        click.echo(pname)
+
+    for n, gr in enumerate(tap.load(cluster_file)):
+        do_one(gr, n)
+
+
 @cli.command("inspect")
 @click.argument("cluster-file")
 @click.pass_context
@@ -72,20 +114,17 @@ def inspect(ctx, cluster_file):
 
 @cli.command("paraview-blobs")
 @click.option("--speed", default="1.6*mm/us",
-              help="Drift speed (with units, signed)")
-@click.option("--response", default="0*cm",
-              help="Location of reponse plane (with units, signed)")
+              help="Drift speed (with units)")
+@click.option("--t0", default="0*ns",
+              help="Absolute time of first tick (with units)")
 @click.argument("cluster-file")
 @click.argument("paraview-file")
 @click.pass_context
-def paraview_blobs(ctx, speed, response, cluster_file, paraview_file):
+def paraview_blobs(ctx, speed, t0, cluster_file, paraview_file):
     '''
     Convert a cluster file to a ParaView .vtu files of blobs
 
-    A drift speed is used to convert the "x" dimension from time to
-    distance.  Default "1.6*mm/us".  Sign of speed indicates if drift
-    is in positive or negative X-direction.  Response gives location
-    of the response plane
+    Speed and t0 converts time to relative drift coordinate.
     '''
     from . import converter, tap
     from tvtk.api import write_data
@@ -94,11 +133,11 @@ def paraview_blobs(ctx, speed, response, cluster_file, paraview_file):
         print ("warning: blobs are written as UnstructuredGrid and paraview expects a .vtu extension")
 
     speed = unitify(speed)
-    response = unitify(response)
-    print(f"drift speed: {speed/(units.mm/units.us):.3f} mm/us, response plane at x={response/units.cm:.1f} cm")
+    t0 = unitify(t0)
+    print(f"drift speed: {speed/(units.mm/units.us):.3f} mm/us")
     
     def do_one(gr, n=0):
-        gr = converter.undrift(gr, speed, response)
+        gr = converter.undrift(gr, speed, t0)
         if 0 == gr.number_of_nodes():
             click.echo("no verticies in %s" % cluster_file)
             return
@@ -118,10 +157,12 @@ def paraview_blobs(ctx, speed, response, cluster_file, paraview_file):
 @cli.command("paraview-activity")
 @click.option("--speed", default="1.6*mm/us",
               help="Drift speed (with units)")
+@click.option("--t0", default="0*ns",
+              help="Absolute time of first tick (with units)")
 @click.argument("cluster-file")
 @click.argument("paraview-file")
 @click.pass_context
-def paraview_activity(ctx, speed, cluster_file, paraview_file):
+def paraview_activity(ctx, speed, t0, cluster_file, paraview_file):
     '''
     Convert cluster files to ParaView .vti files of activity
     '''
@@ -132,9 +173,10 @@ def paraview_activity(ctx, speed, cluster_file, paraview_file):
         print("warning: activity is saved as an image and paraview expects a .vti extension")
 
     speed = unitify(speed)
+    t0 = unitify(t0)
 
     def do_one(gr, n=0):
-        gr = converter.undrift(gr, speed)
+        gr = converter.undrift(gr, speed, t0)
         fname,ext=os.path.splitext(paraview_file)
         if '%' in fname:
             fname = fname%n
@@ -161,19 +203,24 @@ def paraview_activity(ctx, speed, cluster_file, paraview_file):
               help="The depos set index in the file")
 @click.option("--speed", default=None,
               help="Apply a drift speed")
+@click.option("--t0", default="0*ns",
+              help="Absolute time of first tick (with units)")
 @click.argument("depo-file")
 @click.argument("paraview-file")
 @click.pass_context
-def paraview_depos(ctx, generation, index, speed, depo_file, paraview_file):
+def paraview_depos(ctx, generation, index, speed, t0, depo_file, paraview_file):
     '''
     Convert an NPZ file to a ParaView .vtp file of depos.
 
-    If depos are pre-drift then speed should be set to 0.
+    If speed is given, a depo.X is calculated as (time+t0)*speed and
+    depo.T is untouched.
 
-    The default is non-zero assuming the depos are post-drift and the
-    speed will be used to modify the depo "x" coordinate based on its
-    "t".  Using zero speed on post-drift depos causes them all to
-    appear "bunched up" on the response plane.
+    Else, depo.T will have t0 added and depo.X untouched.
+
+    Note, a t0 of the ductors "start_time" will generally bring depos
+    into alignement with products for simulated frames.
+
+    See also "wirecell-gen plot-depos".
     '''
     from . import converter
     from tvtk.api import write_data
@@ -183,10 +230,13 @@ def paraview_depos(ctx, generation, index, speed, depo_file, paraview_file):
         print("Warning: depos are saved as PolyData, paraview expects a .vtp extension")
 
     depos = deposmod.load(depo_file, index, generation)
+    t0 = unitify(t0)
     if speed is not None:
         speed = unitify(speed)
         print(f'applying speed: {speed/(units.mm/units.us)} mm/us')
-        depos['x'] -= speed*depos['t']
+        depos['x'] = speed*(depos['t']+t0)
+    else:
+        depos['t'] += t0
     
     ugrid = converter.depos2pts(depos);
     write_data(ugrid, paraview_file)
@@ -207,16 +257,19 @@ def paraview_depos(ctx, generation, index, speed, depo_file, paraview_file):
               help="The sampling technique to turn blob volumes into points")
 @click.option("--speed", default="1.6*mm/us",
               help="Drift speed (with units)")
+@click.option("--t0", default="0*ns",
+              help="Absolute time of first tick (with units)")
 @click.option('-d', '--density', type=float, default=9.0,
               help="For samplings which care, specify target points per cc")
 @click.argument("cluster-files", nargs=-1)
-def bee_blobs(output, geom, rse, sampling, speed, density, cluster_files):
+def bee_blobs(output, geom, rse, sampling, speed, t0, density, cluster_files):
     '''
     Produce a Bee JSON file from a cluster file.
     '''
     from . import tap, converter
 
     speed = unitify(speed)
+    t0 = unitify(t0)
 
     dat = dict(runNo=rse[0], subRunNo=rse[1], eventNo=rse[2], geom=geom, type="wire-cell",
                x=list(), y=list(), z=list(), q=list()) # , cluster_id=list()
@@ -233,7 +286,7 @@ def bee_blobs(output, geom, rse, sampling, speed, density, cluster_files):
 
     for ctf in cluster_files:
         gr = list(tap.load(ctf))[0] # fixme: for now ignore subsequent graphs
-        gr = converter.undrift(gr, speed)
+        gr = converter.undrift(gr, speed, t0)
         print ("got %d" % gr.number_of_nodes())
         if 0 == gr.number_of_nodes():
             print("skipping empty graph %s" % ctf)
@@ -244,70 +297,6 @@ def bee_blobs(output, geom, rse, sampling, speed, density, cluster_files):
         dat['y'] += fclean(arr[:,1]/units.cm)
         dat['z'] += fclean(arr[:,2]/units.cm)
         dat['q'] += fclean(arr[:,3])
-
-    import json
-    # monkey patch
-    from json import encoder
-    encoder.FLOAT_REPR = lambda o: format(o, '.3f')
-    json.dump(dat, open(output,'w', encoding="utf8"))
-
-#   Export 3D charge points for the use of JsonDepoSource
-#   ref: wire-cell-toolkit/sio/JsonDepoSource.cxx
-@cli.command("json-depos")
-@click.option('-o', '--output', help="The output JSON depo file name")
-@click.option('-s', '--sampling', type=click.Choice(["center","uniform"]), default="uniform",
-              help="The sampling technique to turn blob volumes into points")
-@click.option('-d', '--density', type=float, default=9.0,
-              help="For samplings which care, specify target points per cc")
-@click.option("--speed", default="1.6*mm/us",
-              help="Drift speed (with units)")
-@click.option('-n', '--number', type=int, default=-1,
-              help="The number of electrons per depo point")
-@click.argument("cluster-files", nargs=-1)
-def json_depos(output, sampling, speed, density, number, cluster_files):
-    '''
-    Make one JSON depo file from the blobs in a set of cluster files
-    which are presumed to originate from one trigger.
-    '''
-    from . import tap, converter
-
-    speed = unitify(speed)
-    
-    dat = dict(depos=list())
-        
-    # given by user in units of 1/cc.  Convert to system of units 1/L^3.
-    density *= 1.0/(units.cm**3)
-    sampling_func = dict(
-        center = converter.blob_center,
-        uniform = lambda b : converter.blob_uniform_sample(b, density),
-    )[sampling];
-
-    for ctf in cluster_files:
-        gr = list(tap.load(ctf))[0] # fixme
-        gr = converter.undrift(gr, speed)
-        print ("got %d" % gr.number_of_nodes())
-        if 0 == gr.number_of_nodes():
-            print("skipping empty graph %s" % ctf)
-            continue
-        arr = converter.blobpoints(gr, sampling_func)
-        print ("%s: %d points" % (ctf, arr.shape[0]))
-        for depo in arr:
-            onedepo = dict(n=round(depo[3], 3) if number<0 else number,
-                           q=0, s=0, t=0*units.microsecond,
-                           x=round(depo[0], 3)/units.mm,
-                           y=round(depo[1], 3)/units.mm,
-                           z=round(depo[2], 3)/units.mm)
-            x = onedepo['x']
-            y = onedepo['y']
-            z = onedepo['z']
-            dat['depos'] += [onedepo]
-            # if x>-3100 and x<-1800 and y>2800 and y<6000 and z>3000 and z<4500:
-            #     t0 = -1194.0 # microsecond
-            #     onedepo['x'] -= t0* 1.6
-            #     onedepo['t'] = t0*units.microsecond
-            #     dat['depos'] += [onedepo]
-
-    dat['depos'] += [dict()] # EOS
 
     import json
     # monkey patch
@@ -335,8 +324,10 @@ def divine_planes(nch):
               help="Draw a line down a slice")
 @click.option("--speed", default="1.6*mm/us",
               help="Drift speed (with units)")
+@click.option("--t0", default="0*ns",
+              help="Absolute time of first tick (with units)")
 @click.argument("cluster-file")
-def activity(output, slices, slice_line, speed, cluster_file):
+def activity(output, slices, slice_line, speed, t0, cluster_file):
     '''
     Plot activity
     '''
@@ -344,9 +335,10 @@ def activity(output, slices, slice_line, speed, cluster_file):
     from . import tap, clusters, plots
 
     speed = unitify(speed)
+    t0 = unitify(t0)
 
     gr = list(tap.load(cluster_file))[0]
-    gr = converter.undrift(gr, speed)
+    gr = converter.undrift(gr, speed, t0)
     cm = clusters.ClusterMap(gr)
     ahist = plots.activity(cm)
     arr = ahist.arr
@@ -402,19 +394,22 @@ def activity(output, slices, slice_line, speed, cluster_file):
               help="Draw a line down a slice")
 @click.option("--speed", default="1.6*mm/us",
               help="Drift speed (with units)")
+@click.option("--t0", default="0*ns",
+              help="Absolute time of first tick (with units)")
 @click.option('--found/--missed', default=True,
               help="Mask what blobs found or missed")
 @click.argument("cluster-file")
-def blob_activity_mask(output, slices, slice_line, speed, found, cluster_file):
+def blob_activity_mask(output, slices, slice_line, speed, t0, found, cluster_file):
     '''
     Plot blobs as maskes on channel activity.
     '''
     from . import tap, clusters, plots
 
     speed = unitify(speed)
+    t0 = unitify(t0)
 
     gr = list(tap.load(cluster_file))[0] # fixme
-    gr = converter.undrift(gr, speed)
+    gr = converter.undrift(gr, speed, t0)
     cm = clusters.ClusterMap(gr)
     ahist = plots.activity(cm)
     bhist = ahist.like()
@@ -451,15 +446,18 @@ def blob_activity_mask(output, slices, slice_line, speed, found, cluster_file):
 @click.option('-s', '--sliceid', type=int, help="The slice ID to plot")
 @click.option("--speed", default="1.6*mm/us",
               help="Drift speed (with units)")
+@click.option("--t0", default="0*ns",
+              help="Absolute time of first tick (with units)")
 @click.argument("cluster-file")
-def wire_slice_activity(output, sliceid, speed, cluster_file):
+def wire_slice_activity(output, sliceid, speed, t0, cluster_file):
     '''
     Plot the activity in one slice as wires and blobs
     '''
     from . import tap, clusters, plots
     speed = unitify(speed)
+    t0 = unitify(t0)
     gr = next(tap.load(cluster_file))
-    gr = converter.undrift(gr, speed)
+    gr = converter.undrift(gr, speed, t0)
     cm = clusters.ClusterMap(gr)
     fig, axes = plots.wire_blob_slice(cm, sliceid)
     fig.savefig(output)

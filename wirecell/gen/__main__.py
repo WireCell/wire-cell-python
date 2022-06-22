@@ -80,17 +80,27 @@ def move_depos(ctx, json_path, center, offset,
 @click.option("-p", "--plot", default='qxz',
               help="The plot to make.")
 @click.option("-s", "--speed", default=None,
-              help="Apply drift speed correction, give with units like '1.6*mm/us'.")
+              help="Assign x position based on drift speed, use units like '1.6*mm/us'.")
+@click.option("--t0", default="0*ns",
+              help="Arbitrary additive time used in drift speed assignment, use units")
 @click.argument("input-file")
 @click.argument("output-file")
 @click.pass_context
 def plot_depos(ctx, generation, index, plot,
-               speed,
+               speed, t0,
                input_file, output_file):
     '''
     Make a plot from a WCT depo file.
 
-    If speed is given, each depo's X position is reduced by the time*speed.
+    If speed is given, a depo.X is calculated as (time+t0)*speed and
+    depo.T is untouched.
+
+    Else, depo.T will have t0 added and depo.X untouched.
+
+    Note, a t0 of the ductors "start_time" will generally bring depos
+    into alignement with products for simulated frames.
+
+    See also "wirecell-img paraview-depos".
     '''
     import wirecell.gen.depos as deposmod
 
@@ -99,10 +109,13 @@ def plot_depos(ctx, generation, index, plot,
     if 't' not in depos or len(depos['t']) == 0:
         print(f'No depos for index={index} and generation={generation} in {input_file}')
         return
+    t0 = unitify(t0)
     if speed is not None:
         speed = unitify(speed)
         print(f'applying speed: {speed/(units.mm/units.us)} mm/us')
-        depos['x'] -= speed*depos['t']
+        depos['x'] = speed*(depos['t']+t0)
+    else:
+        depos['t'] += t0
 
     #depos = deposmod.remove_zero_steps(depos)
     plotter(depos, output_file)

@@ -7,24 +7,19 @@ import numpy
 from collections import defaultdict
 from wirecell import units
 
-def undrift_points(pts, speed=1.6*units.mm/units.us, response_plane=0, time_index=0):
+def undrift_points(pts, speed=1.6*units.mm/units.us, t0=0, time_index=0):
     '''
-    Scale the time_index of pts from time to space relative to
-    response_plane given a speed.
-
-    Speed is signed!  Positive speed means the electrons drift in the
-    positive X direction.  Use negative speed otherwise.
+    Transform coordinate at time_index in pts from time to space.
     '''
     pts = numpy.array(pts)
-    time = pts[:,time_index]
-    pts[:,time_index] = response_plane - speed*time
+    time = pts[:,time_index] + t0
+    pts[:,time_index] = speed*time
     return pts
 
 
-def undrift(grs, speed=1.6*units.mm/units.us, response_plane=0):
+def undrift(grs, speed=1.6*units.mm/units.us, t0=0):
     '''
-    Convert values in the graph or list of graphs gr which are along
-    the drift direction from time to distance given the speed.
+    Transform time to a relative drift coordinate.
     '''
     is_list=True
     if not isinstance(grs, list):
@@ -36,7 +31,7 @@ def undrift(grs, speed=1.6*units.mm/units.us, response_plane=0):
         for node, ndata in gr.nodes.data():
             if ndata['code'] != 'b':
                 continue;
-            ndata['corners'] = undrift_points(ndata['corners'], speed, response_plane)
+            ndata['corners'] = undrift_points(ndata['corners'], speed, t0)
             ndata['span'] *= speed
         ret.append(gr)
 
