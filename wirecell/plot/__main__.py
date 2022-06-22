@@ -48,13 +48,15 @@ def tier_cmap(tier, color=True):
 
 
 @cli.command("ntier-frames")
+@click.option("--cmap", default="seismic",
+              help="Set the color map")
 @click.option("-o", "--output", default="ntier-frames.pdf",
               help="Output file")
 @click.option("-c", "--cmap",
               multiple=True,
               help="Give color map as tier=cmap")
 @click.argument("files", nargs=-1)
-def ntier_frames(output, cmap, files):
+def ntier_frames(cmap, output, files):
     '''
     Plot a number of per tier frames.
 
@@ -93,6 +95,12 @@ def ntier_frames(output, cmap, files):
             for tier, reader in zip(tiers, readers):
                 fig, ax = plt.subplots(nrows=1, ncols=1) # , sharex=True)
 
+                vmin=-25
+                vmax=+25
+                if tier.startswith(("gauss", "wiener")):
+                    vmin=-0
+                    vmax=+10000
+
                 aname = f'frame_{tier}_{ident}'
                 try:
                     arr = reader[aname]
@@ -111,6 +119,26 @@ def ntier_frames(output, cmap, files):
                 out.savefig(fig)
 
     
+
+@cli.command("frame")
+@click.option("-n", "--name", default="wave",
+              help="The frame plot name")
+@click.argument("datafile")
+@click.argument("output")
+@click.pass_context
+def frame(ctx, name, datafile, output):
+    '''
+    Plot per channel spectra for frame file
+    '''
+    import wirecell.plot.frames
+    mod = getattr(wirecell.plot.frames, name)
+    dat = ario.load(datafile)
+    with plottools.pages(output) as out:
+        mod(dat, out)
+
+    
+
+
 def main():
     cli(obj=dict())
 

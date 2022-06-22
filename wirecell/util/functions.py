@@ -23,4 +23,3 @@ def unitify_parse(string):
     vals = [eval(v, units.__dict__) for v in vals]
     return vals
 
-
