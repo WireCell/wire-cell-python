@@ -236,17 +236,16 @@ def uses_to_params(uses):
 
 # fixme: add tla related options so any .jsonnet can also be loaded
 @cli.command("dotify")
-@jsonnet_loader
 @click.option("--dpath", default="-1",
               help="A dot-delimited path into the data structure to locate a graph-like object")
 @click.option("--params/--no-params", default=True,
               help="Enable/disable the inclusion of contents of configuration parameters") 
 @click.option("--services/--no-services", default=True,
               help="Enable/disable the inclusion 'service' (non-node) type components") 
-@click.argument("in-file")
+@jsonnet_loader("in-file")
 @click.argument("out-file")
 @click.pass_context
-def cmd_dotify(ctx, jpath, tla, ext, dpath, params, services, in_file, out_file):
+def cmd_dotify(ctx, dpath, params, services, in_file, out_file):
     '''Convert a WCT cfg to a GraphViz dot or rendered file.
 
     The config file may be JSON of Jsonnet.  It is expected to be in
@@ -270,18 +269,7 @@ def cmd_dotify(ctx, jpath, tla, ext, dpath, params, services, in_file, out_file)
     If jsonnet is given the usual: -A/--tla, -J/--jpath args can be
     given.
     '''
-    jpath = jsio.wash_path(jpath)
-    kwds = jsio.tla_pack(tla, jpath)
-    kwds.update(jsio.tla_pack(ext, jpath, 'ext_'))
-    dat = jsio.load(in_file, jpath, **kwds)
-
-    # if json_file.endswith(".jsonnet"):
-    #     import _jsonnet
-    #     jtext = _jsonnet.evaluate_file(json_file, import_callback=jsonnet_import_callback)
-    # else:
-    #     jtext = open(json_file).read()
-    # dat = json.loads(jtext)
-
+    dat = in_file
     try: 
         cfg = resolve_path(dat, dpath)
     except Exception:
