@@ -227,9 +227,10 @@ class Spec:
         Keeps FRayleigh constant while size decreases so FNyquist
         decreases and period increases.
 
-        This normalizes to oldperiod/newperiod thus giving a reduction
-        in energy as expected by a downsample.
-
+        This normalizes to sqrt(newsize/oldsize) so that energy is
+        conserved in the case that the original spectrum has had an
+        anti-alias filter applied such that the aliased bins are
+        contain zero amplitude.
         '''
 
         if newsize == self.size:
@@ -253,12 +254,12 @@ class Spec:
 
         newamp = hermitian_mirror(newamp)
         newperiod = self.period * self.size/newsize
-        if naliased:
-            norm = min(1.0, self.period/newperiod)
-        else:
-            norm = sqrt(newsize/self.size)
-
-        norm = min(1.0, self.period/newperiod)
+        # if naliased:
+        #     norm = min(1.0, self.period/newperiod)
+        # else:
+        #     norm = sqrt(newsize/self.size)
+        # norm = min(1.0, self.period/newperiod)
+        norm = sqrt(newsize/self.size)
         return Spec(norm*newamp, newperiod)
 
     def resample(self, size, period):
@@ -271,7 +272,7 @@ class Spec:
 
         # first, want our Frayleigh to match
         # Fr1 = 1/(N1 T1) -> N1 T1 = N2 T2, N2 = N1 T1/T2
-        newsize = ceil(self.size * self.period / period)
+        newsize = ceil(size * period/self.period)
         interp = self.interp(newsize)
 
         if period < self.period:

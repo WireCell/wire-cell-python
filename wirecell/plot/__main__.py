@@ -123,18 +123,24 @@ def ntier_frames(cmap, output, files):
 @cli.command("frame")
 @click.option("-n", "--name", default="wave",
               help="The frame plot name")
+@click.option("-t", "--tag", default="*",
+              help="The frame tag")
+@click.option("-u", "--unit", default="ADC",
+              help="The color units")
+@click.option("-r", "--range", default=25.0, type=float,
+              help="The color range")
 @click.argument("datafile")
 @click.argument("output")
 @click.pass_context
-def frame(ctx, name, datafile, output):
+def frame(ctx, name, tag, unit, range, datafile, output):
     '''
-    Plot per channel spectra for frame file
+    Make frame plots of given type.
     '''
     import wirecell.plot.frames
     mod = getattr(wirecell.plot.frames, name)
     dat = ario.load(datafile)
     with plottools.pages(output) as out:
-        mod(dat, out)
+        mod(dat, out, tag, unit, range)
 
     
 

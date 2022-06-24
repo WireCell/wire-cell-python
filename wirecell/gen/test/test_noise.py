@@ -169,15 +169,9 @@ class TestNoise:
         we = waves_energy(waves)
         wrms = waves_rms(waves)
 
-
         for siz in sizes:
             for per in periods:
-                try:
-                    rs = spec.resample(siz,per)
-                except ValueError as e:
-                    # print(e)
-                    # print(f'{siz:4d}: per={per:.2f} can not resample')
-                    continue
+                rs = spec.resample(siz,per)
                 tit = f'resample N={spec.size:4d}, T={spec.period:.1f} to N={siz}, T={per}'
                 fig, ax = plt.subplots(1,1)
                 ax.set_title(tit)
@@ -241,6 +235,7 @@ def doit(nsamples=256, period=1.0, rms=1.0, nrm=0.2):
         tn.downsample_white()
         
 if '__main__' == __name__:
-    doit(nrm=0.2)
-    doit(nrm=0.1)
+    doit(nsamples=256, nrm=0.1)
+    doit(nsamples=512, nrm=0.1)
+
     
