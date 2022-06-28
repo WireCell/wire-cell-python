@@ -123,22 +123,29 @@ def ntier_frames(cmap, output, files):
 @cli.command("frame")
 @click.option("-n", "--name", default="wave",
               help="The frame plot name")
+@click.option("-t", "--tag", default="orig",
+              help="The frame tag")
+@click.option("-u", "--unit", default="ADC",
+              help="The color units")
+@click.option("-r", "--range", default=25.0, type=float,
+              help="The color range")
 @click.option("--interactive", is_flag=True, default=False,
               help="running in interactive mode")
 @click.argument("datafile")
 @click.argument("output")
 @click.pass_context
-def frame(ctx, name, interactive, datafile, output):
+def frame(ctx, name, tag, unit, range, interactive, datafile, output):
     '''
-    Plot per channel spectra for frame file
+    Make frame plots of given type.
     '''
     from . import frames
     mod = getattr(frames, name)
     dat = ario.load(datafile)
     with plottools.pages(output) as out:
-        mod(dat, out, interactive=interactive)
+        mod(dat, out, tag, unit, range, interactive=interactive)
 
-@cli.command("wave_comp")
+
+@cli.command("wave-comp")
 @click.option("-t", "--tier", default="orig",
               help="orig, gauss, ...")
 @click.option("-c", "--channel", type=int, default=0,

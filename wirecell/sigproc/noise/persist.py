@@ -1,3 +1,6 @@
+### NOTE: see wirecell.util.cli and wirecell.jsio for a better way to
+### load json'ish files in a __main__.py.
+
 import json
 
 from . import schema

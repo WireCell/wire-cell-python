@@ -475,17 +475,18 @@ def convert_noise_spectra(ctx, inputfile, outputfile):
     from wirecell.sigproc.response import persist
     persist.dump(outputfile, elecresp)
 
+from wirecell.util.cli import jsonnet_loader
+from wirecell.util import jsio
 @cli.command("plot-noise-spectra")
-@click.argument("spectrafile")
+@jsonnet_loader("spectra")
 @click.argument("plotfile")
 @click.pass_context
-def plot_noise_spectra(ctx, spectrafile, plotfile):
+def plot_noise_spectra(ctx, spectra, plotfile, **kwds):
     '''
     Plot contents of a WCT noise spectra file such as produced by
-    the convert-noise-spectra subcommand.
+    the convert-noise-spectra subcommand or a NoiseModeler.
     '''
-    from wirecell.sigproc.noise import persist, plots
-    spectra = persist.load(spectrafile)
+    from wirecell.sigproc.noise import plots
     plots.plot_many(spectra, plotfile)
 
 
