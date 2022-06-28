@@ -1,9 +1,10 @@
 from wirecell import units
+from wirecell.util import ario
 from wirecell.util.plottools import lg10
 import matplotlib.pyplot as plt
 import numpy
 
-def spectra(dat, out, tier='orig'):
+def spectra(dat, out, tier='orig', interactive=False):
     '''
     Plot per-channel spectra of fp['frame_{tier}*'] to out
     '''
@@ -47,9 +48,11 @@ def spectra(dat, out, tier='orig'):
         freqs = numpy.linspace(0, Fmax_MHz/2, avg.size, endpoint=False)
         ax.plot(freqs, avg)
         ax.set_xlabel("frequency [MHz]")
+        if interactive :
+            plt.show()
         out.savefig(fig)
         
-def wave(dat, out, tier='orig'):
+def wave(dat, out, tier='orig', interactive=False):
     '''
     Plot frames
     '''
@@ -82,6 +85,33 @@ def wave(dat, out, tier='orig'):
         ax.set_xlabel("time [ms]")
         ax.set_ylabel("channel")
         fig.colorbar(im, ax=ax)
+        if interactive :
+            plt.show()
         out.savefig(fig)
-
         
+def wave_comp(datafile1, datafile2, out, tier='orig', channel=0, xrange=None, interactive=False):
+    '''
+    compare waveforms from files, assuming key names in two files are the same
+    '''
+    dat1 = ario.load(datafile1)
+    dat2 = ario.load(datafile2)
+    frames1 = sorted([f for f in dat1.keys() if f.startswith(f'frame_{tier}')])
+
+    for fname in frames1:
+        waves1 = dat1[fname]
+        waves1 = numpy.array((waves1.T - numpy.median(waves1, axis=1)).T, dtype='int16')
+        waves2 = dat2[fname]
+        waves2 = numpy.array((waves2.T - numpy.median(waves2, axis=1)).T, dtype='int16')
+
+        fig,ax = plt.subplots(1,1, figsize=(10,6))
+        ax.set_title(f'Channel: {channel}')
+        
+        ax.plot(waves1[channel],'-',label=datafile1)
+        ax.plot(waves2[channel],'o',label=datafile2)
+        ax.set_xlabel("tick [0.5 $\mu$s]")
+        ax.legend()
+        if xrange is not None :
+            ax.set_xlim(xrange)
+        if interactive :
+            plt.show()
+        out.savefig(fig)

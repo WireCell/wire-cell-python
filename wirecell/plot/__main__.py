@@ -123,19 +123,42 @@ def ntier_frames(cmap, output, files):
 @cli.command("frame")
 @click.option("-n", "--name", default="wave",
               help="The frame plot name")
+@click.option("--interactive", is_flag=True, default=False,
+              help="running in interactive mode")
 @click.argument("datafile")
 @click.argument("output")
 @click.pass_context
-def frame(ctx, name, datafile, output):
+def frame(ctx, name, interactive, datafile, output):
     '''
     Plot per channel spectra for frame file
     '''
-    import wirecell.plot.frames
-    mod = getattr(wirecell.plot.frames, name)
+    from . import frames
+    mod = getattr(frames, name)
     dat = ario.load(datafile)
     with plottools.pages(output) as out:
-        mod(dat, out)
+        mod(dat, out, interactive=interactive)
 
+@cli.command("wave_comp")
+@click.option("-t", "--tier", default="orig",
+              help="orig, gauss, ...")
+@click.option("-c", "--channel", type=int, default=0,
+              help="which channel to check")
+@click.option("-x", "--xrange", type=(float, float), default=None,
+              help="tick range of the output")
+@click.option("--interactive", is_flag=True, default=False,
+              help="running in interactive mode")
+@click.argument("datafile1")
+@click.argument("datafile2")
+@click.argument("output")
+@click.pass_context
+def frame(ctx, tier, channel, xrange, interactive, datafile1, datafile2, output):
+    '''
+    Compare waveforms from files
+    '''
+    from . import frames
+    with plottools.pages(output) as out:
+        frames.wave_comp(datafile1, datafile2, out,
+        tier=tier, channel=channel, xrange=xrange, interactive=interactive)
     
 
 
