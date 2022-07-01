@@ -4,7 +4,9 @@ Uniform wrapper over json/jsonnet loading
 '''
 
 import os
+import bz2
 import json
+import gzip
 from _jsonnet import evaluate_file, evaluate_snippet
 from pathlib import Path
 
@@ -83,36 +85,48 @@ class ImportCallback(object):
                 return full_path, content
         raise RuntimeError('File not found')
 
-def load_jsonnet(fname, paths, **kwds):
-    fname = resolve(fname, paths)
-    ic = ImportCallback(paths)
-    try:
-        text = evaluate_file(fname, import_callback=ic, **kwds)
-    except RuntimeError as err:
-        raise RuntimeError(f"in file: {fname}") from err
-    return json.loads(text)    
+def file_object(fname, opt='r'):
+    '''
+    Return an open file object.
+
+    A decompressing file object is returned if so indicated by the
+    file name extension.
+    '''
+    if fname.endswith(".gz"):
+        return gzip.open(fname, opt)
+    if fname.endswith(".bz2"):
+        return bz2.open(fname, opt)
+    return open(fname, opt)
+
 
 def load(fname, paths=(), **kwds):
     '''
-    Load json of jsonnet file, returning data.
+    Load JSON or Jsonnet file, returning data.
+
+    Format is guessed from file name extensions.
+
+    Compression extenstions .gz and .bz2 supported.
 
     See https://jsonnet.org/ref/bindings.html for list of kwds known
-    to the jsonnet loader.
+    to the Jsonnet loader.
     '''
 
-    fmt = os.path.splitext(fname)[-1]
     paths = clean_paths(paths)
-
     fname = resolve(fname, paths)
 
-    if fmt in (".json",):
-        text = open(fname).read()
-    else:
+    fp = file_object(fname, 'rb')
+    text = fp.read().decode()
+
+    if fname.endswith(('.jsonnet', '.jsonnet.gz', '.jsonnet.bz2')):
         ic = ImportCallback(paths)
         try:
-            text = evaluate_file(fname, import_callback=ic, **kwds)
+            text = evaluate_snippet(fname, text, import_callback=ic, **kwds)
         except RuntimeError as err:
             raise RuntimeError(f"in file: {fname}") from err
+    elif fname.endswith(('.json', '.json.bz2', '.json.gz')):
+        pass
+    else:
+        raise RuntimeError(f'unsupported file extension {fname}')
     return json.loads(text)
 
 
