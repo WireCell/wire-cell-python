@@ -3,6 +3,7 @@
 The wirecell-img main
 '''
 import os
+import sys
 import json
 import click
 import pathlib
@@ -140,7 +141,7 @@ def paraview_blobs(ctx, speed, t0, cluster_file, paraview_file):
         gr = converter.undrift(gr, speed, t0)
         if 0 == gr.number_of_nodes():
             click.echo("no verticies in %s" % cluster_file)
-            return
+            sys.exit(1)
         dat = converter.clusters2blobs(gr)
         fname = paraview_file
         if '%' in paraview_file:

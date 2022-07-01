@@ -53,7 +53,9 @@ class Arf(Mapping):
     '''
     Base for common methods in Tar/Zip.
 
-    Subclass provide keymap() and greedy_load.
+    Subclass provides self._index a dictionary.  If self._lazy is
+    true, indexed values are called and their returns are returned.
+    Else, indexed objects are returned directly.
     '''
 
     def lazy_load(self, fileobj, infoobj):
@@ -76,6 +78,8 @@ class Arf(Mapping):
 
     def __len__(self):
         return len(self._index)
+
+        
 
 class Tar(Arf):
     '''
