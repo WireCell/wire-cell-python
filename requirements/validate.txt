@@ -1,0 +1,4 @@
+# more needed for wirecell.validate
+root_numpy
+ROOT
+

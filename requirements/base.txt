@@ -1,0 +1,13 @@
+# needed by pretty much everything
+Click
+numpy
+matplotlib
+networkx
+jsonnet
+sqlalchemy
+
+
+
+
+
+

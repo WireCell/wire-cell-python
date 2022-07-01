@@ -1,0 +1,2 @@
+# needed by wirecell.pytorch
+torch
