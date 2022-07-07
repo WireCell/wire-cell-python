@@ -13,6 +13,9 @@ import matplotlib.pyplot as plt
 from wirecell import units
 from wirecell.util.functions import unitify
 from wirecell.util import ario
+from scipy.spatial.transform import Rotation
+from zipfile import ZipFile
+from io import BytesIO
 
 cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
 
@@ -476,6 +479,123 @@ def anidfg(output, logfile):
     log = anidfg.parse_log(open(logfile))
     ga = anidfg.generate_graph(log)
     anidfg.render_graph(ga, output)
+
+
+@cli.command("transform-depos")
+@click.option("--forward/--no-forward", default=False,
+              help='Forward the input array to output prior to transformed') 
+@click.option("-l", "--locate", type=str, default=None,
+              help='Locate center-of-charge to given position')
+@click.option("-m", "--move", type=str, default=None,
+              help='Translate by a relative displacement vector')
+@click.option("-r", "--rotate", type=str, default=None, multiple=True,
+              help='Rotate by given angle along each axis')
+@click.option("-o", "--output", default=None,
+              help="Send results to output (def: stdout)")
+@click.argument("depos")
+def transform_depos(forward, locate, move, rotate, output, depos):
+    '''
+    Apply zero or more transformations one or more times to
+    distributions of depos.
+
+    Rotations are applied about the center of charge of the
+    distribution.  Multiple rotations and of different types may be
+    given.  The type of rotation is given by a code letter followed by
+    a colon followed by arguments.  When values are required they are
+    provided as comma-separated list of values with units.  Rotation
+    codes are:
+
+        - q: quaternarian expecting 4 angles
+
+        - x: single Euler angle about x axis
+
+        - y: single Euler angle about y axis
+
+        - z: single Euler angle about z axis
+
+        - v: rotation vector, direction is axis, norm is angle
+
+    Example rotation (the two would cancel each other)
+
+    --rotate 'x:90*deg' --rotate 'v:-pi/2,0,0'
+
+    A locate is applied prior to a move.  Both are given as a
+    comma-spearated list of coordinates with units.  Eg to center on
+    origin and offset
+
+    --locate '0,0,0' --move '1*m,2*cm,3*mm'
+    '''
+
+    fp = ario.load(depos)
+    indices = list()
+    for k in fp:
+        if k.startswith("depo_data_"):
+            ind = int(k.split("_")[2])
+            indices.append(ind)
+    indices.sort();
+
+
+    out_count = 0
+    with ZipFile(output or "/dev/stdout", "w") as zf:
+
+        def save(name, arr):
+            print(name, arr.shape)
+            bio = BytesIO()
+            numpy.save(bio, arr)
+            bio.seek(0)
+            zf.writestr(name, bio.getvalue())
+            
+        generation = 0              # fixme, make configurable
+        for index in indices:
+            dat = fp[f'depo_data_{index}']
+            nfo = fp[f'depo_info_{index}']
+
+            if dat.shape[0] == 7:
+                dat = dat.T
+            if nfo.shape[0] == 4:
+                nfo = nfo.T
+
+            keep = nfo[:,2] == generation
+            nfo = nfo[keep,:]
+            dat = dat[keep,:]
+
+            if forward:
+                save(f'depo_data_{out_count}.npy', dat)
+                save(f'depo_info_{out_count}.npy', nfo)
+                out_count += 1
+
+            q = dat[:,1]
+            r = dat[:,2:5]
+
+            qr = (q*r.T).T
+            coq = numpy.sum(qr, axis=0)/numpy.sum(q)
+
+            translate = numpy.zeros(3)
+
+            for one in rotate:
+                code, args = one.split(":",1)
+                args = numpy.array(unitify(args.split(",")))
+                if code == 'q':
+                    R = Rotation.from_quat(args)
+                elif code == 'v':
+                    R = Rotation.from_rotvec(args)
+                else:
+                    R = Rotation.from_euler(code, args[0])
+
+                r = R.apply(r-coq)+coq
+
+            if locate:
+                locate = numpy.array(unitify(locate))
+                r = r - coq + locate
+
+            if move:
+                move = numpy.array(unitify(move))
+                r = r + move
+
+            dat[:,2:5] = r
+            save(f'depo_data_{out_count}.npy', dat)
+            save(f'depo_info_{out_count}.npy', nfo)
+            out_count += 1
 
 
 def main():

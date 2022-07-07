@@ -4,6 +4,7 @@ import math
 import click
 from wirecell import units
 from wirecell.util.functions import unitify, unitify_parse
+from wirecell.util.cli import jsonnet_loader
 
 cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
 

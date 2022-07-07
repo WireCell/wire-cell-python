@@ -61,8 +61,8 @@ def load(depofile, index=0, generation=0):
     '''
     Return depos of index and generation in file.
 
-    A dictionary of 1D arrays is returned.  Keys are as in
-    depos.columns.  Arrays are Ndepos in size.
+    Depos are returned as a 7-column array with columns as given by
+    .columns string of this module.
 
     Generation 0 is the "youngest" and it's "prior" depos, if they
     exist, have generation=1, etc.
@@ -129,7 +129,6 @@ def center(depos, point):
     n = len(depos)
     offset = point - tot/n
     return move(depos, offset)
-
 
 
 def _abc_hist(a, b, c, da, db):
