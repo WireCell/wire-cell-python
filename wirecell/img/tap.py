@@ -51,7 +51,7 @@ def make_pggraph(name, dat):
     The node type names are taken to be the full names corresponding
     to the node type codes.  For example:
 
-    >>> pghd = make_pgraph(name, dat)
+    >>> pghd = make_pggraph(name, dat)
 
     >>> channel_features = pghd["channel"].x
 
@@ -84,6 +84,83 @@ def make_pggraph(name, dat):
         print(f'Warning: unexpected array: "{key}"')
 
     return pghd
+
+def pg2nx(name, pg):
+    '''
+    Convert a PyG HeterData-like graph "pg" to the networkx form.
+    '''
+    gr = nx.Graph(name=name)
+
+    # See ClusterArrays.org for column definitions
+    # See ClusterHelpersJsonify for nx schema
+
+    # nodes
+    count = 0;
+    lu = dict()
+
+    for nc,ntype in node_types.items():
+        def add_node(irow, ident, **kwds):
+            nonlocal count
+            nonlocal lu
+            gr.add_node(count, ident=ident, code=nc, **kwds)
+            lu[f'{nc}{irow}'] = count;
+            count += 1
+
+        ndat = pg[ntype].x
+
+        print(f'{ntype}: {ndat.shape}')
+
+        if ntype == "channel":
+            for irow, row in enumerate(ndat):
+                add_node(irow, row[0], value=row[1], error=row[2],
+                         index=row[3], wpid=row[4])
+                
+        if ntype == "wire":
+            for irow, row in enumerate(ndat):
+                add_node(irow, row[0], index=row[1], seg=row[2],
+                         chid=row[3], wpid=row[4],
+                         tail=dict(x=row[5], y=row[6], z=row[7]),
+                         head=dict(x=row[8], y=row[9], z=row[10]))
+
+        if ntype == "blob":
+            for irow, row in enumerate(ndat):
+                ncorners_index = 13
+                ncorners = int(row[ncorners_index])
+                corners = list()
+                t0 = row[5]     # start time
+                for icorn in range(ncorners):
+                    cy = row[ncorners_index+1+2*icorn]
+                    cz = row[ncorners_index+1+2*icorn+1]
+                    corners.append((t0, cy, cz))
+                add_node(irow, row[0], value=row[1], error=row[2],
+                         faceid=row[3], sliceid=row[4], start=row[5], span=row[6],
+                         # note: row[7:13] has 3*2 WIP pairs
+                         corners=corners)
+
+        if ntype == "slice":
+            for irow, row in enumerate(ndat):
+                # fixme: need "signal" aka activity (array of channel val+unc)
+                add_node(irow, row[0], frameid=row[3],
+                         start=row[4], span=row[5])
+
+        if ntype == "measure":
+            for irow, row in enumerate(ndat):
+                add_node(irow, row[0], val=row[1], unc=row[2], wpid=row[3])
+
+    # edge_types = ('cw','bs','bw','bb','cm','bm')
+    for ec in edge_types:
+        tc,hc = ec
+        ekey = (node_types[tc], ec, node_types[hc])
+        edat = pg[ekey].edge_index
+        print(f'{ekey}: {edat.shape}')
+        for row in edat:
+            ti,hi = row
+            tn = lu[f'{tc}{ti}']
+            hn = lu[f'{hc}{hi}']
+            gr.add_edge(tn, hn)
+
+    return gr
+
 
 def load_jsio(filename, path=(), **kwds):
     '''
@@ -140,7 +217,8 @@ def load_ario(filename, **kwds):
         else:
             dat = {k.split("_",2)[-1]:arf[k] for k in key}
             cl,n,kind = key[0].split("_",2)
-            yield make_pggraph(f'{path.stem}_{n}', dat)
+            name = f'{path.stem}_{n}'
+            yield pg2nx(name, make_pggraph(name, dat))
 
 def load(filename, **kwds):
     '''

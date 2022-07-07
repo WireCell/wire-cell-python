@@ -138,21 +138,26 @@ def paraview_blobs(ctx, speed, t0, cluster_file, paraview_file):
 
     speed = unitify(speed)
     t0 = unitify(t0)
-    print(f"drift speed: {speed/(units.mm/units.us):.3f} mm/us")
+    #print(f"drift speed: {speed/(units.mm/units.us):.3f} mm/us")
     
     def do_one(gr, n=0):
         gr = converter.undrift(gr, speed, t0)
         if 0 == gr.number_of_nodes():
             click.echo("no verticies in %s" % cluster_file)
-            sys.exit(1)
+            sys.exit(-1)
         dat = converter.clusters2blobs(gr)
+        print(dat)
         fname = paraview_file
         if '%' in paraview_file:
             fname = paraview_file%n
         write_data(dat, fname)
         click.echo(fname)
 
-    for n, gr in enumerate(tap.load(cluster_file)):
+    grs = list(tap.load(cluster_file))
+    if len(grs) == 0:
+        print(f'no graphs from {cluster_file}')
+        sys.exit(-1)
+    for n, gr in enumerate(grs):
         do_one(gr, n)
 
     return
