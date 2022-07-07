@@ -2,14 +2,29 @@
 
 from wirecell import units
 
-def unitify(valstr, unit=""):
+def unitify(val, unit=""):
     '''
-    Return a numeric value from a string holding a unit expression or by providing a unit.
+    Convert val into WCT system of units.
+
+    When val is a string it is evaluated in the context of the WCT
+    unit definitions and if unit is given it is multiplied resulting
+    in a number.
+
+    When val is a list, tuple, or dict of unit values, the same
+    structure is returned with strings evaluted.
     '''
 
+    if isinstance(val, list):
+        return [unitify(one, unit) for one in val]
+    if isinstance(val, tuple):
+        return tuple([unitify(one, unit) for one in val])
+    if isinstance(val, dict):
+        return {k:unitify(v, unit) for k,v in val.items()}
+    if not isinstance(val, str):
+        raise TypeError(f'unsupported value type: {type(val)}')
     if unit:
-        valstr += "*" + unit
-    return eval(valstr, units.__dict__)
+        val += "*" + unit
+    return eval(val, units.__dict__)
 
 def unitify_parse(string):
     '''
