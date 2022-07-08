@@ -13,8 +13,12 @@ import matplotlib.pyplot as plt
 from wirecell import units
 from wirecell.util.functions import unitify
 from wirecell.util import ario
+from wirecell.util.plottools import pages
 from scipy.spatial.transform import Rotation
 from zipfile import ZipFile
+from zipfile import ZIP_DEFLATED as ZIP_COMPRESSION
+### bzip2 is actually worse than deflate for depos!
+# from zipfile import ZIP_BZIP2 as ZIP_COMPRESSION
 from io import BytesIO
 
 cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
@@ -53,23 +57,19 @@ def plot_blobs(ctx, speed, t0, plot, cluster_file, plot_file):
         speed_units = unitify(speed)
         t0 = unitify(t0)
 
-    def do_one(gr, n=0):
-        if speed is not None:
-            gr = converter.undrift(gr, speed_units, t0)
+    with pages(plot_file) as printer:
 
-        if 0 == gr.number_of_nodes():
-            click.echo("no verticies in %s" % cluster_file)
-            return
+        for n, gr in enumerate(tap.load(cluster_file)):
+            if speed is not None:
+                gr = converter.undrift(gr, speed_units, t0)
 
-        fig = plotter(gr)
-        pname = plot_file
-        if '%' in pname:
-            pname = pname % n
-        fig.savefig(pname)
-        click.echo(pname)
+            if 0 == gr.number_of_nodes():
+                click.echo("no verticies in %s" % cluster_file)
+                return
 
-    for n, gr in enumerate(tap.load(cluster_file)):
-        do_one(gr, n)
+            fig = plotter(gr)
+            printer.savefig()
+    click.echo(plot_file)
 
 
 @cli.command("inspect")
@@ -539,9 +539,8 @@ def transform_depos(forward, locate, move, rotate, output, depos):
             indices.append(ind)
     indices.sort();
 
-
     out_count = 0
-    with ZipFile(output or "/dev/stdout", "w") as zf:
+    with ZipFile(output or "/dev/stdout", "w", compression=ZIP_COMPRESSION) as zf:
 
         def save(name, arr):
             print(name, arr.shape)
@@ -575,11 +574,10 @@ def transform_depos(forward, locate, move, rotate, output, depos):
             qr = (q*r.T).T
             coq = numpy.sum(qr, axis=0)/numpy.sum(q)
 
-            translate = numpy.zeros(3)
-
             for one in rotate:
                 code, args = one.split(":",1)
                 args = numpy.array(unitify(args.split(",")))
+                print(f'rotate {code} {args}')
                 if code == 'q':
                     R = Rotation.from_quat(args)
                 elif code == 'v':

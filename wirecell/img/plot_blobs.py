@@ -26,6 +26,11 @@ def _plot_coord(gr, index, label, unit):
     fig, ax = subplots()
     ax.hist(vals/unit, bins=1000)
     ax.set_label(label)
+    gname = getattr(gr, "name", None)
+    if gname:
+        gname = f' ({gname})'
+    letter = "xyz"[posindex]
+    ax.set_title(f'Blob {letter.upper()} {gname}')
     return fig
 
 def plot_x(gr): return _plot_coord(gr, 0, 'X [cm]', units.cm)
@@ -46,6 +51,10 @@ def plot_t(gr):
     fig, ax = subplots()
     ax.hist(numpy.array(times)/units.us, bins=1000)
     ax.set_label('T [us]')
+    gname = getattr(gr, "name", None)
+    if gname:
+        gname = f' ({gname})'
+    ax.set_title(f'Blob T {gname}')
     return fig
 
 def _plot_tN(gr, posindex):
@@ -63,7 +72,10 @@ def _plot_tN(gr, posindex):
         ypos.append(y)
     fig, ax = subplots()
     ax.scatter(numpy.array(time)/units.us, numpy.array(ypos)/units.mm)
-    ax.set_title(f'Blob <{letter.upper()}> vs T')
+    gname = getattr(gr, "name", None)
+    if gname:
+        gname = f' ({gname})'
+    ax.set_title(f'Blob <{letter.upper()}> vs T {gname}')
     ax.set_xlabel('t [us]')
     ax.set_ylabel(f'{letter} [mm]')
     return fig

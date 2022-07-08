@@ -140,10 +140,12 @@ def _abc_hist(a, b, c, da, db):
 
     amm = (numpy.min(a), numpy.max(a))
     bmm = (numpy.min(b), numpy.max(b))
-    print(f'bounds: {bmm} x {amm}')
-
     na = int(amm[1] - amm[0])
     nb = int(bmm[1] - bmm[0])
+    print(f'bounds: {bmm}[{nb}] vs {amm}[{na}]')
+    if na==0 or nb==0:
+        print("no range on an axis")
+        raise ValueError("no range on an axis")
 
     aedges = numpy.linspace(amm[0], amm[1], na)
     bedges = numpy.linspace(bmm[0], bmm[1], nb)
@@ -152,7 +154,8 @@ def _abc_hist(a, b, c, da, db):
     ax = fig.add_subplot(111)
 
     hist, abins, bbins = numpy.histogram2d(a, b, bins=(aedges, bedges), weights=c)
-    im = ax.imshow(numpy.ma.masked_where(hist==0, hist), interpolation='none')
+    im = ax.imshow(numpy.ma.masked_where(hist==0, hist), interpolation='none',
+                   extent=(amm[0], amm[1], bmm[1], bmm[0]))
     plt.colorbar(im, ax=ax)
     return ax
 
@@ -166,6 +169,30 @@ def plot_qxz(depos, output):
     ax.set_title("depo electrons")
     ax.set_xlabel("X [cm]")
     ax.set_ylabel("Z [cm]")
+    plt.savefig(output, dpi=300)
+
+def plot_qxy(depos, output):
+    'Plot colz q as X vs Y'
+    q = numpy.abs(depos["q"])
+    x = depos["x"]
+    y = depos["y"]
+
+    ax = _abc_hist(x, y, q, units.cm, units.cm)
+    ax.set_title("depo electrons")
+    ax.set_xlabel("X [cm]")
+    ax.set_ylabel("Y [cm]")
+    plt.savefig(output, dpi=300)
+
+def plot_qzy(depos, output):
+    'Plot colz q as Z vs Y'
+    q = numpy.abs(depos["q"])
+    z = depos["z"]
+    y = depos["y"]
+
+    ax = _abc_hist(z, y, q, units.cm, units.cm)
+    ax.set_title("depo electrons")
+    ax.set_xlabel("Z [cm]")
+    ax.set_ylabel("Y [cm]")
     plt.savefig(output, dpi=300)
 
 def plot_qxt(depos, output):
@@ -240,6 +267,15 @@ def plot_xzqscat(depos, output):
               depos["z"]/units.mm, 
               numpy.abs(depos["q"]),
               "x [mm]", "z [mm]", "q [ele]", output)
+
+def plot_xyqscat(depos, output):
+    'Plot charge as scatter plot'
+
+    _plot_abc('Charge',
+              depos["x"]/units.mm, 
+              depos["y"]/units.mm, 
+              numpy.abs(depos["q"]),
+              "x [mm]", "y [mm]", "q [ele]", output)
 
 def plot_tzqscat(depos, output):
     'Plot charge as scatter plot'
