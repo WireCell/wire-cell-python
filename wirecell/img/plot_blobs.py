@@ -5,6 +5,7 @@ Helpers for plot-blobs main command
 Exposed functions take a graph return a figure:
 
   func_<name>(gr) -> fig
+
 '''
 from wirecell import units
 import matplotlib.pyplot as plt
@@ -83,3 +84,79 @@ def _plot_tN(gr, posindex):
 def plot_tx(gr): return _plot_tN(gr, 0)
 def plot_ty(gr): return _plot_tN(gr, 1)
 def plot_tz(gr): return _plot_tN(gr, 2)
+
+def plot_views(gr):
+    '''
+    Project blob charge onto each view and along slices
+    '''
+    from matplotlib.patches import Rectangle
+    from matplotlib.collections import PatchCollection
+
+    # eg: (v vs u, t vs u)
+    fig, axes = subplots(2,3)
+
+    blobs = [d for n,d in gr.nodes.data() if d['code']=='b']
+    # (N,)
+    qall = numpy.array([b['value'] for b in blobs])
+    ind = qall>0
+    q = qall[ind]
+    t = (numpy.array([b['start'] for b in blobs])/units.ms)[ind]
+    dt = (numpy.array([b['span'] for b in blobs])/units.ms)[ind]
+    wb = numpy.array([b['bounds'] for b in blobs])[ind,:,:]
+
+    print (numpy.min(t), numpy.mean(t), numpy.max(t))
+    print (numpy.min(dt), numpy.mean(dt), numpy.max(dt))
+
+    # (N, 3, 2)
+
+    alpha = 0.25
+    cscale = 5.0
+    
+    for p1,p2 in zip([0,1,2], [1,2,0]):
+        # (N,2) min/max wire in plane
+        wb1 = wb[:,p1,:]
+        wb2 = wb[:,p2,:]
+
+        points = numpy.vstack((wb1[:,0], wb2[:,0])).T
+        widths = wb1[:,1] - wb1[:,0]
+        heights = wb2[:,1] - wb2[:,0]
+        qdens = q/(widths*heights)
+        qmean = numpy.mean(qdens)
+        tdens = q/(widths*dt)
+        tmean = numpy.mean(tdens)
+
+        print(points.shape, widths.shape, heights.shape, qdens.shape, t.shape, dt.shape)
+
+        r1 = [Rectangle(*args) for args in zip(points, widths, heights)]
+        pc1 = PatchCollection(r1, alpha=alpha, cmap='viridis')
+        pc1.set_array(qdens)
+        pc1.set_clim([qmean/cscale, qmean*cscale])
+        
+        tpts = numpy.vstack((wb1[:,0], t)).T
+        r2 = [Rectangle(*args) for args in zip(tpts, widths, dt)]
+        pc2 = PatchCollection(r2, alpha=alpha, cmap='viridis')
+        pc2.set_array(tdens)
+        pc2.set_clim([tmean/cscale, tmean*cscale])
+
+        ax1,ax2 = axes[:,p1]
+        l1 = "UVW"[p1]
+        l2 = "UVW"[p2]
+
+        # 2-plane wire projection
+        ax1.add_collection(pc1)
+        ax1.set_xlim(numpy.min(points[:,0]), numpy.max(points[:,0]+widths))
+        ax1.set_ylim(numpy.min(points[:,1]), numpy.max(points[:,1]+heights))
+        ax1.set_xlabel(l1)
+        ax1.set_ylabel(l2)
+        fig.colorbar(pc1, ax=ax1)
+
+        # time vs wires of one plane
+        ax2.add_collection(pc2)
+        ax2.set_xlim(numpy.min(tpts[:,0]), numpy.max(tpts[:,0]+widths))
+        ax2.set_ylim(numpy.min(tpts[:,1]), numpy.max(tpts[:,1]+dt))
+        ax2.set_xlabel(l1)
+        ax2.set_ylabel("T [ms]")
+        fig.colorbar(pc2, ax=ax2)
+
+    return fig
+

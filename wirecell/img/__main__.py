@@ -34,13 +34,17 @@ def cli(ctx):
 
     '''
 
+
+import wirecell.img.plot_blobs as blob_plotters
+blob_plots = [name[5:] for name in dir(blob_plotters) if name.startswith("plot_")]
+
 @cli.command("plot-blobs")
 @click.option("--speed", default=None,
               help="Assign x position based on drift speed, use units like '1.6*mm/us'.")
 @click.option("--t0", default="0*ns",
               help="Arbitrary additive time used in drift speed assignment, use units")
 @click.option("-p", "--plot", default='x',
-              type=click.Choice(["t","x","y","z","tx","ty","tz"]),
+              type=click.Choice(blob_plots),
               help="The plot to make.")
 @click.argument("cluster-file")
 @click.argument("plot-file")
@@ -50,8 +54,7 @@ def plot_blobs(ctx, speed, t0, plot, cluster_file, plot_file):
     Produce plots related to blobs in cluster.
     '''
     from . import tap, converter
-    import wirecell.img.plot_blobs as plotters
-    plotter = getattr(plotters, "plot_"+plot)
+    plotter = getattr(blob_plotters, "plot_"+plot)
 
     if speed is not None:
         speed_units = unitify(speed)

@@ -87,7 +87,10 @@ def make_pggraph(name, dat):
 
 def pg2nx(name, pg):
     '''
-    Convert a PyG HeterData-like graph "pg" to the networkx form.
+    Convert a PyG HeteroData-like array-based graph "pg" to the
+    networkx form.  In addition an explicit graph representataion the
+    columns in the input node feature array are mapped to named
+    attributes on the nodes.
     '''
     gr = nx.Graph(name=name)
 
@@ -134,7 +137,7 @@ def pg2nx(name, pg):
                     corners.append((t0, cy, cz))
                 add_node(irow, row[0], value=row[1], error=row[2],
                          faceid=row[3], sliceid=row[4], start=row[5], span=row[6],
-                         # note: row[7:13] has 3*2 WIP pairs
+                         bounds=row[7:13].reshape(3,2),
                          corners=corners)
 
         if ntype == "slice":
