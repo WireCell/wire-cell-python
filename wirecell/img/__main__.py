@@ -35,6 +35,90 @@ def cli(ctx):
     '''
 
 
+import wirecell.img.plot_depos_blobs as depo_blob_plotters
+depo_blob_plots = [name[5:] for name in dir(depo_blob_plotters) if name.startswith("plot_")]
+
+@cli.command("plot-depos-blobs")
+@click.option("-g", "--generation", default=0,
+              help="The depo generation index")
+@click.option("-i", "--index", default=0,
+              help="The depos set index in the file")
+@click.option("-p", "--plot", default='x',
+              type=click.Choice(depo_blob_plots),
+              help="The plot to make.")
+@click.option("-u", "--undrift", multiple=True, type=str,
+              help="As <type>:<time>:<speed> eg: blob:314*us,1.6*mm/us")
+@click.argument("depo-file")
+@click.argument("cluster-file")
+@click.argument("plot-file")
+@click.pass_context
+def plot_depos_blobs(ctx, generation, index, plot, undrift,
+                     depo_file, cluster_file, plot_file):
+    '''Make plots that combine depos and blobs.
+
+    The "--undrift" option specifies <type>:<time>:<speed>.
+
+    The <type> ("blob" or "depo") definies which object type the command applies.
+
+    The <time> is interpreted as a "T0" and so each blob or depos will
+    have duration calculated as dt = t - <time>.  The depo time t will
+    be replaced by <time>.
+
+    The <speed> is used to calculate a new X value as x = dt*speed.
+    As such, the sign is such that speed is interpreted as movement
+    along the anti-drift direction.
+
+    Note, that blobs are stored with their endpoint element 0 as a
+    time and the "undrifting" replaces that element.  After undrifting
+    there is not "blob time" but is may also be considered <time>.
+
+    '''
+    from . import tap, converter
+    plotter = getattr(depo_blob_plotters, "plot_"+plot)
+
+    import wirecell.gen.depos as deposmod
+    depos = deposmod.load(depo_file, index, generation)
+
+    uds = dict()
+    for u in undrift:
+        k,t,s = u.split(":")
+        if k.startswith("depo"): k="depo"
+        if k.startswith("blob"): k="blob"
+        uds[k] = unitify(t), unitify(s)
+
+    dstr = deposmod.stream(depo_file, generation)
+    cstr = tap.load(cluster_file)
+
+    with pages(plot_file) as printer:
+
+        for index, (depos, cgraph) in enumerate(zip(dstr, cstr)):
+                    
+            if 0 == cgraph.number_of_nodes():
+                click.echo(f'empty cluster at index={index} of file {cluster_file}')
+                return
+
+            if "depo" in uds:
+                time, speed = uds["depo"]
+                dt = depos['t'] - time
+                depos['t'] = time
+                depos['x'] = speed*dt
+
+            if "blob" in uds:
+                time, speed = uds["blob"]
+                for node, ndata in cgraph.nodes.data():
+                    if ndata['code'] != 'b':
+                        continue;
+                    pts = numpy.array(ndata['corners'])
+                    dt = pts[:,0] - time
+                    pts[:,0] = speed*dt;
+                    ndata['corners'] = pts
+                    ndata['span'] *= speed
+
+            fig = plotter(depos, cgraph)
+            printer.savefig()
+    click.echo(plot_file)
+
+
 import wirecell.img.plot_blobs as blob_plotters
 blob_plots = [name[5:] for name in dir(blob_plotters) if name.startswith("plot_")]
 
@@ -56,15 +140,11 @@ def plot_blobs(ctx, speed, t0, plot, cluster_file, plot_file):
     from . import tap, converter
     plotter = getattr(blob_plotters, "plot_"+plot)
 
-    if speed is not None:
-        speed_units = unitify(speed)
-        t0 = unitify(t0)
-
     with pages(plot_file) as printer:
 
         for n, gr in enumerate(tap.load(cluster_file)):
             if speed is not None:
-                gr = converter.undrift(gr, speed_units, t0)
+                gr = converter.undrift(gr, unitify(speed), unitify(t0))
 
             if 0 == gr.number_of_nodes():
                 click.echo("no verticies in %s" % cluster_file)

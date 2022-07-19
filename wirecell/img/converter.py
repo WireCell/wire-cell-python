@@ -121,7 +121,7 @@ def depos2pts(depos):
 
 def clusters2blobs(gr):
     '''
-    Given a graph object return a tvtk data object with blbos.
+    Given a graph object return a tvtk data object with blobs.
     '''
     from tvtk.api import tvtk
 
@@ -143,6 +143,10 @@ def clusters2blobs(gr):
                 continue
             if key == 'code':
                 continue
+            if key == 'bounds':
+                # dimensionality too high to convert
+                continue
+            print(f'adding key: {key}')
             datasetnames.add(key)
             vals[key] = val;
         pts,cells = extrude(pts, thickness)

@@ -57,27 +57,51 @@ def apply_units(depos, distance_unit, time_unit, energy_unit, step_unit=None, el
     return depos
 
 
-def load(depofile, index=0, generation=0):
+def stream(depofile, generation=0):
     '''
-    Return depos of index and generation in file.
-
-    Depos are returned as a 7-column array with columns as given by
-    .columns string of this module.
-
-    Generation 0 is the "youngest" and it's "prior" depos, if they
-    exist, have generation=1, etc.
+    Like load() but yield over indices.
     '''
     fp = ario.load(depofile)
+
+    index = 0
+    while True:
+        try:
+            yield load(fp, index, generation)
+        except KeyError:
+            return
+
+        index += 1
+
+
+
+def load(depofile, index=0, generation=0):
+    '''Return depo info from file.
+
+    The integer specifies the generation of depos with 0 being the
+    "youngest" and its "prior" depo being 1 higher.  
+
+    A dict holding seven items of array value is returned.  The keys
+    are t=time, c=charge, x, y, z, L=sigma_L, T=sigma_T.  The .columns
+    string of this module provides these keys as a string.
+
+    If index or generation do not exist, KeyError is raised.
+    '''
+    if isinstance(depofile, str):
+        fp = ario.load(depofile)
+    else:
+        fp = depofile
     dat = fp[f'depo_data_{index}']
     nfo = fp[f'depo_info_{index}']
 
-    if dat.shape[0] == 7:
+    if dat.shape[0] == 7 and nfo.shape[0] == 4:
         dat = dat.T
-    if nfo.shape[0] == 4:
         nfo = nfo.T
 
     indices = nfo[:,2] == generation
-    return todict(dat[indices,:])
+    thegen = dat[indices,:]
+    if thegen.shape[0] == 0:
+        raise KeyError(f'no generation {generation}')
+    return todict(thegen)
 
 
 def dump(output_file, depos, jpath="depos"):

@@ -193,7 +193,7 @@ def group_keys(arf):
 
         cl,n,kind = key.split("_", 2)
         if cl != "cluster":
-            raise ValueError("failed to parse")
+            raise ValueError(f"failed to parse key: {key}")
         pre = f'cluster_{n}_'
         sub = [key]
         keys.pop(0)
