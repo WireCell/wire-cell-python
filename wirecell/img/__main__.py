@@ -51,9 +51,10 @@ depo_blob_plots = [name[5:] for name in dir(depo_blob_plotters) if name.startswi
 @click.argument("depo-file")
 @click.argument("cluster-file")
 @click.argument("plot-file")
+@click.argument("params", nargs=-1)
 @click.pass_context
 def plot_depos_blobs(ctx, generation, index, plot, undrift,
-                     depo_file, cluster_file, plot_file):
+                     depo_file, cluster_file, plot_file, params):
     '''Make plots that combine depos and blobs.
 
     The "--undrift" option specifies <type>:<time>:<speed>.
@@ -73,6 +74,13 @@ def plot_depos_blobs(ctx, generation, index, plot, undrift,
     there is not "blob time" but is may also be considered <time>.
 
     '''
+    kwargs = dict()
+    for p in params:
+        k,v = p.split("=",1)
+        v = unitify(v)
+        kwargs[k] = v
+        print(f'{k} : {v}')
+
     from . import tap, converter
     plotter = getattr(depo_blob_plotters, "plot_"+plot)
 
@@ -100,7 +108,7 @@ def plot_depos_blobs(ctx, generation, index, plot, undrift,
             if "depo" in uds:
                 time, speed = uds["depo"]
                 dt = depos['t'] - time
-                depos['t'] = time
+                depos['t'][:] = time
                 depos['x'] = speed*dt
 
             if "blob" in uds:
@@ -114,8 +122,9 @@ def plot_depos_blobs(ctx, generation, index, plot, undrift,
                     ndata['corners'] = pts
                     ndata['span'] *= speed
 
-            fig = plotter(depos, cgraph)
-            printer.savefig()
+            fig = plotter(depos, cgraph, **kwargs)
+            printer.savefig(dpi=300)
+            break               # fixme
     click.echo(plot_file)
 
 

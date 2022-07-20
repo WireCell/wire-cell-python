@@ -18,15 +18,30 @@ of major WCT input data files including:
 #+BEGIN_EXAMPLE
   $ python3 -m venv venv
   $ source venv/bin/activate
-  $ cd wire-cell-toolkit/python
+  $ cd wire-cell-python
+  $ pip install -r requirements/base.txt
+  $ pip install -r requirements/img.txt
+  $ pip install -r requirements/sigproc.txt
   $ pip install -e .
 #+END_EXAMPLE
+
+If you have trouble installing ~mayavi~ via ~pip~ consider installing it
+as a system package and then making the ~venv~ with:
+
+#+begin_example
+  $ python3 -m venv venv --system-site-packages
+#+end_example
+
+* Use
 
 In fresh shells must repeat:
 
 #+BEGIN_EXAMPLE
   $ source venv/bin/activate
 #+END_EXAMPLE
+
+* Others
+
 
 ** ZIO
 

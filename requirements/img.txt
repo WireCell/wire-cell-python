@@ -1,3 +1,4 @@
 # needed by wirecell.img
 mayavi
+scipy
 
