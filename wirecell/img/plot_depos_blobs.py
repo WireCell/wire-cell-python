@@ -77,7 +77,7 @@ def plot_outlines(depos, cgraph, lims=None, include=("depos","blobs")):
         include=("depos","blobs")
     print("including:",include)
 
-    alpha = 1.0
+    alpha = 0.3
     cscale = 10.0
     nsigma = 3.0
 
@@ -115,10 +115,13 @@ def plot_outlines(depos, cgraph, lims=None, include=("depos","blobs")):
         if lims is None:
             lim = numpy.zeros((2,2))
             lxys = bxys
+            bws = bmm[ix,1,:]
+            bhs = bmm[iy,1,:]
+
             if lxys is None:
                 lxys = dxys
             lim = [(numpy.min(lxys[:,0]), numpy.max(lxys[:,0])),
-                   (numpy.min(lxys[:,1]), numpy.max(lxys[:,1]))]
+                   (numpy.min(lxys[:,1]+bws), numpy.max(lxys[:,1]+bhs))]
         else:
             lim = [lims[ix], lims[iy]]
         lim = numpy.array(lim)
@@ -146,7 +149,7 @@ def plot_outlines(depos, cgraph, lims=None, include=("depos","blobs")):
             dxys = dxys[didx]
             dws = depo_dr[ix,didx]*nsigma
             dhs = depo_dr[iy,didx]*nsigma
-            dq = -depos['q'][didx]
+            dq =  depos['q'][didx]
             dps = [Ellipse(xy,w,h) for xy,w,h in zip(dxys, dws, dhs)]
             dpc = PatchCollection(dps, alpha=alpha, cmap='viridis')
             dpc.set_array(dq)
@@ -156,6 +159,6 @@ def plot_outlines(depos, cgraph, lims=None, include=("depos","blobs")):
 
         ax.set_xlim(lim[0])
         ax.set_ylim(lim[1])
-        ax.set_xlabel(l1)
-        ax.set_ylabel(l2)
+        ax.set_xlabel(f'{l1} cm')
+        ax.set_ylabel(f'{l2} cm')
         fig.colorbar(bpc or dpc, ax=ax)

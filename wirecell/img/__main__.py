@@ -110,6 +110,7 @@ def plot_depos_blobs(ctx, generation, index, plot, undrift,
                 dt = depos['t'] - time
                 depos['t'][:] = time
                 depos['x'] = speed*dt
+                depos['q'] = numpy.abs(depos['q'])
 
             if "blob" in uds:
                 time, speed = uds["blob"]
