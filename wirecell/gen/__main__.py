@@ -307,6 +307,35 @@ def depo_lines(electron_density, step_size, time, tracks, sets,
     print("saving:", list(arrays.keys()))
     numpy.savez(output, **arrays) 
 
+@cli.command("depo-point")
+@click.option("-n", "--number", default="5000",
+              help="Number of electrons in the depo")
+@click.option("-t", "--time", default="0*us",
+              help="The time of the depo")
+@click.option("-p", "--position", type=str, default="0,0,0",
+              help="Position of the depo as 'x,y,z'")
+@click.option("-s", "--sigma", type=str, default="0,0",
+              help="The longitudinal and transverse extent 'L,T'")
+@click.option("-o", "--output",
+              type=click.Path(dir_okay=False, file_okay=True),
+              help="Depo file which to save the results")
+def depo_point(number, time, position, sigma, output):
+    '''
+    Generate a single point depo.
+    '''
+    import numpy
+    number = unitify(number)
+    if number > 0:
+        number = -number
+    time = unitify(time)
+    position = unitify_parse(position)
+    sigma = unitify_parse(sigma)
+    data = numpy.array([time,number]+position+sigma, dtype='float32').reshape(7,1)
+    info = numpy.array((0, 0, 0, 0), dtype="int32").reshape(4,1)
+
+    numpy.savez(output, depo_data_0=data, depo_info_0=info)
+
+
 @cli.command("depo-sphere")
 @click.option("-r", "--radius", default="1*m",
               help="Radius of the origin sphere)")
@@ -328,7 +357,7 @@ def depo_lines(electron_density, step_size, time, tracks, sets,
 def depo_sphere(radius, electron_density, step_size, 
                 corner, diagonal, origin, seed, output):
     '''
-    Generate ideal line-source "tracks" of depos
+    Generate ideal phere of depos
     '''
 
     if not output.endswith(".npz"):
