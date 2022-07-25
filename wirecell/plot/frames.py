@@ -85,8 +85,6 @@ def wave(dat, out, tier='orig', unit='ADC', vmm=25, interactive=False):
             chwaves[ch-chmin] = waves[ind]
         maxtime = ticks[1]*waves.shape[1]
 
-        print(chwaves.dtype, chwaves.shape)
-
         fig,(ax,ax2) = plt.subplots(1,2, figsize=(10,6), sharey=True,
                                     gridspec_kw={'width_ratios': [5, 1]})
         ax.set_title("Waveforms")
@@ -99,7 +97,10 @@ def wave(dat, out, tier='orig', unit='ADC', vmm=25, interactive=False):
         ax.set_ylabel("channel")
         fig.colorbar(im, ax=ax, label=unit)
 
-        rms = numpy.sqrt(numpy.sum(chwaves ** 2, axis=1)/chwaves.shape[1])
+        chwaves = numpy.array(chwaves, dtype=float)
+        chss = numpy.sum(chwaves ** 2, axis=1)
+        print(numpy.any(chss < 0))
+        rms = numpy.sqrt(chss/chwaves.shape[1])
         chans = numpy.linspace(chmin, chmax+1, chwaves.shape[0], endpoint=True)
         ax2.step(rms, chans)
         ax2.set_xlabel(f'[{unit}]')
