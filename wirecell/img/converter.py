@@ -17,22 +17,45 @@ def undrift_points(pts, speed=1.6*units.mm/units.us, t0=0, time_index=0):
     return pts
 
 
-def undrift(grs, speed=1.6*units.mm/units.us, t0=0):
+def undrift_depos(depos, speed=1.6*units.mm/units.us, time=0, drift_index=0):
     '''
-    Transform time to a relative drift coordinate.
+    Remove the drift from the depos.
+
+    The depos are as returned by wirecell.gen.depos.load().
+
+    The time and drift coordinates will be changed to "back up" the
+    depos to the given time and at the given speed. '''
+
+    dt = depos['t'] - time
+    depos['t'][:] = time
+    depos['x'] = speed*dt
+    depos['q'] = numpy.abs(depos['q'])
+    return depos
+
+def undrift_blobs(cgraph, speed=1.6*units.mm/units.us, time=0, drift_index=0):
+    '''Transform the blobs in the cluster graph.
+
+    The cgraph may be a list of cluster graphs.
+
+    The drift coordinates are changed from time to space.
     '''
     is_list=True
-    if not isinstance(grs, list):
-        grs = [grs]
+    if not isinstance(cgraph, list):
+        cgraph = [cgraph]
         is_list = False
 
     ret = list()
-    for gr in grs:
+    for gr in cgraph:
         for node, ndata in gr.nodes.data():
             if ndata['code'] != 'b':
                 continue;
-            ndata['corners'] = undrift_points(ndata['corners'], speed, t0)
+
+            pts = numpy.array(ndata['corners'])
+            dt = pts[:,0] - time
+            pts[:,0] = speed*dt;
+            ndata['corners'] = pts
             ndata['span'] *= speed
+
         ret.append(gr)
 
     if is_list:
@@ -146,7 +169,6 @@ def clusters2blobs(gr):
             if key == 'bounds':
                 # dimensionality too high to convert
                 continue
-            print(f'adding key: {key}')
             datasetnames.add(key)
             vals[key] = val;
         pts,cells = extrude(pts, thickness)

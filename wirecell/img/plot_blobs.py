@@ -96,10 +96,15 @@ def plot_views(gr):
     fig, axes = subplots(2,3)
 
     blobs = [d for n,d in gr.nodes.data() if d['code']=='b']
+    if len(blobs) == 0:
+        raise ValueError('graph with no blobs')
+
     # (N,)
     qall = numpy.array([b['value'] for b in blobs])
     ind = qall>0
     q = qall[ind]
+    if q.size == 0:
+        raise ValueError("no non-negative blob charges")
     t = (numpy.array([b['start'] for b in blobs])/units.ms)[ind]
     dt = (numpy.array([b['span'] for b in blobs])/units.ms)[ind]
     wb = numpy.array([b['bounds'] for b in blobs])[ind,:,:]

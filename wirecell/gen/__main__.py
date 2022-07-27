@@ -119,7 +119,15 @@ def plot_depos(ctx, generation, index, plot,
         depos['t'] += t0
 
     #depos = deposmod.remove_zero_steps(depos)
-    plotter(depos, output_file)
+    try:
+        plotter(depos, output_file)
+    except ValueError as e:
+        print(e)
+        # punt, but make a file to satisfy workflow managers
+        print(f'writing empty file {output_file}')
+        import matplotlib.pyplot as plt
+        plt.savefig(output_file)
+
 
 @cli.command("plot-test-boundaries")
 @click.option("-t", "--times", default=[100.0,105.0], type=float, nargs=2,
