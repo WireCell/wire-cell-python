@@ -227,13 +227,15 @@ def plot_outlines(depos, cgraph, lims=None, include=("depos","blobs")):
             dhs = 2*depo_dr[iy,didx]*nsigma
             dxys = dxys[didx]
             dq =  depos['q'][didx]
-            # dps = [Ellipse(xy,w,h) for xy,w,h in zip(dxys, dws, dhs)]
-            # dpc = PatchCollection(dps, alpha=alpha, cmap='viridis')
-            # dpc.set_array(dq)
-            # ax.add_collection(dpc)
+            # many depos span range making elipses invisible
+            if dq.size < 100:
+                dps = [Ellipse(xy,w,h) for xy,w,h in zip(dxys, dws, dhs)]
+                dpc = PatchCollection(dps, alpha=alpha, cmap='viridis')
+                dpc.set_array(dq)
+                ax.add_collection(dpc)
             dqtot = numpy.sum(dq)
             print(f'total depo charge: {dqtot*1e-6:.3f}M (in range)')
-            ax.scatter(dxys[:,0], dxys[:,1], s=0.01, c='gray', marker=',', alpha=0.2)
+            ax.scatter(dxys[:,0], dxys[:,1], s=0.01, c='gray', marker=',', alpha=1)
 
         ax.set_xlim(lim[0])
         ax.set_ylim(lim[1])
@@ -257,7 +259,7 @@ def plot_views(depos, cgraph):
     
 
     ## blobs
-    blobs = blob_nodes(cgraph, lambda b: b['value'] > 0)
+    blobs = blob_nodes(cgraph)#, lambda b: b['value'] >= 0)
     bbs = blob_bounds(blobs) # (3,2,N), WIP bounds
     bq = blob_charge(blobs)  # (N,)
     bss = blob_slices(blobs) # (2,N), time (start,span)

@@ -35,7 +35,7 @@ class NameSequence(object):
             return self.base + self.ext
 
         try:
-            fn = self.base % self.index
+            fn = self.base % (self.index,)
         except TypeError:
             fn = '%s%04d' % (self.base, self.index)
         self.index += 1
