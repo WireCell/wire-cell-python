@@ -80,7 +80,7 @@ def convert_icarustpc_wires(ctx, input_file, output_file):
 
 @cli.command("convert-dunevd-wires")
 @click.option('-t', '--type', default="3view",
-              help='2view, 3view, 3view_30deg, coldbox')
+              help='2view, 3view, 3view_30deg, coldbox, protodunevd')
 @click.argument("input-file")
 @click.argument("output-file")
 @click.pass_context
@@ -89,6 +89,8 @@ def convert_dunevd_wires(ctx, type, input_file, output_file):
     Convert txt wire geom to json format
     '''
     from wirecell.util.wires import dunevd, persist
+    if type == 'protodunevd':
+        input_file = dunevd.merge_tpc(input_file)
     store = dunevd.load(input_file, type)
     persist.dump(output_file, store)
 
