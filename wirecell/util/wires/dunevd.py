@@ -127,13 +127,13 @@ def merge_wires(wires, plane):
             max_dist = max(dists)
             max_index = dists.index(max_dist)
             if max_index == 0:
-                new_wire = (chan, i, p1, p3)
+                new_wire = (ch, i, p1, p3)
             elif max_index == 1:
-                new_wire = (chan, i, p1, p4)
+                new_wire = (ch, i, p1, p4)
             elif max_index == 2:
-                new_wire = (chan, i, p2, p3)
+                new_wire = (ch, i, p2, p3)
             else:
-                new_wire = (chan, i, p2, p4)
+                new_wire = (ch, i, p2, p4)
             new_wires.append(new_wire)
         else:
             print("Warning: more than two segments for a wire, not expected.")
