@@ -143,6 +143,7 @@ def merge_wires(wires, plane):
 def merge_tpc(filename):
     output_filename = f"{filename}-mergetpc.txt"
     tpcplane2wires = {}
+    tpcno = []
     with open(filename) as fp:
         for line in fp.readlines():
             if line.startswith("#"): continue
@@ -150,13 +151,20 @@ def merge_tpc(filename):
             if not line: continue
             chunks = line.split()
             chan,tpc,plane,wire = map(int, chunks[:4])
+            if not tpc in tpcno:
+                tpcno.append(tpc)
             beg = [float(x) for x in chunks[4:7] ]
             end = [float(x) for x in chunks[7:10]]
             if not (tpc, plane) in tpcplane2wires:
                 tpcplane2wires[(tpc, plane)] = [(chan, wire, beg, end)]
             else:
                 tpcplane2wires[(tpc, plane)].append((chan, wire, beg, end))
-    new_tpcs = [110,120,111,121,112,122,113,123,114,124,115,125,116,126,117,127]
+    new_tpcs = []
+    for i in range(len(tpcno)//2):
+        new_tpcs.append(110 + i)
+        new_tpcs.append(120 + i)
+    # new_tpcs = [110,120,111,121,112,122,113,123,114,124,115,125,116,126,117,127]
+    # new_tpcs = [110,120,111,121]
     new_tpcplane2wires = {}
     for new_tpc in new_tpcs:
         # decode the new tpc to real tpc pairs
