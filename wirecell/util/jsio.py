@@ -7,7 +7,6 @@ import os
 import bz2
 import json
 import gzip
-from _jsonnet import evaluate_file, evaluate_snippet
 from pathlib import Path
 
 def clean_paths(paths, add_cwd=True):
@@ -64,8 +63,16 @@ def try_path(path, rel):
 
     if not os.path.isfile(full_path):
         return full_path, None
-    with open(full_path) as f:
+    # https://github.com/google/jsonnet/releases/tag/v0.19.1
+    import _jsonnet
+    import semver
+    import_returns_bytes = semver.compare(getattr(_jsonnet, 'version', 'v0.18.0')[1:], '0.18.0') > 0
+    flags = 'r'
+    if import_returns_bytes:
+        flags = 'rb'
+    with open(full_path, flags) as f:
         return full_path, f.read()
+
 
 class ImportCallback(object):
 
@@ -119,6 +126,7 @@ def load(fname, paths=(), **kwds):
 
     if fname.endswith(('.jsonnet', '.jsonnet.gz', '.jsonnet.bz2')):
         ic = ImportCallback(paths)
+        from _jsonnet import evaluate_snippet
         try:
             text = evaluate_snippet(fname, text, import_callback=ic, **kwds)
         except RuntimeError as err:

@@ -696,13 +696,21 @@ def npz_to_img(output, array,
         args["dpi"] = int(dpi)
     plt.savefig(output, **args)
 
-@cli.command("npzls")
-@click.argument("npzfile")
-def npzls(npzfile):
-    fp = numpy.load(npzfile)
+@cli.command("ls")
+@click.argument("filename")
+def ls(filename):
+    '''
+    List contents of a WCT file (.npz, .zip or .tar[.gz])
+    '''
+    from . import ario
+    fp = ario.load(filename)
     for key in fp:
-        shape = fp[key].shape
-        print(f'{key:16s} {shape}')
+        o = fp[key]
+        if isinstance(o, dict):
+            keys = ', '.join(o.keys())
+            print(f'{key:16s}\t{keys}')
+            continue
+        print(f'{key:16s}\t{o.dtype}\t{o.shape}')
 
 def main():
     cli(obj=dict())

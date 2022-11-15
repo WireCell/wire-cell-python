@@ -4,6 +4,7 @@ numpy
 matplotlib
 networkx
 jsonnet
+semver
 sqlalchemy
 
 
