@@ -17,3 +17,6 @@ dist
 *.json
 data
 ltximg
+.direnv
+.envrc
+*.npz
