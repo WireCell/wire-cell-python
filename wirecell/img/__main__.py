@@ -193,6 +193,19 @@ def plot_blobs(ctx, plot, clusters, plot_file):
             printer.savefig()
     click.echo(plot_file)
 
+@cli.command("dump-blobs")
+@cluster_file
+@click.argument("out-file")
+@click.pass_context
+def dump_blobs(ctx, clusters, out_file):
+    '''
+    dump blob signitures in cluster to a file.
+    '''
+    import wirecell.img.dump_blobs as db
+    for gr in clusters:
+        db.dump_blobs(gr, out_file)
+    click.echo(out_file)
+
 
 @cli.command("inspect")
 @click.argument("cluster-file")
