@@ -64,9 +64,9 @@ def load(filename, type='3view'):
         p1 = store.get("point", wire.tail)
         p2 = store.get("point", wire.head)
         # length = ( (p1.z - p2.z)**2 + (p1.y - p2.y)**2 )**0.5
-        if type == '3view' or type == 'coldbox' or type == 'protodunevd':
+        if type == '3view' or type == 'coldbox':
             return 0.5*(p1.z + p2.z) + 0.5*(p2.y + p1.y)
-        elif type == '3view_30deg' :
+        elif type == '3view_30deg' or type == 'protodunevd':
             if plane == 0:
                 return 0.5*(p2.y + p1.y)
             elif plane == 1:
