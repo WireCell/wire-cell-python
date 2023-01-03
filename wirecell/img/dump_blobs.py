@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy
 import math
 
-def _signature(gr, node, tick=500):
+def _signature(gr, bnode, tick=500):
     sig = []
     id2name = {1:'u', 2:'v', 4:'w'}
     chan_index = dict()
@@ -17,7 +17,7 @@ def _signature(gr, node, tick=500):
     for id in id2name:
         chan_index[id] = []
         chan_status[id] = []
-    for node in gr.neighbors(node):
+    for node in gr.neighbors(bnode):
         ndata = gr.nodes[node]
         if ndata['code'] == 's':
             # print(ndata)
@@ -27,7 +27,7 @@ def _signature(gr, node, tick=500):
             sig.append(tmax)
             for key in ndata['signal']:
                 signal[int(key)] = ndata['signal'][key]
-    for node in gr.neighbors(node):
+    for node in gr.neighbors(bnode):
         ndata = gr.nodes[node]
         if ndata['code'] == 'w':
             # print(ndata)
@@ -44,35 +44,36 @@ def _signature(gr, node, tick=500):
                 #     print(key, ': ', signal[key]['val'])
                 # raise RuntimeError(f'{chid} not in signal')
             # 0.1: dummy; 0.2: masked
-            status = -1
-            # print(f'val = {val}')
-            if math.isclose(val, 0.1,rel_tol=1e-6):
-                status = 1
-            elif math.isclose(val, 0.2,rel_tol=1e-6):
-                status = 0
-            chan_status[wpid].append(status)
+            # status = -1
+            # # print(f'val = {val}')
+            # if math.isclose(val, 0.1,rel_tol=1e-6):
+            #     status = 1
+            # elif math.isclose(val, 0.2,rel_tol=1e-6):
+            #     status = 0
+            chan_status[wpid].append(val)
+    chan_offset = {1:0, 2:2400, 4: 4800}
     for wpid in chan_index:
+        # print(wpid, chan_index[wpid])
         # FIXME why this can be 0?
-        if len(chan_index[wpid]) == 0:
-            # print(wpid, chan_index[wpid])
-            sig.append(-1)
-            sig.append(-1)
-            continue
-        min = numpy.min(chan_index[wpid])
-        max = numpy.max(chan_index[wpid])
+        # if len(chan_index[wpid]) == 0:
+        #     print(wpid, chan_index[wpid])
+        #     sig.append(-1)
+        #     sig.append(-1)
+        #     continue
+        min = numpy.min(chan_index[wpid]) + chan_offset[wpid]
+        max = numpy.max(chan_index[wpid]) + chan_offset[wpid]
         sig.append(min)
         sig.append(max)
     for wpid in chan_status:
         # FIXME why this can be 0?
         if len(chan_status[wpid]) == 0:
-            # print(wpid, chan_status[wpid])
             sig.append(-1)
             continue
-        min = numpy.min(chan_status[wpid])
-        max = numpy.max(chan_status[wpid])
-        if min != max and min != -1:
-            raise ValueError(f'min = {min}, max = {max}')
-        sig.append(min)
+        # min = numpy.min(chan_status[wpid])
+        # max = numpy.max(chan_status[wpid])
+        # if min != max and min != -1:
+        #     raise ValueError(f'min = {min}, max = {max}')
+        sig.append(int(sum(chan_status[wpid])))
     # print(sig)
     return sig
 
@@ -93,9 +94,15 @@ def dump_blobs(gr, out_file):
         sigs.append(sig)
     sigs = numpy.array(sigs)
     sigs = sigs[sigs[:,0]<40,:]
+    # sigs = sigs[sigs[:,6]<5000,:]
     sigs = _sort(sigs)
     print(sigs.shape)
-    for i in range(min([sigs.shape[0], 20])):
-    # for i in range(sigs.shape[0]):
-        print(i, sigs[i,:])
+    # for i in range(min([sigs.shape[0], 20])):
+    for i in range(sigs.shape[0]):
+        # print(i, sigs[i,:])
+        print(i, sigs[i,0:2],
+            sigs[i,2], ':', sigs[i,3]+1, ',',
+            sigs[i,4], ':', sigs[i,5]+1, ',',
+            sigs[i,6], ':', sigs[i,7]+1,
+            sigs[i,8:])
     numpy.save(out_file, sigs)
