@@ -54,25 +54,18 @@ def _signature(gr, bnode, tick=500):
     chan_offset = {1:0, 2:2400, 4: 4800}
     for wpid in chan_index:
         # print(wpid, chan_index[wpid])
-        # FIXME why this can be 0?
-        # if len(chan_index[wpid]) == 0:
-        #     print(wpid, chan_index[wpid])
-        #     sig.append(-1)
-        #     sig.append(-1)
-        #     continue
+        if len(chan_index[wpid]) == 0:
+            # print(gr.nodes[bnode])
+            # for node in gr.neighbors(bnode):
+            #     ndata = gr.nodes[node]
+            #     print(ndata)
+            # exit(-1)
+            return None
         min = numpy.min(chan_index[wpid]) + chan_offset[wpid]
         max = numpy.max(chan_index[wpid]) + chan_offset[wpid]
         sig.append(min)
         sig.append(max)
     for wpid in chan_status:
-        # FIXME why this can be 0?
-        if len(chan_status[wpid]) == 0:
-            sig.append(-1)
-            continue
-        # min = numpy.min(chan_status[wpid])
-        # max = numpy.max(chan_status[wpid])
-        # if min != max and min != -1:
-        #     raise ValueError(f'min = {min}, max = {max}')
         sig.append(int(sum(chan_status[wpid])))
     # print(sig)
     return sig
@@ -84,6 +77,7 @@ def _sort(arr):
 
 def dump_blobs(gr, out_file):
     sigs = []
+    count = 0
     for node, ndata in gr.nodes.data():
         if ndata['code'] != 'b':
             continue;
@@ -91,8 +85,13 @@ def dump_blobs(gr, out_file):
         # print(type(node))
         # print(sig)
         # exit()
-        sigs.append(sig)
+        if sig is not None:
+            sigs.append(sig)
+        else:
+            count += 1
+    print('#0-blobs:', count)
     sigs = numpy.array(sigs)
+    # sigs = sigs[sigs[:,0]==0,:]
     sigs = sigs[sigs[:,0]<40,:]
     # sigs = sigs[sigs[:,6]<5000,:]
     sigs = _sort(sigs)
@@ -100,9 +99,11 @@ def dump_blobs(gr, out_file):
     # for i in range(min([sigs.shape[0], 20])):
     for i in range(sigs.shape[0]):
         # print(i, sigs[i,:])
-        print(i, sigs[i,0:2],
+        print(sigs[i,0:2],
             sigs[i,2], ':', sigs[i,3]+1, ',',
-            sigs[i,4], ':', sigs[i,5]+1, ',',
-            sigs[i,6], ':', sigs[i,7]+1,
-            sigs[i,8:])
-    numpy.save(out_file, sigs)
+            sigs[i,4], ':', sigs[i,5]+1, ','
+            ,sigs[i,6], ':', sigs[i,7]+1
+            ,sigs[i,8:]
+            )
+    if out_file is not None:
+        numpy.save(out_file, sigs)
