@@ -25,12 +25,13 @@ def _plot_coord(gr, index, label, unit):
         vals.append(v)
 
     fig, ax = subplots()
+    vals = numpy.array(vals)
     ax.hist(vals/unit, bins=1000)
     ax.set_label(label)
     gname = getattr(gr, "name", None)
     if gname:
         gname = f' ({gname})'
-    letter = "xyz"[posindex]
+    letter = "xyz"[index]
     ax.set_title(f'Blob {letter.upper()} {gname}')
     return fig
 
