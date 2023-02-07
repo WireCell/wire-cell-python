@@ -22,7 +22,7 @@ def jsonnet_loader(jfilekey):
     def decorator(func):
         @click.option("-J", "--jpath", multiple=True,
                       envvar='WIRECELL_PATH', 
-                      help="A dot-delimited path into the JSON to locate a graph-like object")
+                      help="A file system path to locate Jsonnet files")
         @click.option("-A", "--tla", multiple=True,
                       help="Set a top-level argument as key=val, key=code or key=filename")
         @click.option("-V", "--ext", multiple=True,
