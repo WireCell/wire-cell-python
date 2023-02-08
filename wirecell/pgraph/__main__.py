@@ -104,7 +104,7 @@ def is_list_of_string(x):
     if not is_list(x): return False
     return all(map(is_string, x))
 
-def dotify(edge_dat, attrs, params=True, services=True):
+def dotify(edge_dat, attrs, params=True, services=True, graph_options=dict(rankdir="LR")):
     '''
     Return GraphViz text.
 
@@ -158,9 +158,9 @@ def dotify(edge_dat, attrs, params=True, services=True):
                     e = '"%s" -> "%s"[style=dashed,color=gray]' % (n.dot_name(), cn.dot_name())
                     edges.append(e)
 
-    ret = ["digraph pgraph {",
-           "rankdir=LR;",
-           "\tnode[shape=record];"]
+    ret = ["digraph pgraph {"]
+    ret += [f'{key}={val};' for key,val in graph_options.items()]
+    ret += ["\tnode[shape=record];"]
     for nn,node in sorted(nodes.items()):
         nodestr = '\t"%s"[label="%s"];' % (node.dot_name(), node.dot_label())
         #print(nodestr)
@@ -251,10 +251,12 @@ def uses_to_params(uses):
               help="Enable/disable the inclusion of contents of configuration parameters") 
 @click.option("--services/--no-services", default=True,
               help="Enable/disable the inclusion 'service' (non-node) type components") 
+@click.option("--graph-options", multiple=True,
+              help="Graph options as key=value") 
 @jsonnet_loader("in-file")
 @click.argument("out-file")
 @click.pass_context
-def cmd_dotify(ctx, dpath, npath, epath, params, services, in_file, out_file):
+def cmd_dotify(ctx, dpath, npath, epath, params, services, graph_options, in_file, out_file):
     '''Convert a WCT cfg to a GraphViz dot or rendered file.
 
       The config file may be JSON or Jsonnet and must provide an array
@@ -296,10 +298,10 @@ def cmd_dotify(ctx, dpath, npath, epath, params, services, in_file, out_file):
     if any ((npath, epath)):
         uses = resolve_path(dat, npath)
         edges = resolve_path(dat, epath)
-        print ('special uses')
-        print (uses)
-        print ('special edges')
-        print (edges)
+        # print ('special uses')
+        # print (uses)
+        # print ('special edges')
+        # print (edges)
     else:                       # wct cfg
         uses = dat
         edges = dat[-1]["data"]["edges"]
@@ -315,8 +317,15 @@ def cmd_dotify(ctx, dpath, npath, epath, params, services, in_file, out_file):
     #     edges = cfg["edges"] # Pnodes have edges as top-level attribute
     #     uses = cfg.get("uses", list())
 
+    gopts = dict(rankdir="LR")
+    if graph_options:
+        gopts = dict()
+        for go in graph_options:
+            k,v = go.split("=",1)
+            gopts[k]=v
+
     attrs = uses_to_params(uses)
-    dtext = dotify(edges, attrs, params, services)
+    dtext = dotify(edges, attrs, params, services, gopts)
     ext = os.path.splitext(out_file)[1][1:]
     dot = "dot -T %s -o %s" % (ext, out_file)
     proc = subprocess.Popen(dot, shell=True, stdin = subprocess.PIPE)
