@@ -104,7 +104,7 @@ def is_list_of_string(x):
     if not is_list(x): return False
     return all(map(is_string, x))
 
-def dotify(edge_dat, attrs, params=True, services=True):
+def dotify(edge_dat, attrs, params=True, services=True, graph_options=dict(rankdir="LR")):
     '''
     Return GraphViz text.
 
@@ -158,9 +158,9 @@ def dotify(edge_dat, attrs, params=True, services=True):
                     e = '"%s" -> "%s"[style=dashed,color=gray]' % (n.dot_name(), cn.dot_name())
                     edges.append(e)
 
-    ret = ["digraph pgraph {",
-           "rankdir=LR;",
-           "\tnode[shape=record];"]
+    ret = ["digraph pgraph {"]
+    ret += [f'{key}={val};' for key,val in graph_options.items()]
+    ret += ["\tnode[shape=record];"]
     for nn,node in sorted(nodes.items()):
         nodestr = '\t"%s"[label="%s"];' % (node.dot_name(), node.dot_label())
         #print(nodestr)
@@ -200,14 +200,19 @@ def dotify(edge_dat, attrs, params=True, services=True):
 
 
 
-def resolve_path(obj, jpath):
+def resolve_path(obj, dpath):
     '''
     Select out a part of obj based on a "."-separated path.  Any
     element of the path that looks like an integer will be cast to
     one assuming it indexes an array.
     '''
-    jpath = jpath.split('.')
-    for one in jpath:
+    if not dpath:
+        return obj
+    if dpath == '.':
+        return obj
+
+    dpath = dpath.split('.')
+    for one in dpath:
         if not one:
             break
         try:
@@ -236,63 +241,91 @@ def uses_to_params(uses):
 
 # fixme: add tla related options so any .jsonnet can also be loaded
 @cli.command("dotify")
-@click.option("--dpath", default="-1",
+@click.option("--dpath", default=None, type=str,
               help="A dot-delimited path into the data structure to locate a graph-like object")
+@click.option("--npath", default=None, type=str,
+              help="A dot-delimited path into the data structure to locate a nodes array")
+@click.option("--epath", default=None, type=str,
+              help="A dot-delimited path into the data structure to locate a edges array")
 @click.option("--params/--no-params", default=True,
               help="Enable/disable the inclusion of contents of configuration parameters") 
 @click.option("--services/--no-services", default=True,
               help="Enable/disable the inclusion 'service' (non-node) type components") 
+@click.option("--graph-options", multiple=True,
+              help="Graph options as key=value") 
 @jsonnet_loader("in-file")
 @click.argument("out-file")
 @click.pass_context
-def cmd_dotify(ctx, dpath, params, services, in_file, out_file):
+def cmd_dotify(ctx, dpath, npath, epath, params, services, graph_options, in_file, out_file):
     '''Convert a WCT cfg to a GraphViz dot or rendered file.
 
-    The config file may be JSON of Jsonnet.  It is expected to be in
-    the form of a WCT configuration sequence with one (typically last)
-    entry holding an object with a .data.edges key (eg a TbbFlow or
-    Pgraph config object).  If a non-standard structure is given, the
-    object with .edges can be located with --dpath
+      The config file may be JSON or Jsonnet and must provide an array
+      of graph "nodes" and an array of graph "edges".
 
-    Example bash command assuming WIRECELL_PATH properly set
+      A JSON pointer data path to a graph data structure embedded in a
+      larger structure may be specified with --dpath DPATH.
 
-    $ wirecell-pgraph dotify mycfg.jsonnet mycfg.pdf
+      By default, a wire-cell job configuration object is assumed to
+      hold the graph with a list of nodes in an array at DPATH and
+      with the final node in the array providing a list of edges at
+      DPATH.-1.data.edges.
 
-    Or piecewise
+      An arbitrary node array may be specified at --npath NPATH.
 
-    $ wcsonnet mycfg.jsonnet > mycfg.json
+      An arbitrary edge array may be specified at --epath EPATH.
 
-    $ wirecell-pgraph dotify mycfg.json mycfg.dot
+      Example bash command assuming WIRECELL_PATH properly set
 
-    $ dot -Tpdf -o mycfg.pdf mycfg.dot
+      $ wirecell-pgraph dotify mycfg.jsonnet mycfg.pdf
 
-    If jsonnet is given the usual: -A/--tla, -J/--jpath args can be
-    given.
-    '''
-    dat = in_file
+      Or piecewise
+
+      $ wcsonnet mycfg.jsonnet > mycfg.json
+
+      $ wirecell-pgraph dotify mycfg.json mycfg.dot
+
+      $ dot -Tpdf -o mycfg.pdf mycfg.dot
+
+      The arguments -A/--tla, -J/--jpath are only valid for an input
+      file in Jsonnet format.
+        '''
     try: 
-        cfg = resolve_path(dat, dpath)
+        dat = resolve_path(in_file, dpath)
     except Exception:
         click.echo('failed to resolve path "%s" in object:\n' % (dpath))
         sys.exit(1)
 
-    # if cfg["type"] not in ["Pgrapher", "Pnode"]:
-    #     click.echo('Object must be of "type" Pgrapher or Pnode, got "%s"' % cfg["type"])
-    #     sys.exit(1)
+    if any ((npath, epath)):
+        uses = resolve_path(dat, npath)
+        edges = resolve_path(dat, epath)
+        # print ('special uses')
+        # print (uses)
+        # print ('special edges')
+        # print (edges)
+    else:                       # wct cfg
+        uses = dat
+        edges = dat[-1]["data"]["edges"]
 
-    graph_apps = ("Pgrapher", "TbbFlow")
+    # graph_apps = ("Pgrapher", "TbbFlow")
 
-    # the Pgrapher app holds edges in "data" attribute
-    if cfg.get("type","") in graph_apps:
-        print ('Pgrapher object found at dpath: "%s" with %d nodes' % (dpath, len(dat)))
-        edges = cfg["data"]["edges"] 
-        uses = dat # if Pgrapher, then original is likely the full config sequence.
-    else:
-        edges = cfg["edges"] # Pnodes have edges as top-level attribute
-        uses = cfg.get("uses", list())
+    # # the Pgrapher app holds edges in "data" attribute
+    # if cfg.get("type","") in graph_apps:
+    #     print ('Pgrapher object found at dpath: "%s" with %d nodes' % (dpath, len(dat)))
+    #     edges = cfg["data"]["edges"] 
+    #     uses = dat # if Pgrapher, then original is likely the full config sequence.
+    # else:
+    #     edges = cfg["edges"] # Pnodes have edges as top-level attribute
+    #     uses = cfg.get("uses", list())
+
+    gopts = dict(rankdir="LR")
+    if graph_options:
+        gopts = dict()
+        for go in graph_options:
+            k,v = go.split("=",1)
+            gopts[k]=v
 
     attrs = uses_to_params(uses)
-    dtext = dotify(edges, attrs, params, services)
+    dtext = dotify(edges, attrs, params, services, gopts)
     ext = os.path.splitext(out_file)[1][1:]
     dot = "dot -T %s -o %s" % (ext, out_file)
     proc = subprocess.Popen(dot, shell=True, stdin = subprocess.PIPE)
