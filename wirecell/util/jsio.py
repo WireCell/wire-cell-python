@@ -134,7 +134,7 @@ def load(fname, paths=(), **kwds):
 
     if fname.endswith(('.jsonnet', '.jsonnet.gz', '.jsonnet.bz2')):
         ic = ImportCallback(paths)
-        jsmod = jsonnet_module
+        jsmod = jsonnet_module()
         try:
             text = jsmod.evaluate_snippet(fname, text, import_callback=ic, **kwds)
         except RuntimeError as err:
