@@ -41,6 +41,14 @@ def fromdict(obj):
         for typ in schema.classes():
             tname = typ.__name__
             if tname in obj:
+
+                # The "detectors" attribute was added to the schema
+                # and some older files may not include it.
+                if tname == "Store" and "detectors" not in obj["Store"]:
+                    obj["Store"]["detectors"] = dict(
+                        ident=0,
+                        anodes=list(range(len(obj["Store"]["anodes"]))))
+
                 return typ(**{k: fromdict(v) for k, v in obj[tname].items()})
 
     if isinstance(obj, list):

@@ -79,22 +79,23 @@ class Ray(object):
         self.head = numpy.asarray([wire['head'][c] for c in "xyz"])
         self.tail = numpy.asarray([wire['tail'][c] for c in "xyz"])
     @property
-    def ray(self):
+    def vector(self):
         return self.head - self.tail
     @property
     def center(self):
         return 0.5* (self.head + self.tail)
 
 
-def pitch_mean_rms(wires):
+
+def pitch_summary(wires):
     '''
-    Return [mean,rms] of pitch
+    Return pitch summary values [mean,rms,min,max,p0] 
     '''
     eks = numpy.asarray([1.0,0.0,0.0])
     zero = numpy.asarray([0.0, 0.0, 0.0])
 
     r0 = Ray(wires[0])
-    pdir = numpy.cross(eks, r0.ray)
+    pdir = numpy.cross(eks, r0.vector)
     pdir = pdir/numpy.linalg.norm(pdir)
 
     pmax=pmin=None
@@ -107,8 +108,10 @@ def pitch_mean_rms(wires):
     prays.sort()
     rays = [pr[1] for pr in prays]
     psum = psum2 = 0.0
-    for r1,r2 in zip(rays[:-1], rays[1:]):
+    for count,(r1,r2) in enumerate(zip(rays[:-1], rays[1:])):
         p = numpy.dot(pdir,r2.center - r1.center)
+        if count == 0:
+            p0 = p
         if pmax is None:
             pmax = pmin = p
         else:
@@ -120,11 +123,44 @@ def pitch_mean_rms(wires):
     pmean = psum/n
     assert(pmean>0)
     pvar = (pmean*pmean - psum2/n)/(n-1)
-    return pmean,  math.sqrt(abs(pvar)), pmin, pmax
+    return pmean,  math.sqrt(abs(pvar)), pmin, pmax, p0
+
+# old function
+def pitch_mean_rms(wires):
+    return pitch_summary(wires)[:-1]
 
 def format_pitch(p):
     pmm = tuple([pp/units.mm for pp in p])
-    return "(%.3f +/- %.3f [%.3f<%.3f]) " % pmm
+    return "(%.4f +/- %.6f [%.4f<%.4f], p0=%.4f) " % pmm
+
+def wire_pitch_rays(wires):
+    '''
+    Return a rays for wire and pitch.
+    '''
+    wtot = numpy.sum(numpy.vstack([Ray(w).vector for w in wires]), axis=0)
+    wmag = numpy.linalg.norm(wtot)
+    wdir = wtot/wmag
+
+    eks = numpy.asarray([1.0,0.0,0.0])
+    pdir = numpy.cross(eks, wdir);
+    pdir = pdir/numpy.linalg.norm(pdir)
+
+    nwires = len(wires);
+    ind1 = int(0.25*nwires);
+    ind2 = int(0.75*nwires);
+    
+    w1 = Ray(wires[ind1]);
+    w2 = Ray(wires[ind2]);
+    c2c = w2.center - w1.center
+    pmean = numpy.dot(pdir, c2c) / (ind2-ind1-1);
+
+    w0 = Ray(wires[0]);       # tends to suffer from lack of precision
+    c0 = w0.center
+    c1 = c0 + pdir*pmean
+
+    return dict(tail = {a:c0[i] for i,a in enumerate("xyz")},
+                head = {a:c1[i] for i,a in enumerate("xyz")})
+                
 
 def summary_dict(store):
     '''
@@ -177,8 +213,8 @@ def summary_dict(store):
 
                     wires = plane['wires']
                     pdict['nwires'] = len(wires)
-                    pdict['pitch'], pdict['prms'], pdict['pmin'], pdict['pmax'] = pitch_mean_rms(wires)
-                    
+                    pdict['pitch'], pdict['prms'], pdict['pmin'], pdict['pmax'], pdict['p0'] = pitch_summary(wires)
+                    pdict['pray'] = wire_pitch_rays(wires);
                     pbb = BoundingBox()
                     for wire in wires:
                         pbb(wire['head']);
@@ -210,7 +246,7 @@ def summary(store):
                 bb = BoundingBox()
                 pitches = list()
                 for plane in face['planes']:
-                    pitches.append(format_pitch(pitch_mean_rms(plane['wires'])))
+                    pitches.append(format_pitch(pitch_summary(plane['wires'])))
                     for wire in plane['wires']:
                         bb(wire['head']);
                         bb(wire['tail']);
