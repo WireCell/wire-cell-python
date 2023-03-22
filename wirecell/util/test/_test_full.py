@@ -2,6 +2,7 @@
 
 from wirecell.util.wires import db
 import numpy
+from functools import reduce
 
 # NOTE: the local wire attachement numbers count from 1.
 chip_conductor_matrix = numpy.array([
@@ -121,7 +122,7 @@ def test_full():
         for apa_column in range(apa_dim[1]):
             for apa_row in range(apa_dim[2]):
                 apa_lcr = (apa_layer, apa_column, apa_row)
-                print apa_lcr
+                print (apa_lcr)
                 anode = db.Anode()
                 det.add_anode(anode, *apa_dim)
                 crate = db.Crate()
@@ -144,7 +145,7 @@ def test_full():
                         wib.add_board(board, iconnector+offset)
                         iface = iboard//nface_spots
                         iboard_in_face = iboard%nface_spots
-                        print '\t',iface,islot,iconnector,iboard,iboard_in_face
+                        print ('\t',iface,islot,iconnector,iboard,iboard_in_face)
                         for ilayer, ispots in enumerate(nconductors_in_board_by_layer):
                             for ispot in range(ispots): # 40,40,48
                                 icond,ichip,ich = conductor_spot_map(iface, iboard_in_face,

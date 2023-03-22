@@ -3,7 +3,7 @@ Click
 numpy
 matplotlib
 networkx
-jsonnet
+gojsonnet
 semver
 sqlalchemy
 

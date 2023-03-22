@@ -817,6 +817,76 @@ def npz_to_wct(transpose, output, name, format, tinfo, baseline, scale, dtype, c
         print(f'unsupported output file type: {output}')
         return 1
 
+@cli.command("ario-cmp")
+@click.option("-f","--filenames", type=str, default=None,
+              help="comma-separated list of file names in archives to use, default is all")
+@click.argument("ario1")
+@click.argument("ario2")
+def ario_cmp(filenames, ario1, ario2):
+    '''Return true exit code if two ario archives compare the same.
+
+    An ario archive is any file supported by wirecell.util.ario.
+
+    Archives differ if any of their element file names differ or if
+    matched file names have different content.
+    '''
+    from . import ario
+    a1 = ario.load(ario1)
+    a2 = ario.load(ario2)
+
+    keys1 = list(a1.keys())
+    keys2 = list(a2.keys())
+
+    if filenames:
+        keys = [ario.stem_if(n, ('npy', 'json')) for n in filenames.split(",")]
+    else:
+        keys = list(set(keys1 + keys2))
+    keys.sort()
+    print(keys1, keys2)
+
+    def are_same(key):
+        d1 = a1[key];  d2 = a2[key]
+        t1 = type(d1); t2 = type(d2) 
+        if t1 != t2:
+            print(f'{key} type mismatch: {t1} and {t2}')
+            return False
+        if isinstance(d1, numpy.ndarray):
+            if d1.dtype != d2.dtype:
+                print(f'{key} array dtype mismatch: {d1.dtype} and {d2.dtype}')
+                return False
+            if d1.shape != d2.shape:
+                print(f'{key} array shape mismatch: {d1.shape} and {d2.shape}')
+                return False
+            if not numpy.array_equal(d1, d2):
+                print(f'{key} array value mismatch')
+                return False
+            return True
+        if d1 != d2:
+            print(f'{key} object value mismatch')
+            return False
+        return True
+
+    ndiffs = 0
+    for key in keys:
+        have1 = key in keys1
+        have2 = key in keys2
+        if have1 and have2:
+            if are_same(key):
+                ndiffs += 1
+            continue
+        if have1:
+            print(f'{key} only in {ario1}')
+            ndiffs += 1
+            continue
+        if have2:
+            print(f'{key} only in {ario2}')
+            ndiffs += 1
+            continue
+        print(f'{key} not found')
+        continue
+    sys.exit(ndiffs)
+
+
 
 
 def main():

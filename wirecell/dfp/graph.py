@@ -36,9 +36,9 @@ def connect(nxgraph, k1, k2, p1=0, p2=0, **kwds):
 
 def port_compare(what, got, want):
     if got.difference(want):
-        raise ValueError, "Got more ports for %s got:%d want:%d" % (what, len(got), len(want))
+        raise ValueError( "Got more ports for %s got:%d want:%d" % (what, len(got), len(want)))
     if want.difference(got):
-        raise ValueError, "Want more ports for %s got:%d want:%d" % (what, len(got), len(want))
+        raise ValueError( "Want more ports for %s got:%d want:%d" % (what, len(got), len(want)))
 
     return
 
@@ -65,11 +65,11 @@ def validate(nxgraph, desc):
 
         # make sure connection types match
         if tail.output_types[tp] != head.input_types[hp]:
-            raise ValueError, 'Port data type mismatch for t1=%s[%d] and t2=%s[%d]:\nt1: %s\nt2: %s\n' % \
+            raise ValueError( 'Port data type mismatch for t1=%s[%d] and t2=%s[%d]:\nt1: %s\nt2: %s\n' % \
                 (t, tp,
                  h, hp,
                  tail.output_types[tp], 
-                 head.input_types[hp])
+                 head.input_types[hp]))
 
     return
 

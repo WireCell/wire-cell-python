@@ -10,9 +10,9 @@ G = nx.barbell_graph(6,3)
 # this d3 example uses the name attribute for the mouse-hover value,
 # so add a name to each node
 for n in G:
-    G.node[n]['name'] = n
+    G.nodes[n]['name'] = n
 # write json formatted data
 d = json_graph.node_link_data(G) # node-link format to serialize
 #d = json_graph.adjacency_data(G)
 # write json
-print json.dumps(d, indent=2)
+print (json.dumps(d, indent=2))
