@@ -90,6 +90,10 @@ def load(filename, face_style):
                 continue
             chunks = line.split()
             chan,tpc,plane,wire = map(int, chunks[:4])
+            # insert this to only convert tpc 0 to do
+            # some minimum inspections
+            # if tpc > 1:
+            #     continue
             if chan == last_chan:
                 seg += 1
             else:
@@ -133,7 +137,9 @@ def load(filename, face_style):
     for wpid, wire_list in sorted(wpids.items()):
         plane,face,apa = schema.plane_face_apa(wpid)
         wire_list.sort(key = wire_pos)
-        if face == 1:           # to satisfy pitch-order and wire(x)pitch cross product
+        if face_style == 'dunevd':
+            pass # for dunevd, two faces face the same direction
+        elif face == 1:           # to satisfy pitch-order and wire(x)pitch cross product
             print ("Reversing wire order for p%d f%d a%d" %(plane,face,apa))
             wire_list.reverse()
         plane_index = store.make("plane", plane, wire_list)

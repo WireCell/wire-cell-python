@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy
 import math
 
-def _signature(gr, bnode, tick=500):
+def bsignature(gr, bnode, tick=500):
     sig = []
     id2name = {1:'u', 2:'v', 4:'w'}
     chan_index = dict()
@@ -50,16 +50,19 @@ def _signature(gr, bnode, tick=500):
             #     status = 1
             # elif math.isclose(val, 0.2,rel_tol=1e-6):
             #     status = 0
+            if val < 1:
+                val = 0
             chan_status[wpid].append(val)
     chan_offset = {1:0, 2:2400, 4: 4800}
     for wpid in chan_index:
         # print(wpid, chan_index[wpid])
         if len(chan_index[wpid]) == 0:
-            # print(gr.nodes[bnode])
-            # for node in gr.neighbors(bnode):
-            #     ndata = gr.nodes[node]
-            #     print(ndata)
-            # exit(-1)
+            # if len(sig) == 0 or sig[0] == 1024:
+            #     print(gr.nodes[bnode])
+            #     for node in gr.neighbors(bnode):
+            #         ndata = gr.nodes[node]
+            #         print(ndata)
+            #     print('')
             return None
         min = numpy.min(chan_index[wpid]) + chan_offset[wpid]
         max = numpy.max(chan_index[wpid]) + chan_offset[wpid]
@@ -81,8 +84,9 @@ def dump_blobs(gr, out_file):
     for node, ndata in gr.nodes.data():
         if ndata['code'] != 'b':
             continue;
-        sig = _signature(gr, node)
-        # print(type(node))
+        sig = bsignature(gr, node)
+        sig.append(int(ndata['value']))
+        # print(ndata)
         # print(sig)
         # exit()
         if sig is not None:
@@ -91,8 +95,11 @@ def dump_blobs(gr, out_file):
             count += 1
     print('#0-blobs:', count)
     sigs = numpy.array(sigs)
+    # sigs = sigs[sigs[:,8]>0,:]
+    # sigs = sigs[sigs[:,9]>0,:]
+    # sigs = sigs[sigs[:,10]==0,:]
     # sigs = sigs[sigs[:,0]==0,:]
-    sigs = sigs[sigs[:,0]<40,:]
+    # sigs = sigs[sigs[:,0]==1024,:]
     # sigs = sigs[sigs[:,6]<5000,:]
     sigs = _sort(sigs)
     print(sigs.shape)

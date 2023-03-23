@@ -145,11 +145,17 @@ def frame(ctx, name, tag, unit, range, interactive, datafile, output):
         mod(dat, out, tag, unit, range, interactive=interactive)
 
 
-@cli.command("wave-comp")
+@cli.command("comp1d")
+@click.option("-n", "--name", default="wave",
+              help="wave or spec")
 @click.option("-t", "--tier", default="orig",
               help="orig, gauss, ...")
-@click.option("-c", "--channel", type=int, default=0,
-              help="which channel to check")
+@click.option("--chmin", type=int, default=0,
+              help="min channel, included")
+@click.option("--chmax", type=int, default=0,
+              help="max channel, not included")
+@click.option("-u", "--unit", default="ADC",
+              help="The color units")
 @click.option("-x", "--xrange", type=(float, float), default=None,
               help="tick range of the output")
 @click.option("--interactive", is_flag=True, default=False,
@@ -158,15 +164,37 @@ def frame(ctx, name, tag, unit, range, interactive, datafile, output):
 @click.argument("datafile2")
 @click.argument("output")
 @click.pass_context
-def frame(ctx, tier, channel, xrange, interactive, datafile1, datafile2, output):
+def comp1d(ctx, name, tier, chmin, chmax, unit, xrange, interactive, datafile1, datafile2, output):
     '''
     Compare waveforms from files
     '''
     from . import frames
     with plottools.pages(output) as out:
-        frames.wave_comp(datafile1, datafile2, out,
-        tier=tier, channel=channel, xrange=xrange, interactive=interactive)
-    
+        frames.comp1d(datafile1, datafile2, out,
+        name=name, tier=tier, chmin=chmin, chmax=chmax, unit=unit, xrange=xrange, interactive=interactive)
+
+@cli.command("channel-correlation")
+@click.option("-t", "--tier", default="orig",
+              help="orig, gauss, ...")
+@click.option("--chmin", type=int, default=0,
+              help="min channel, included")
+@click.option("--chmax", type=int, default=0,
+              help="max channel, not included")
+@click.option("-u", "--unit", default="ADC",
+              help="The color units")
+@click.option("--interactive", is_flag=True, default=False,
+              help="running in interactive mode")
+@click.argument("datafile")
+@click.argument("output")
+@click.pass_context
+def channel_correlation(ctx, tier, chmin, chmax, unit, interactive, datafile, output):
+    '''
+    Compare waveforms from files
+    '''
+    from . import frames
+    with plottools.pages(output) as out:
+        frames.channel_correlation(datafile, out,
+        tier=tier, chmin=chmin, chmax=chmax, unit=unit, interactive=interactive)
 
 
 def main():
