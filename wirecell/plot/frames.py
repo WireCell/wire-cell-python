@@ -109,22 +109,31 @@ def wave(dat, out, tier='orig', unit='ADC', vmm=25, interactive=False):
             plt.show()
         out.savefig(fig)
 
-def comp1d(datafile1, datafile2, out, name='wave', tier='orig', chmin=0, chmax=1, xrange=None, interactive=False):
+def comp1d(datafile1, datafile2, out, name='wave', tier='orig', chmin=0, chmax=1, unit='ADC', xrange=None, interactive=False):
     '''
     compare waveforms from files, assuming key names in two files are the same
     '''
-    if name not in ['wave', 'spec', 'corr']:
+    if name not in ['wave', 'spec']:
         raise('name not in [\'wave\', \'spec\']!')
+
+    if unit == 'ADC':
+        uscale = 1
+        dtype = 'int16'
+    else:
+        uscale = getattr(units, unit)
+        dtype = float
 
     dat1 = ario.load(datafile1)
     dat2 = ario.load(datafile2)
     frames1 = sorted([f for f in dat1.keys() if f.startswith(f'frame_{tier}')])
 
-    def extract(dat, chmin, chmax, dtype='int16'):
+    def extract(dat, chmin, chmax):
         frame = dat[fname]
         print(frame.shape)
         frame = frame[chmin:chmax]
         frame = numpy.array((frame.T - numpy.median(frame, axis=1)).T, dtype=dtype)
+        if dtype == float:
+            frame /= 1.0*uscale
         if name == 'spec':
             frame = numpy.abs(numpy.fft.fft(frame, norm=None))
         return numpy.mean(frame, axis=0)
@@ -150,19 +159,27 @@ def comp1d(datafile1, datafile2, out, name='wave', tier='orig', chmin=0, chmax=1
             plt.show()
         out.savefig(fig)
 
-def channel_correlation(datafile, out, tier='orig', chmin=0, chmax=1, interactive=False):
+def channel_correlation(datafile, out, tier='orig', chmin=0, chmax=1, unit='ADC', interactive=False):
     '''
     check channel correlations
     '''
+    if unit == 'ADC':
+        uscale = 1
+        dtype = 'int16'
+    else:
+        uscale = getattr(units, unit)
+        dtype = float
 
     dat = ario.load(datafile)
     frames = sorted([f for f in dat.keys() if f.startswith(f'frame_{tier}')])
 
-    def extract(chmin, chmax, dtype='int16'):
+    def extract(chmin, chmax):
         frame = dat[fname]
         # print(frame.shape)
         frame = frame[chmin:chmax]
         frame = numpy.array((frame.T - numpy.median(frame, axis=1)).T, dtype=dtype)
+        if dtype == float:
+            frame /= 1.0*uscale
         return frame
 
     for fname in frames:

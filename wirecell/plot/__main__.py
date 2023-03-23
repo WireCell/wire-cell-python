@@ -154,6 +154,8 @@ def frame(ctx, name, tag, unit, range, interactive, datafile, output):
               help="min channel, included")
 @click.option("--chmax", type=int, default=0,
               help="max channel, not included")
+@click.option("-u", "--unit", default="ADC",
+              help="The color units")
 @click.option("-x", "--xrange", type=(float, float), default=None,
               help="tick range of the output")
 @click.option("--interactive", is_flag=True, default=False,
@@ -162,14 +164,14 @@ def frame(ctx, name, tag, unit, range, interactive, datafile, output):
 @click.argument("datafile2")
 @click.argument("output")
 @click.pass_context
-def comp1d(ctx, name, tier, chmin, chmax, xrange, interactive, datafile1, datafile2, output):
+def comp1d(ctx, name, tier, chmin, chmax, unit, xrange, interactive, datafile1, datafile2, output):
     '''
     Compare waveforms from files
     '''
     from . import frames
     with plottools.pages(output) as out:
         frames.comp1d(datafile1, datafile2, out,
-        name=name, tier=tier, chmin=chmin, chmax=chmax, xrange=xrange, interactive=interactive)
+        name=name, tier=tier, chmin=chmin, chmax=chmax, unit=unit, xrange=xrange, interactive=interactive)
 
 @cli.command("channel-correlation")
 @click.option("-t", "--tier", default="orig",
@@ -178,19 +180,21 @@ def comp1d(ctx, name, tier, chmin, chmax, xrange, interactive, datafile1, datafi
               help="min channel, included")
 @click.option("--chmax", type=int, default=0,
               help="max channel, not included")
+@click.option("-u", "--unit", default="ADC",
+              help="The color units")
 @click.option("--interactive", is_flag=True, default=False,
               help="running in interactive mode")
 @click.argument("datafile")
 @click.argument("output")
 @click.pass_context
-def channel_correlation(ctx, tier, chmin, chmax, interactive, datafile, output):
+def channel_correlation(ctx, tier, chmin, chmax, unit, interactive, datafile, output):
     '''
     Compare waveforms from files
     '''
     from . import frames
     with plottools.pages(output) as out:
         frames.channel_correlation(datafile, out,
-        tier=tier, chmin=chmin, chmax=chmax, interactive=interactive)
+        tier=tier, chmin=chmin, chmax=chmax, unit=unit, interactive=interactive)
 
 
 def main():
