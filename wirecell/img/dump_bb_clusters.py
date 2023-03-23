@@ -80,8 +80,7 @@ def csignature(gr, bc):
     min_bid = min(bsigs[:,11])
     return np.array([min_start, max_start, nblob,
                      min_u, max_u, min_v, max_v, min_w, max_w,
-                     charge_u, charge_v, charge_w,
-                     min_bid])
+                     charge_u, charge_v, charge_w])
 
 def _sort(arr):
     ind = np.lexsort((arr[:,8],arr[:,7],arr[:,6],arr[:,5],arr[:,4],arr[:,3],arr[:,2],arr[:,1],arr[:,0]))
