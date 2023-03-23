@@ -4,7 +4,7 @@ from wirecell.util.plottools import lg10
 import matplotlib.pyplot as plt
 import numpy
 
-def spectra(dat, out, tier='orig', unit='ADC', interactive=False):
+def spectra(dat, out, tier='orig', unit='ADC', range=25, interactive=False):
     '''
     Plot per-channel spectra of fp['frame_{tier}*'] to out
     '''
@@ -108,30 +108,77 @@ def wave(dat, out, tier='orig', unit='ADC', vmm=25, interactive=False):
         if interactive :
             plt.show()
         out.savefig(fig)
-        
-def wave_comp(datafile1, datafile2, out, tier='orig', channel=0, xrange=None, interactive=False):
+
+def comp1d(datafile1, datafile2, out, name='wave', tier='orig', chmin=0, chmax=1, xrange=None, interactive=False):
     '''
     compare waveforms from files, assuming key names in two files are the same
     '''
+    if name not in ['wave', 'spec', 'corr']:
+        raise('name not in [\'wave\', \'spec\']!')
+
     dat1 = ario.load(datafile1)
     dat2 = ario.load(datafile2)
     frames1 = sorted([f for f in dat1.keys() if f.startswith(f'frame_{tier}')])
 
+    def extract(dat, chmin, chmax, dtype='int16'):
+        frame = dat[fname]
+        print(frame.shape)
+        frame = frame[chmin:chmax]
+        frame = numpy.array((frame.T - numpy.median(frame, axis=1)).T, dtype=dtype)
+        if name == 'spec':
+            frame = numpy.abs(numpy.fft.fft(frame, norm=None))
+        return numpy.mean(frame, axis=0)
+
     for fname in frames1:
-        waves1 = dat1[fname]
-        waves1 = numpy.array((waves1.T - numpy.median(waves1, axis=1)).T, dtype='int16')
-        waves2 = dat2[fname]
-        waves2 = numpy.array((waves2.T - numpy.median(waves2, axis=1)).T, dtype='int16')
+        _,tag,num = fname.split("_")
+        chans = dat1[f'channels_{tag}_{num}']
+        offset = numpy.min(chans)
+        print(f'chan offset: {offset}')
+        waves1 = extract(dat1, chmin-offset, chmax-offset)
+        waves2 = extract(dat2, chmin-offset, chmax-offset)
 
         fig,ax = plt.subplots(1,1, figsize=(10,6))
-        ax.set_title(f'Channel: {channel}')
+        ax.set_title(f'Channel: {chmin} - {chmax}')
         
-        ax.plot(waves1[channel],'-',label=datafile1)
-        ax.plot(waves2[channel],'o',label=datafile2)
+        ax.plot(waves1,'-',label=datafile1+f' std:{numpy.std(waves1):.2f}')
+        ax.plot(waves2,'o',label=datafile2+f' std:{numpy.std(waves2):.2f}')
         ax.set_xlabel("tick [0.5 $\mu$s]")
         ax.legend()
         if xrange is not None :
             ax.set_xlim(xrange)
+        if interactive :
+            plt.show()
+        out.savefig(fig)
+
+def channel_correlation(datafile, out, tier='orig', chmin=0, chmax=1, interactive=False):
+    '''
+    check channel correlations
+    '''
+
+    dat = ario.load(datafile)
+    frames = sorted([f for f in dat.keys() if f.startswith(f'frame_{tier}')])
+
+    def extract(chmin, chmax, dtype='int16'):
+        frame = dat[fname]
+        # print(frame.shape)
+        frame = frame[chmin:chmax]
+        frame = numpy.array((frame.T - numpy.median(frame, axis=1)).T, dtype=dtype)
+        return frame
+
+    for fname in frames:
+        _,tag,num = fname.split("_")
+        chans = dat[f'channels_{tag}_{num}']
+        offset = numpy.min(chans)
+        print(f'chan offset: {offset}')
+        chmin = chmin - offset
+        chmax = chmax - offset
+        frame = extract(chmin, chmax)
+
+        fig,ax = plt.subplots(1,1, figsize=(10,6))
+        ax.set_title(f'{datafile}')
+        
+        ax.imshow(numpy.corrcoef(numpy.abs(frame)), cmap=plt.get_cmap("bwr"), interpolation = 'none', clim=(-1,1))
+        ax.set_xlabel("Channel")
         if interactive :
             plt.show()
         out.savefig(fig)
