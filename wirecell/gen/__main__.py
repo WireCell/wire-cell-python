@@ -393,6 +393,46 @@ def depo_sphere(radius, electron_density, step_size,
     numpy.savez(output, **arrays) 
 
 
+        
+
+@cli.command("frame-stats")
+@click.option("-a", "--array", default="frame_*_0", help="array name")
+@click.option("-c", "--channels", default="800,800,960", help="comma list of channel counts per plane in u,v,w order")
+@click.argument("npzfile")
+def frame_stats(array, channels, npzfile):
+    '''
+    Return (print) stats on the time distribution of a frame.
+
+    '''
+    import numpy
+
+    def calc_stats(x):
+        n = x.size
+        mu = numpy.mean(x)
+        arel = numpy.abs(x-mu)
+        rms = numpy.sqrt( (arel**2).mean() )
+        outliers = [sum(arel >= sigma*rms) for sigma in range(0,11)]
+        return [n,mu,rms]+outliers
+
+    fp = numpy.load(npzfile)
+    array = fp[array]
+    
+    channels = [int(c) for c in channels.split(',')]
+    chan0=0
+    for chan, letter in zip(channels,"UVW"):
+        plane = array[chan0:chan0+chan,:]
+        plane = (plane.T - numpy.median(plane, axis=1)).T
+
+        tsum = plane.sum(axis=0)/plane.shape[0]
+        csum = plane.sum(axis=1)/plane.shape[1]
+        # print(plane.shape, tsum.size, csum.size, (chan0, chan0+chan), numpy.sum(plane))
+
+        print(' '.join([letter, 't'] + list(map(str,calc_stats(tsum)))))
+        print(' '.join([letter, 'c'] + list(map(str,calc_stats(csum)))))
+
+        chan0 += chan
+
+
 
 def main():
     cli(obj=dict())

@@ -7,6 +7,7 @@ import click
 from wirecell.util import ario, plottools
 import numpy
 import matplotlib.pyplot as plt
+from .cli import frame_to_image
 
 cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
 
@@ -17,34 +18,6 @@ def cli(ctx):
     wirecell-plot command line interface
     '''
     ctx.ensure_object(dict)
-
-
-def good_cmap(diverging=True, color=True):
-    '''
-    An opinionated selection of the available colormaps.
-
-    Diverging picks a cmap with central value as white, o.w. zero is
-    white.  If color is False then a grayscale is used.
-
-    https://matplotlib.org/stable/tutorials/colors/colormaps.html
-    '''
-    if diverging:
-        if color: return "seismic"
-        return "seismic"        # no gray diverging?
-    if color: return "Reds"
-    return "Greys"
-    
-def tier_cmap(tier, color=True):
-    '''
-    Return a good color map for the given data tier
-    '''
-    for diverging in ('orig', 'raw'):
-        if tier.startswith(diverging):
-            return good_cmap(True, color)
-    for sequential in ('gauss', 'wiener'):
-        if tier.startswith(sequential):
-            return good_cmap(False, color)
-    return good_cmap()
 
 
 @cli.command("ntier-frames")
@@ -195,6 +168,26 @@ def channel_correlation(ctx, tier, chmin, chmax, unit, interactive, datafile, ou
     with plottools.pages(output) as out:
         frames.channel_correlation(datafile, out,
         tier=tier, chmin=chmin, chmax=chmax, unit=unit, interactive=interactive)
+
+
+@cli.command("frame-image")
+@frame_to_image
+def frame_image(array, channels, cmap, format, output, aname, fname):
+    '''
+    Dump frame array to image, ignoring channels.
+    '''
+    import matplotlib.image
+
+    matplotlib.image.imsave(output, array, format=format, cmap=cmap)
+
+@cli.command("frame-means")
+@frame_to_image
+def frame_means(array, channels, cmap, format, output, aname, fname):
+    '''
+    Plot frames and their channel-wise and tick-wise means
+    '''
+    from . import frames
+    frames.frame_means(array, channels, cmap, format, output, aname, fname)
 
 
 def main():
