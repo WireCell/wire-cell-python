@@ -48,8 +48,6 @@ def tier_cmap(tier, color=True):
 
 
 @cli.command("ntier-frames")
-@click.option("--cmap", default="seismic",
-              help="Set the color map")
 @click.option("-o", "--output", default="ntier-frames.pdf",
               help="Output file")
 @click.option("-c", "--cmap",
@@ -109,7 +107,7 @@ def ntier_frames(cmap, output, files):
                     print(' '.join(reader.keys()))
                     continue
                 print(aname, arr.shape)
-                arr = (arr.T - numpy.median(arr, axis=1).T).T
+                arr = (arr.T - numpy.median(arr, axis=1)).T
                 cmap = cmaps.get(tier, "viridis")
                 im = ax.imshow(arr, aspect='equal', interpolation='none', cmap=cmap)
                 plt.title(tier)
