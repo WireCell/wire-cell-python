@@ -109,7 +109,7 @@ def wave(dat, out, tier='orig', unit='ADC', vmm=25, interactive=False):
             plt.show()
         out.savefig(fig)
 
-def comp1d(datafile1, datafile2, out, name='wave', tier='orig', chmin=0, chmax=1, unit='ADC', xrange=None, interactive=False):
+def comp1d(datafile1, datafile2, out, name='wave', tier='orig', chmin=0, chmax=1, unit='ADC', xrange=None, interactive=False, baseline="none"):
     '''
     compare waveforms from files, assuming key names in two files are the same
     '''
@@ -127,11 +127,27 @@ def comp1d(datafile1, datafile2, out, name='wave', tier='orig', chmin=0, chmax=1
     dat2 = ario.load(datafile2)
     frames1 = sorted([f for f in dat1.keys() if f.startswith(f'frame_{tier}')])
 
-    def extract(dat, chmin, chmax):
-        frame = dat[fname]
+    # Note, channel numbers are in general opaquely defined.  We must
+    # not assume anything about a channel array's order, monotonicity,
+    # density, etc.  
+    def channel_selection(fname, dat):
+        'Return True/False for each frame array row if it is a selected channel'
+        _,tag,num = fname.split("_")
+        chans = dat[f'channels_{tag}_{num}']
+        return numpy.logical_and(chans >= chmin, chans < chmax)
+
+    def extract(fname, dat):
+        frame = numpy.array(dat[fname], dtype=dtype)
+        chans = channel_selection(fname, dat)
         print(frame.shape)
-        frame = frame[chmin:chmax]
-        frame = numpy.array((frame.T - numpy.median(frame, axis=1)).T, dtype=dtype)
+        frame = frame[chans,:]
+        # frame = numpy.array((frame.T - numpy.median(frame, axis=1)).T, dtype=dtype)
+        if baseline == "median":
+            fmed = numpy.median(frame, axis=1)
+            frame = (frame.T - fmed).T
+        if baseline == "mean":
+            fmu = numpy.mean(frame, axis=1)
+            frame = (frame.T - fmu).T
         if dtype == float:
             frame /= 1.0*uscale
         if name == 'spec':
@@ -139,18 +155,15 @@ def comp1d(datafile1, datafile2, out, name='wave', tier='orig', chmin=0, chmax=1
         return numpy.mean(frame, axis=0)
 
     for fname in frames1:
-        _,tag,num = fname.split("_")
-        chans = dat1[f'channels_{tag}_{num}']
-        offset = numpy.min(chans)
-        print(f'chan offset: {offset}')
-        waves1 = extract(dat1, chmin-offset, chmax-offset)
-        waves2 = extract(dat2, chmin-offset, chmax-offset)
+
+        waves1 = extract(fname, dat1)
+        waves2 = extract(fname, dat2)
 
         fig,ax = plt.subplots(1,1, figsize=(10,6))
         ax.set_title(f'Channel: {chmin} - {chmax}')
         
-        ax.plot(waves1,'-',label=datafile1+f' std:{numpy.std(waves1):.2f}')
         ax.plot(waves2,'o',label=datafile2+f' std:{numpy.std(waves2):.2f}')
+        ax.plot(waves1,'-',label=datafile1+f' std:{numpy.std(waves1):.2f}')
         ax.set_xlabel("tick [0.5 $\mu$s]")
         ax.legend()
         if xrange is not None :

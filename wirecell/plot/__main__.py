@@ -129,20 +129,25 @@ def frame(ctx, name, tag, unit, range, interactive, datafile, output):
               help="The color units")
 @click.option("-x", "--xrange", type=(float, float), default=None,
               help="tick range of the output")
+@click.option("--baseline", default="median",
+              type=click.Choice(["median","mean","none"]), 
+              help="type of rebaselining procedure")
 @click.option("--interactive", is_flag=True, default=False,
               help="running in interactive mode")
 @click.argument("datafile1")
 @click.argument("datafile2")
 @click.argument("output")
 @click.pass_context
-def comp1d(ctx, name, tier, chmin, chmax, unit, xrange, interactive, datafile1, datafile2, output):
+def comp1d(ctx, name, tier, chmin, chmax, unit, xrange, baseline, interactive, datafile1, datafile2, output):
     '''
     Compare waveforms from files
     '''
     from . import frames
     with plottools.pages(output) as out:
         frames.comp1d(datafile1, datafile2, out,
-        name=name, tier=tier, chmin=chmin, chmax=chmax, unit=unit, xrange=xrange, interactive=interactive)
+                      name=name, tier=tier, chmin=chmin, chmax=chmax,
+                      unit=unit, xrange=xrange,
+                      interactive=interactive, baseline=baseline)
 
 @cli.command("channel-correlation")
 @click.option("-t", "--tier", default="orig",
