@@ -90,6 +90,7 @@ class Tar(Arf):
         '''
         Create a Tar mapping on file path.  
         '''
+        self.path = path
         mode = "r"
         if path.endswith(('.gz', '.tgz')):
             mode += ':gz'
@@ -144,7 +145,7 @@ class Zip(Arf):
     This will lazy load.
     '''
     def __init__(self, path, lazy=True):
-
+        self.path = path
         zf = zipfile.ZipFile(path)
         self._lazy = lazy
         if lazy:

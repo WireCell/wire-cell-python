@@ -118,9 +118,12 @@ def frame(ctx, name, tag, unit, range, interactive, datafile, output):
 
 @cli.command("comp1d")
 @click.option("-n", "--name", default="wave",
+              type=click.Choice(["wave", "spec"]),
               help="wave or spec")
 @click.option("-t", "--tier", default="orig",
               help="orig, gauss, ...")
+@click.option("-f", "--frames", default=None,
+              help="instead of a tier selector, give comma-separated list of frame array names")
 @click.option("--chmin", type=int, default=0,
               help="min channel, included")
 @click.option("--chmax", type=int, default=0,
@@ -129,25 +132,38 @@ def frame(ctx, name, tag, unit, range, interactive, datafile, output):
               help="The color units")
 @click.option("-x", "--xrange", type=(float, float), default=None,
               help="tick range of the output")
-@click.option("--baseline", default="median",
-              type=click.Choice(["median","mean","none"]), 
-              help="type of rebaselining procedure")
+@click.option("-s", "--single", is_flag=True, default=False,
+              help="force a single plot without file name mangling")
+@click.option("--transform", multiple=True,
+              type=click.Choice(["median","mean","ac","none"]), 
+              help="type of data transformations")
 @click.option("--interactive", is_flag=True, default=False,
               help="running in interactive mode")
-@click.argument("datafile1")
-@click.argument("datafile2")
-@click.argument("output")
+@click.option("-o", "--output", type=click.Path(exists=False, dir_okay=False), required=True,
+              help="The output file name, subject to mangling if not multipage format")
+@click.argument("datafiles", nargs=-1)
+# @click.argument("output")
 @click.pass_context
-def comp1d(ctx, name, tier, chmin, chmax, unit, xrange, baseline, interactive, datafile1, datafile2, output):
+def comp1d(ctx, name, tier, frames, chmin, chmax, unit, xrange,
+           single, transform, interactive, output, datafiles):
     '''
     Compare waveforms from files
     '''
-    from . import frames
-    with plottools.pages(output) as out:
-        frames.comp1d(datafile1, datafile2, out,
-                      name=name, tier=tier, chmin=chmin, chmax=chmax,
-                      unit=unit, xrange=xrange,
-                      interactive=interactive, baseline=baseline)
+    print("transforms:", transform)
+    from .frames import comp1d as plotter
+    if frames is None:
+        frames = tier
+    else:
+        frames = [f.strip() for f in frames.split(",")]
+    if single:
+        out = plottools.NameSingleton(output)
+    else:
+        out = plottools.pages(output)
+
+    plotter(datafiles, out,
+            name=name, frames=frames, chbeg=chmin, chend=chmax,
+            unit=unit, xrange=xrange,
+            interactive=interactive, transforms=transform)
 
 @cli.command("channel-correlation")
 @click.option("-t", "--tier", default="orig",
