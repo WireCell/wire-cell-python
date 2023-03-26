@@ -8,6 +8,7 @@ Decorators and functions for constructing Click commands.
 import click
 import functools
 
+    
 # Decorator for a CLI that is common to a couple commands.
 #
 # usage in a Click main context:
@@ -32,16 +33,6 @@ def frame_to_image(func):
     @click.argument("npzfile")
     @functools.wraps(func)
     def wrapper(*args, **kwds):
-
-        fmt = kwds["format"]
-        out = kwds["output"]
-        if fmt is None:
-            if out is None or len(out.split(".")) == 1:
-                kwds["format"] = png
-            else:
-                kwds["format"] = out.split(".")[-1]
-        if out is None:
-            kwds["output"] = "/dev/stdout"
 
         channels = list(map(int, kwds["channels"].split(",")))
         if len(channels) != 3:
@@ -71,4 +62,23 @@ def frame_to_image(func):
 
         return func(*args, **kwds)
     return wrapper
+
+
+def image_output(func):
+    @click.option("-f", "--format", default=None, help="Output file format, def=auto")
+    @click.option("-o", "--output", default=None, help="Output file, def=stdout")
+    @functools.wraps(func)
+    def wrapper(*args, **kwds):
+        fmt = kwds["format"]
+        out = kwds["output"]
+        if fmt is None:
+            if out is None or len(out.split(".")) == 1:
+                kwds["format"] = "png"
+            else:
+                kwds["format"] = out.split(".")[-1]
+        if out is None:
+            kwds["output"] = "/dev/stdout"
+        return func(*args, **kwds)
+    return wrapper
+
 

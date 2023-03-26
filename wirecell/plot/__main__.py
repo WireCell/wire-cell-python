@@ -5,9 +5,12 @@ Main CLI to wirecell.plot.
 
 import click
 from wirecell.util import ario, plottools
+from wirecell.util.cli import jsonnet_loader
+from wirecell.util import jsio
+
 import numpy
 import matplotlib.pyplot as plt
-from .cli import frame_to_image
+from .cli import frame_to_image, image_output
 
 cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
 
@@ -191,6 +194,7 @@ def channel_correlation(ctx, tier, chmin, chmax, unit, interactive, datafile, ou
 
 @cli.command("frame-image")
 @frame_to_image
+@image_output
 def frame_image(array, channels, cmap, format, output, aname, fname):
     '''
     Dump frame array to image, ignoring channels.
@@ -201,12 +205,46 @@ def frame_image(array, channels, cmap, format, output, aname, fname):
 
 @cli.command("frame-means")
 @frame_to_image
+@image_output
 def frame_means(array, channels, cmap, format, output, aname, fname):
     '''
     Plot frames and their channel-wise and tick-wise means
     '''
     from . import frames
     frames.frame_means(array, channels, cmap, format, output, aname, fname)
+
+
+@cli.command("digitizer")
+@image_output
+@jsonnet_loader("jsiofile")
+def digitzer(output, format, jsiofile):
+    '''
+    Plots with output JSON file from test_digitizer
+    '''
+    fadc = numpy.array(jsiofile["adc"])
+    adc = {
+        "float": fadc,
+        "round": numpy.round(fadc),
+        "floor": numpy.floor(fadc)}
+    volts = numpy.array(jsiofile["volts"])
+    
+    fig, axes = plt.subplots(2,1, figsize=(10,6))
+
+    num = 25
+
+    plt.suptitle("Digitizer with round vs floor")
+    markers = ['o','P','X']
+    def plot_slice(ax, slc):
+        for ind, (key,val) in enumerate(adc.items()):
+            ax.plot(volts[slc], val[slc], markers[ind]+'-', alpha=0.3, label=key)
+        ax.legend()
+        ax.set_xlabel("voltage [V]")
+        ax.set_ylabel("ADC")
+    plot_slice(axes[0], slice(0,25))
+    plot_slice(axes[1], slice(-25,volts.size))
+
+    plt.tight_layout()
+    plt.savefig(output, format=format)
 
 
 def main():
