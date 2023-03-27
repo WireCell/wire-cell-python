@@ -109,13 +109,54 @@ def wave(dat, out, tier='orig', unit='ADC', vmm=25, interactive=False):
             plt.show()
         out.savefig(fig)
 
-def comp1d(datafile1, datafile2, out, name='wave', tier='orig', chmin=0, chmax=1, unit='ADC', xrange=None, interactive=False, baseline="none"):
+def comp1d(datafiles, out, name='wave', frames='orig',
+           chbeg=0, chend=1, unit='ADC', xrange=None,
+           interactive=False, transforms=(),
+           markers = ['o', '.', ',', '+', 'X', "*"]
+           ):
+    '''Compare similar waveforms across datafiles.
+
+    Comparisons are made based on common frame array names in the files.
+
+    The "datafiles" is a list of file name or ario-like file objects.
+
+    The "frames" argument specifies the frames either as an explicit
+    list of frame array names or by a "tier" to match as in the
+    pattern 'frame_<tier>_<ident>'.
+
+    The "out" argument is a PdfPages like object.
+
+    The "name" gives the type of comparison plot to produce.
+
+    The range of channel idents will be in the half-open range ["chbeg","chend").
+
+    The "baseline" sets if and how a re-baselining is performed.
+
     '''
-    compare waveforms from files, assuming key names in two files are the same
-    '''
+    print (transforms)
+
+    # Head-off bad calls
     if name not in ['wave', 'spec']:
         raise('name not in [\'wave\', \'spec\']!')
 
+    # Open data files if we have a file name, else assume an ario-like
+    # file object.
+    dats = list()
+    for dat in datafiles:
+        if isinstance(dat, str):
+            dat = ario.load(dat)
+        dats.append(dat)
+
+    # Apply tier selector if frames is a string
+    if isinstance(frames, str):
+        fnames = set()
+        for dat in dats:
+            fnames.update([n for n in dat.keys() if n.startswith(f'frame_{frames}')])
+        fnames = list(fnames)
+        fnames.sort()
+        frames = fnames
+        
+    # Treat ADC special
     if unit == 'ADC':
         uscale = 1
         dtype = 'int16'
@@ -123,47 +164,60 @@ def comp1d(datafile1, datafile2, out, name='wave', tier='orig', chmin=0, chmax=1
         uscale = getattr(units, unit)
         dtype = float
 
-    dat1 = ario.load(datafile1)
-    dat2 = ario.load(datafile2)
-    frames1 = sorted([f for f in dat1.keys() if f.startswith(f'frame_{tier}')])
-
     # Note, channel numbers are in general opaquely defined.  We must
     # not assume anything about a channel array's order, monotonicity,
-    # density, etc.  
+    # density, etc.  Note, each dat may have a different channel set.
     def channel_selection(fname, dat):
         'Return True/False for each frame array row if it is a selected channel'
         _,tag,num = fname.split("_")
         chans = dat[f'channels_{tag}_{num}']
-        return numpy.logical_and(chans >= chmin, chans < chmax)
+        return numpy.logical_and(chans >= chbeg, chans < chend)
 
+    # Extract the thing to plot.
     def extract(fname, dat):
         frame = numpy.array(dat[fname], dtype=dtype)
         chans = channel_selection(fname, dat)
         print(frame.shape)
         frame = frame[chans,:]
         # frame = numpy.array((frame.T - numpy.median(frame, axis=1)).T, dtype=dtype)
-        if baseline == "median":
+        if "median" in transforms:
             fmed = numpy.median(frame, axis=1)
             frame = (frame.T - fmed).T
-        if baseline == "mean":
+        if "mean" in transforms:
             fmu = numpy.mean(frame, axis=1)
             frame = (frame.T - fmu).T
         if dtype == float:
             frame /= 1.0*uscale
+
+        if "ac" in transforms:  # treat special so we ac-couple either spec or wave
+            print("applying ac-coupled transform")
+            cspec = numpy.fft.fft(frame)
+            cspec[:,0] = 0      # set all zero freq bins to zero
+            if name == "spec":
+                return numpy.mean(numpy.abs(cspec), axis=0)
+            wave = numpy.fft.ifft(cspec)
+            return numpy.mean(numpy.real(wave), axis=0)
+
         if name == 'spec':
-            frame = numpy.abs(numpy.fft.fft(frame, norm=None))
+            frame = numpy.abs(numpy.fft.fft(frame))
+            return numpy.mean(frame, axis=0)
         return numpy.mean(frame, axis=0)
 
-    for fname in frames1:
-
-        waves1 = extract(fname, dat1)
-        waves2 = extract(fname, dat2)
+    for fname in frames:
 
         fig,ax = plt.subplots(1,1, figsize=(10,6))
-        ax.set_title(f'Channel: {chmin} - {chmax}')
-        
-        ax.plot(waves2,'o',label=datafile2+f' std:{numpy.std(waves2):.2f}')
-        ax.plot(waves1,'-',label=datafile1+f' std:{numpy.std(waves1):.2f}')
+        tit = f'{chbeg} <= channel < {chend}'
+        if transforms:
+            tit += ' (' + ', '.join(transforms) + ')'
+        ax.set_title(tit)
+
+        for ind, dat in enumerate(dats):
+            thing = extract(fname, dat)
+            marker = markers[ind%len(markers)]
+            
+            tit = dat.path+f'\nmean:{numpy.mean(thing):.2f} std:{numpy.std(thing):.2f}'
+            ax.plot(thing, marker, label=tit)
+
         ax.set_xlabel("tick [0.5 $\mu$s]")
         ax.legend()
         if xrange is not None :
