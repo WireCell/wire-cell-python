@@ -26,6 +26,7 @@ xkcd_color = ['xkcd:red', 'xkcd:tangerine', 'xkcd:goldenrod',
 
 
 def test_plot_plane_chip():
+    plt.clf()
     inp = graph.wires_in_plane(G, P.plane[0])
     inc = graph.wires_in_chip(G, P.chip[8])
     wires = inp.intersection(inc)
@@ -34,11 +35,13 @@ def test_plot_plane_chip():
     plt.savefig('test_plot_plane_chip.pdf')
 
 def test_plot_conductor():
+    plt.clf()
     wg, wpos = graph.conductors_graph(G, [P.conductor[0]])
     networkx.draw(wg, pos=wpos, with_labels=True)
     plt.savefig('test_plot_conductor.pdf')
 
 def test_plot_chip():
+    plt.clf()
     with PdfPages('test_plot_chip.pdf') as pdf:
         for chip in P.chip:
             plt.title(chip)
@@ -56,7 +59,7 @@ def test_plot_chip():
             networkx.draw_networkx_edges(wg, pos=wpos, style=styles,
                                          width=0.1, arrows=False,
                                          edge_color=colors)
-            print chip,len(channels),len(conductors)
+            print (chip,len(channels),len(conductors))
             pdf.savefig()
             plt.close()
             
@@ -76,7 +79,7 @@ def test_plot_board(debug=False):
             edges = list()
             colors = list()
             styles = list()
-            print 'board:',board, len(chips), chips
+            print ('board:',board, len(chips), chips)
             for ichip, chip in enumerate(chips):
                 channels = graph.neighbors_by_type(G, chip, 'channel')
                 conductors = chain.from_iterable([graph.neighbors_by_type(G, ch, 'conductor') for ch in channels])
@@ -109,6 +112,7 @@ def test_plot_board(debug=False):
             
 
 def test_plot_wib_wires():
+    plt.clf()
     with PdfPages('test_plot_wib_wires.pdf') as pdf:
 
         boards_by_connector = defaultdict(list)
@@ -117,7 +121,7 @@ def test_plot_wib_wires():
             for b in boards_on_wib:
                 iconnector = G[wib][b]['connector']
                 boards_by_connector[iconnector].append((wib,b))
-        print boards_by_connector
+        print (boards_by_connector)
         for iconnector, wib_boards in sorted(boards_by_connector.items()):
             for wib,board in wib_boards:
                 plt.title("%s connector %s %s" % (wib, iconnector, board))
@@ -126,7 +130,7 @@ def test_plot_wib_wires():
                 chips = graph.neighbors_by_type(G, board, 'chip')
                 for chip in chips:
                     channels = graph.neighbors_by_type(G, chip, 'channel')
-                    print chip, len(channels)
+                    print (chip, len(channels))
                     conductors = chain.from_iterable([graph.neighbors_by_type(G, ch, 'conductor') for ch in channels])
                     cg, cpos = graph.conductors_graph(G, conductors)
                     bg = networkx.compose(bg, cg)
@@ -137,6 +141,7 @@ def test_plot_wib_wires():
             
 def test_plot_wib ():
     'Plot all wib connections'
+    plt.clf()
 
     newG = networkx.Graph()
     newP = dict()

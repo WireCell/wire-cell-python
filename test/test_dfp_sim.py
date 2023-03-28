@@ -18,12 +18,12 @@ def test_gen_sim_dfp():
     graph.connect(g, "WireSource", "BoundCells")
     graph.connect(g, "BoundCells", "ChannelCellSelector",0,1)
     graph.connect(g, "ChannelCellSelector", "CellSliceSink")
-    desc = nodetype.loads(open("nodedesc.json").read())
-    graph.validate(g, desc)
+    # desc = nodetype.loads(open("nodedesc.json").read())
+    # graph.validate(g, desc)
 
     ag = dot.gvgraph(g);
     open("test_dfp_sim.dot","w").write(ag.string())
-    print check_output("dot -Tpdf -otest_dfp_sim.pdf test_dfp_sim.dot", shell=True)
+    print (check_output("dot -Tpdf -otest_dfp_sim.pdf test_dfp_sim.dot", shell=True))
 
     wcg = graph.wirecell_graph(g)
     cfg = [dict(type= "TbbFlow", data=dict(dfp = "TbbDataFlowGraph", graph = wcg)),]

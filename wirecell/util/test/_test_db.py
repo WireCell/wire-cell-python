@@ -2,7 +2,6 @@
 import wirecell.util.wires.db as db
 
 def test_classes():
-    print
     ses = db.session()
 
     # parent
@@ -61,11 +60,11 @@ def test_classes():
 
     det = ses.query(db.Detector).one()
 
-    print 'DET:',det
-    print 'DET.crates:', det.crates
-    print 'DET.crate_links:', det.crate_links
-    print 'DET.crates[0].detectors:', det.crates[0].detectors
-    print 'DET.crates[1].detectors:', det.crates[1].detectors
+    print ('DET:',det)
+    print ('DET.crates:', det.crates)
+    print ('DET.crate_links:', det.crate_links)
+    print ('DET.crates[0].detectors:', det.crates[0].detectors)
+    print ('DET.crates[1].detectors:', det.crates[1].detectors)
 
     assert det.crates[0].detectors[0] == det
     # The *_links should be ordered by the connection attributes
@@ -77,18 +76,18 @@ def test_classes():
 
     crate42 = ses.query(db.DetectorCrateLink).\
               filter(db.DetectorCrateLink.address==42).one().crate
-    print crate42
+    print (crate42)
     assert crate42 == det.crate_links[1].crate
 
-    print crate42.wibs[0]
+    print (crate42.wibs[0])
     board = crate42.wibs[0].boards[0]
-    print board
+    print (board)
 
-    print board.conductors
-    print board.chips
+    print (board.conductors)
+    print (board.chips)
     chip = board.chips[0]
-    print chip.channels
+    print (chip.channels)
     for ch in chip.channels:
-        print ch, ch.conductor
+        print (ch, ch.conductor)
     return
 

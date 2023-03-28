@@ -2,9 +2,11 @@
 
 import os
 import sys
+import math
 import json
 import click
 import numpy
+from collections import defaultdict
 from wirecell import units
 from wirecell.util.functions import unitify, unitify_parse
 
@@ -199,6 +201,173 @@ def wires_info(ctx, json_file):
     dat = winfo.summary(wires)
     print ('\n'.join(dat))
 
+
+@cli.command("wires-ordering")
+@click.option("-o", "--output", default=None,
+              help="Output file, default based on input")
+@click.argument("json-file")
+@click.pass_context
+def wires_ordering(ctx, output, json_file):
+    '''
+    Make PDF showing info on how wires are ordered in each plane.
+
+    The result is for debugging and perhaps cryptic.
+    '''
+    import matplotlib.pyplot as plt
+    fig,axes = plt.subplots(nrows=2,ncols=1)
+
+    bname = os.path.basename(json_file)
+    name = bname[:bname.find(".json")]
+    if output is None:
+        output = name + "-wire-ordering.pdf"
+    plt.suptitle(name)
+    titles = ["Y", "Z", "S", "Zi"] # match calls to add_plot()
+
+    def add_plot(ind, arr, lab):
+        da = arr[1:] - arr[:-1]
+        pa = numpy.zeros_like(da);
+        pa[da>0] = +1.0;
+        pa[da<0] = -1.0;
+        axes[ind].plot(pa, label=lab)
+
+    import wirecell.util.wires.persist as wpersist
+    import wirecell.util.wires.info as winfo
+    wires = winfo.todict(wpersist.load(json_file))
+    for anode in wires[0]["anodes"][:1]:
+        aid=anode["ident"]
+        for face in anode["faces"]:
+            fid=face["ident"]
+            for plane in face["planes"]:
+                pid=plane["ident"]
+                dat=defaultdict(list)
+
+                wires = plane["wires"]
+                h = numpy.array([tuple(w["head"].values()) for w in wires])
+                t = numpy.array([tuple(w["tail"].values()) for w in wires])
+                # (nwires,3)
+                m = 0.5*(h+t)   # midpoints
+                x,y,z = m.T
+                ymin = numpy.min(y)
+                zmin = numpy.min(z)
+                yr = y - ymin
+                zr = z - zmin
+                dw = h - t      # wire length vectors
+                mw = numpy.sqrt(numpy.sum(numpy.abs(dw)**2,axis=-1))
+                w = dw/mw[:,None]        # wire unit vectors
+                Y = numpy.array((0,1,0)) # y axis
+                Z = numpy.array((0,0,1)) # z axis
+                s = yr*numpy.abs(numpy.dot(w,Z)) + zr*numpy.abs(numpy.dot(w,Y))
+
+                # from multitpc.py
+                # z_intercept = z - (y * dw[:,2]) / dw[:,1]
+
+                add_plot(0,y,f'Y a={aid} f={fid} p={pid}')
+                add_plot(1,z,f'Z a={aid} f={fid} p={pid}')
+#                add_plot(2,s,f'S a={aid} f={fid} p={pid}')
+                # add_plot(3,z_intercept,f'Zi a={aid} f={fid} p={pid}')
+
+                # for wire in plane["wires"]:
+                #     h = numpy.array(list(wire["head"].values()))
+                #     t = numpy.array(list(wire["tail"].values()))
+                #     x,y,z = 0.5*(h+t)
+                #     dw = h - t
+                #     w = dw / numpy.linalg.norm(dw) # unit vec along wire
+                #     s = y*abs(numpy.dot(w,(0,0,1)))+z*abs(numpy.dot(w,(0,1,0)))
+                #     i = wire["ident"]
+                #     a = math.atan2(w[1],w[2]) * 180/math.pi
+                #     print(f's={s:.1f} y={y:.1f} z={z:.1f} a={a:.1f}')
+                #     for p in "iasxyz":
+                #         dat[p].append(locals()[p])
+                # a,s,y,z=dat["a"],dat["s"], dat["y"], dat["z"]
+                # for ind in range(1,len(s)):
+                #     print('s','+' if s[ind]>s[ind-1] else '-',
+                #           'y','+' if y[ind]>y[ind-1] else '-',
+                #           'z','+' if z[ind]>z[ind-1] else '-',
+                #           'a',a[ind])
+                        
+    print(output)
+    for ind, ax in enumerate(axes):
+        ax.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
+        ax.set_title(titles[ind])
+    plt.tight_layout()
+    fig.savefig(output)
+        
+
+@cli.command("wires-channels")
+@click.option("-o", "--output", default=None,
+              help="Output file, default based on input")
+@click.argument("json-file")
+@click.pass_context
+def wires_channels(ctx, output, json_file):
+    '''
+    Make PDF showing info on how wires vs channels.
+    '''
+    import wirecell.util.wires.persist as wpersist
+    import wirecell.util.wires.info as winfo
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_pdf import PdfPages
+    titles = ["X vs ch", "Y vs ch", "Z vs ch"]
+
+    bname = os.path.basename(json_file)
+    name = bname[:bname.find(".json")]
+    if output is None:
+        output = name + "-wires-channels.pdf"
+
+
+    all_wires = winfo.todict(wpersist.load(json_file))
+
+    specs = ["center", "head", "tail"]
+    def get_xyz(wires, spec):
+        if spec in ("head","center"):
+            h = numpy.array([tuple(w["head"].values()) for w in wires])
+        if spec in ("tail","center"):
+            t = numpy.array([tuple(w["tail"].values()) for w in wires])
+        if spec == "center":
+            m = 0.5*(h+t)   # midpoints
+            return m.T
+        if spec == "head":
+            return h.T
+        if spec == "tail":
+            return t.T
+        raise ValueError(f'spec {spec} not supported')
+    
+    with PdfPages(output) as pdf:
+
+        for spec in specs:
+
+            fig,axes = plt.subplots(nrows=len(titles),ncols=1)
+            plt.suptitle(name)
+
+            for anode in all_wires[0]["anodes"][:1]:
+                aid=anode["ident"]
+                for face in anode["faces"]:
+                    fid=face["ident"]
+                    for plane in face["planes"]:
+                        pid=plane["ident"]
+                        dat=defaultdict(list)
+
+                        pwires = plane["wires"]
+                        x,y,z = get_xyz(pwires, spec)
+                        c = numpy.array([w["channel"] for w in pwires])
+
+                        ptype="scatter"
+                        par = dict(marker="o")
+                        if ptype == "scatter":
+                            par["s"] = 0.2
+                        getattr(axes[0], ptype)(c, x, label=f'X a={aid} f={fid} p={pid}',**par)
+                        getattr(axes[1], ptype)(c, y, label=f'Y a={aid} f={fid} p={pid}',**par)
+                        getattr(axes[2], ptype)(c, z, label=f'Z a={aid} f={fid} p={pid}',**par)
+
+            for ind, ax in enumerate(axes):
+                ax.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
+                tit = titles[ind]
+                ax.set_title(f'{spec}: {tit}')
+            plt.tight_layout()
+            pdf.savefig(fig)
+            plt.close()
+    print(output)
+
+    
 
 @cli.command("wires-volumes")
 @click.option('-a', '--anode', default=1.0,
@@ -820,6 +989,76 @@ def npz_to_wct(transpose, output, name, format, tinfo, baseline, scale, dtype, c
     else:
         print(f'unsupported output file type: {output}')
         return 1
+
+@cli.command("ario-cmp")
+@click.option("-f","--filenames", type=str, default=None,
+              help="comma-separated list of file names in archives to use, default is all")
+@click.argument("ario1")
+@click.argument("ario2")
+def ario_cmp(filenames, ario1, ario2):
+    '''Return true exit code if two ario archives compare the same.
+
+    An ario archive is any file supported by wirecell.util.ario.
+
+    Archives differ if any of their element file names differ or if
+    matched file names have different content.
+    '''
+    from . import ario
+    a1 = ario.load(ario1)
+    a2 = ario.load(ario2)
+
+    keys1 = list(a1.keys())
+    keys2 = list(a2.keys())
+
+    if filenames:
+        keys = [ario.stem_if(n, ('npy', 'json')) for n in filenames.split(",")]
+    else:
+        keys = list(set(keys1 + keys2))
+    keys.sort()
+    print(keys1, keys2)
+
+    def are_same(key):
+        d1 = a1[key];  d2 = a2[key]
+        t1 = type(d1); t2 = type(d2) 
+        if t1 != t2:
+            print(f'{key} type mismatch: {t1} and {t2}')
+            return False
+        if isinstance(d1, numpy.ndarray):
+            if d1.dtype != d2.dtype:
+                print(f'{key} array dtype mismatch: {d1.dtype} and {d2.dtype}')
+                return False
+            if d1.shape != d2.shape:
+                print(f'{key} array shape mismatch: {d1.shape} and {d2.shape}')
+                return False
+            if not numpy.array_equal(d1, d2):
+                print(f'{key} array value mismatch')
+                return False
+            return True
+        if d1 != d2:
+            print(f'{key} object value mismatch')
+            return False
+        return True
+
+    ndiffs = 0
+    for key in keys:
+        have1 = key in keys1
+        have2 = key in keys2
+        if have1 and have2:
+            if are_same(key):
+                ndiffs += 1
+            continue
+        if have1:
+            print(f'{key} only in {ario1}')
+            ndiffs += 1
+            continue
+        if have2:
+            print(f'{key} only in {ario2}')
+            ndiffs += 1
+            continue
+        print(f'{key} not found')
+        continue
+    sys.exit(ndiffs)
+
 
 
 

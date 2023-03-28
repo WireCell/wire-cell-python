@@ -33,7 +33,7 @@ def test_make():
     graph.validate(g, desc)
 
     gvgraph = dot.gvgraph_nodetypes(g, desc)
-    print gvgraph.string()
+    print (gvgraph.string())
 
     # dot = g.dumps_dot()
     # print dot

@@ -146,7 +146,7 @@ class Detector(namedtuple("Detector", "ident anodes")):
     __slots__ = ()
 
 
-class Store(namedtuple("Store","anodes faces planes wires points")):
+class Store(namedtuple("Store","detectors anodes faces planes wires points")):
     '''
     A store of collections of the objects of this schema.
 
@@ -224,7 +224,7 @@ def maker():
 
         def schema(self):
             'Return self as a schema.Store'
-            return Store(self.anodes, self.faces, self.planes, self.wires, self.points)
+            return Store(self.detectors, self.anodes, self.faces, self.planes, self.wires, self.points)
     return SchemaMaker()
     
     

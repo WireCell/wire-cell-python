@@ -193,6 +193,28 @@ def plot_blobs(ctx, plot, clusters, plot_file):
             printer.savefig()
     click.echo(plot_file)
 
+@cli.command("dump-blobs")
+@cluster_file
+@click.pass_context
+def dump_blobs(ctx, clusters, out_file=None):
+    '''
+    dump blob signitures in cluster to a file.
+    '''
+    import wirecell.img.dump_blobs as db
+    for gr in clusters:
+        db.dump_blobs(gr, out_file)
+
+@cli.command("dump-bb-clusters")
+@cluster_file
+@click.pass_context
+def dump_bb_clusters(ctx, clusters):
+    '''
+    dump blob cluster signitures
+    '''
+    import wirecell.img.dump_bb_clusters as dc
+    for gr in clusters:
+        dc.dump_bb_clusters(gr)
+
 
 @cli.command("inspect")
 @click.argument("cluster-file")
@@ -362,8 +384,8 @@ def bee_blobs(output, geom, rse, sampling, speed, t0, density, cluster_files):
     speed = unitify(speed)
     t0 = unitify(t0)
 
-    dat = dict(runNo=rse[0], subRunNo=rse[1], eventNo=rse[2], geom=geom, type="wire-cell",
-               x=list(), y=list(), z=list(), q=list()) # , cluster_id=list()
+    dat = dict(runNo=rse[0], subRunNo=rse[1], eventNo=rse[2], geom=geom, type="cluster",
+               x=list(), y=list(), z=list(), q=list(), cluster_id=list())
 
     def fclean(arr):
         return [round(a, 3) for a in arr]
@@ -373,7 +395,11 @@ def bee_blobs(output, geom, rse, sampling, speed, t0, density, cluster_files):
     sampling_func = dict(
         center = converter.blob_center,
         uniform = lambda b : converter.blob_uniform_sample(b, density),
-    )[sampling];
+    )[sampling]
+
+    import networkx as nx
+    def nodes_oftype(gr, typecode):
+        return [n for n,d in gr.nodes.data() if d['code'] == typecode]
 
     for ctf in cluster_files:
         gr = list(tap.load(ctf))[0] # fixme: for now ignore subsequent graphs
@@ -382,12 +408,20 @@ def bee_blobs(output, geom, rse, sampling, speed, t0, density, cluster_files):
         if 0 == gr.number_of_nodes():
             print("skipping empty graph %s" % ctf)
             continue
-        arr = converter.blobpoints(gr, sampling_func)
-        print ("%s: %d points" % (ctf, arr.shape[0]))
-        dat['x'] += fclean(arr[:,0]/units.cm)
-        dat['y'] += fclean(arr[:,1]/units.cm)
-        dat['z'] += fclean(arr[:,2]/units.cm)
-        dat['q'] += fclean(arr[:,3])
+        bnodes = nodes_oftype(gr,'b')
+        bgr = gr.subgraph(bnodes)
+        cluster_id = 0
+        for bc in nx.connected_components(bgr):
+            arr = converter.blobpoints(gr.subgraph(bc), sampling_func)
+            if len(arr.shape) < 2:
+                continue
+            print ("%s: %d points" % (ctf, arr.shape[0]))
+            dat['x'] += fclean(arr[:,0]/units.cm)
+            dat['y'] += fclean(arr[:,1]/units.cm)
+            dat['z'] += fclean(arr[:,2]/units.cm)
+            dat['q'] += fclean(arr[:,3])
+            dat['cluster_id'] += [cluster_id for i in range(len(arr[:,0]))]
+            cluster_id += 1
 
     import json
     # monkey patch

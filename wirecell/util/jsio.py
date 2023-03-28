@@ -9,6 +9,13 @@ import json
 import gzip
 from pathlib import Path
 
+def jsonnet_module():
+    try:
+        import _gojsonnet as _jsonnet
+    except ImportError:
+        import _jsonnet
+    return _jsonnet
+
 def clean_paths(paths, add_cwd=True):
     '''Return list of paths made absolute with cwd as first .
 
@@ -48,6 +55,7 @@ def resolve(filename, paths=()):
             return fp
     raise ValueError(f"file not found: {filename}")
 
+
 def try_path(path, rel):
     '''
     Try to open a path
@@ -64,9 +72,9 @@ def try_path(path, rel):
     if not os.path.isfile(full_path):
         return full_path, None
     # https://github.com/google/jsonnet/releases/tag/v0.19.1
-    import _jsonnet
+    jsmod = jsonnet_module()
     import semver
-    import_returns_bytes = semver.compare(getattr(_jsonnet, 'version', 'v0.18.0')[1:], '0.18.0') > 0
+    import_returns_bytes = semver.compare(getattr(jsmod, 'version', 'v0.18.0')[1:], '0.18.0') > 0
     flags = 'r'
     if import_returns_bytes:
         flags = 'rb'
@@ -126,9 +134,9 @@ def load(fname, paths=(), **kwds):
 
     if fname.endswith(('.jsonnet', '.jsonnet.gz', '.jsonnet.bz2')):
         ic = ImportCallback(paths)
-        from _jsonnet import evaluate_snippet
+        jsmod = jsonnet_module()
         try:
-            text = evaluate_snippet(fname, text, import_callback=ic, **kwds)
+            text = jsmod.evaluate_snippet(fname, text, import_callback=ic, **kwds)
         except RuntimeError as err:
             raise RuntimeError(f"in file: {fname}") from err
     elif fname.endswith(('.json', '.json.bz2', '.json.gz')):
@@ -158,6 +166,7 @@ def scalar_typify(val):
     if val.lower() in ("false", "no", "off"):
         return ("false", True)
     return (val, False)
+
 
 def tla_pack(tlas, paths=(), pre='tla_'):
     '''
@@ -202,6 +211,7 @@ def tla_pack(tlas, paths=(), pre='tla_'):
     # these keywords are what jsonnet.evaluate_file() expects
     return {pre+'vars':vars, pre+'codes': codes}
         
+
 def wash_path(path):
     '''
     Given one or more strings that are directory paths or :-separated

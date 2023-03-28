@@ -8,6 +8,7 @@ import numpy as np
 from matplotlib.backends.backend_pdf import PdfPages
 import matplotlib.pyplot as plt
 import numpy
+from pathlib import Path
 
 class NameSequence(object):
     def __init__(self, name, first=0):
@@ -59,6 +60,35 @@ class NameSequence(object):
         return
         
         
+class NameSingleton(object):
+    def __init__(self, path):
+        '''
+        Like a NameSequence but force a singleton.
+
+        No name mangling, and subsequent calls are ignored.
+        '''
+        self.path = Path(path)
+        self.called = 0
+
+    def __call__(self):
+        return self.path
+
+    def savefig(self, *args, **kwds):
+        '''
+        Act like PdfPages
+        '''
+        if self.called == 0:
+            if not self.path.parent.exists():
+                self.path.parent.mkdir(parents=True)
+            plt.savefig(self.path.absolute(), **kwds)
+        self.called += 1
+
+    def __enter__(self):
+        return self
+    def __exit__(self, typ, value, traceback):
+        return
+
+
 def pages(name):
     if name.endswith(".pdf"):
         return PdfPages(name)

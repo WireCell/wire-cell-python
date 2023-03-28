@@ -4,7 +4,7 @@ from wirecell.util.plottools import lg10
 import matplotlib.pyplot as plt
 import numpy
 
-def spectra(dat, out, tier='orig', unit='ADC', interactive=False):
+def spectra(dat, out, tier='orig', unit='ADC', range=25, interactive=False):
     '''
     Plot per-channel spectra of fp['frame_{tier}*'] to out
     '''
@@ -108,26 +108,116 @@ def wave(dat, out, tier='orig', unit='ADC', vmm=25, interactive=False):
         if interactive :
             plt.show()
         out.savefig(fig)
-        
-def wave_comp(datafile1, datafile2, out, tier='orig', channel=0, xrange=None, interactive=False):
-    '''
-    compare waveforms from files, assuming key names in two files are the same
-    '''
-    dat1 = ario.load(datafile1)
-    dat2 = ario.load(datafile2)
-    frames1 = sorted([f for f in dat1.keys() if f.startswith(f'frame_{tier}')])
 
-    for fname in frames1:
-        waves1 = dat1[fname]
-        waves1 = numpy.array((waves1.T - numpy.median(waves1, axis=1)).T, dtype='int16')
-        waves2 = dat2[fname]
-        waves2 = numpy.array((waves2.T - numpy.median(waves2, axis=1)).T, dtype='int16')
+def comp1d(datafiles, out, name='wave', frames='orig',
+           chbeg=0, chend=1, unit='ADC', xrange=None,
+           interactive=False, transforms=(),
+           markers = ['o', '.', ',', '+', 'X', "*"]
+           ):
+    '''Compare similar waveforms across datafiles.
+
+    Comparisons are made based on common frame array names in the files.
+
+    The "datafiles" is a list of file name or ario-like file objects.
+
+    The "frames" argument specifies the frames either as an explicit
+    list of frame array names or by a "tier" to match as in the
+    pattern 'frame_<tier>_<ident>'.
+
+    The "out" argument is a PdfPages like object.
+
+    The "name" gives the type of comparison plot to produce.
+
+    The range of channel idents will be in the half-open range ["chbeg","chend").
+
+    The "baseline" sets if and how a re-baselining is performed.
+
+    '''
+    print (transforms)
+
+    # Head-off bad calls
+    if name not in ['wave', 'spec']:
+        raise('name not in [\'wave\', \'spec\']!')
+
+    # Open data files if we have a file name, else assume an ario-like
+    # file object.
+    dats = list()
+    for dat in datafiles:
+        if isinstance(dat, str):
+            dat = ario.load(dat)
+        dats.append(dat)
+
+    # Apply tier selector if frames is a string
+    if isinstance(frames, str):
+        fnames = set()
+        for dat in dats:
+            fnames.update([n for n in dat.keys() if n.startswith(f'frame_{frames}')])
+        fnames = list(fnames)
+        fnames.sort()
+        frames = fnames
+        
+    # Treat ADC special
+    if unit == 'ADC':
+        uscale = 1
+        dtype = 'int16'
+    else:
+        uscale = getattr(units, unit)
+        dtype = float
+
+    # Note, channel numbers are in general opaquely defined.  We must
+    # not assume anything about a channel array's order, monotonicity,
+    # density, etc.  Note, each dat may have a different channel set.
+    def channel_selection(fname, dat):
+        'Return True/False for each frame array row if it is a selected channel'
+        _,tag,num = fname.split("_")
+        chans = dat[f'channels_{tag}_{num}']
+        return numpy.logical_and(chans >= chbeg, chans < chend)
+
+    # Extract the thing to plot.
+    def extract(fname, dat):
+        frame = numpy.array(dat[fname], dtype=dtype)
+        chans = channel_selection(fname, dat)
+        print(frame.shape)
+        frame = frame[chans,:]
+        # frame = numpy.array((frame.T - numpy.median(frame, axis=1)).T, dtype=dtype)
+        if "median" in transforms:
+            fmed = numpy.median(frame, axis=1)
+            frame = (frame.T - fmed).T
+        if "mean" in transforms:
+            fmu = numpy.mean(frame, axis=1)
+            frame = (frame.T - fmu).T
+        if dtype == float:
+            frame /= 1.0*uscale
+
+        if "ac" in transforms:  # treat special so we ac-couple either spec or wave
+            print("applying ac-coupled transform")
+            cspec = numpy.fft.fft(frame)
+            cspec[:,0] = 0      # set all zero freq bins to zero
+            if name == "spec":
+                return numpy.mean(numpy.abs(cspec), axis=0)
+            wave = numpy.fft.ifft(cspec)
+            return numpy.mean(numpy.real(wave), axis=0)
+
+        if name == 'spec':
+            frame = numpy.abs(numpy.fft.fft(frame))
+            return numpy.mean(frame, axis=0)
+        return numpy.mean(frame, axis=0)
+
+    for fname in frames:
 
         fig,ax = plt.subplots(1,1, figsize=(10,6))
-        ax.set_title(f'Channel: {channel}')
-        
-        ax.plot(waves1[channel],'-',label=datafile1)
-        ax.plot(waves2[channel],'o',label=datafile2)
+        tit = f'{chbeg} <= channel < {chend}'
+        if transforms:
+            tit += ' (' + ', '.join(transforms) + ')'
+        ax.set_title(tit)
+
+        for ind, dat in enumerate(dats):
+            thing = extract(fname, dat)
+            marker = markers[ind%len(markers)]
+            
+            tit = dat.path+f'\nmean:{numpy.mean(thing):.2f} std:{numpy.std(thing):.2f}'
+            ax.plot(thing, marker, label=tit)
+
         ax.set_xlabel("tick [0.5 $\mu$s]")
         ax.legend()
         if xrange is not None :
@@ -135,3 +225,151 @@ def wave_comp(datafile1, datafile2, out, tier='orig', channel=0, xrange=None, in
         if interactive :
             plt.show()
         out.savefig(fig)
+
+def channel_correlation(datafile, out, tier='orig', chmin=0, chmax=1, unit='ADC', interactive=False):
+    '''
+    check channel correlations
+    '''
+    if unit == 'ADC':
+        uscale = 1
+        dtype = 'int16'
+    else:
+        uscale = getattr(units, unit)
+        dtype = float
+
+    dat = ario.load(datafile)
+    frames = sorted([f for f in dat.keys() if f.startswith(f'frame_{tier}')])
+
+    def extract(chmin, chmax):
+        frame = dat[fname]
+        # print(frame.shape)
+        frame = frame[chmin:chmax]
+        frame = numpy.array((frame.T - numpy.median(frame, axis=1)).T, dtype=dtype)
+        if dtype == float:
+            frame /= 1.0*uscale
+        return frame
+
+    for fname in frames:
+        _,tag,num = fname.split("_")
+        chans = dat[f'channels_{tag}_{num}']
+        offset = numpy.min(chans)
+        print(f'chan offset: {offset}')
+        chmin = chmin - offset
+        chmax = chmax - offset
+        frame = extract(chmin, chmax)
+
+        fig,ax = plt.subplots(1,1, figsize=(10,6))
+        ax.set_title(f'{datafile}')
+        
+        ax.imshow(numpy.corrcoef(numpy.abs(frame)), cmap=plt.get_cmap("bwr"), interpolation = 'none', clim=(-1,1))
+        ax.set_xlabel("Channel")
+        if interactive :
+            plt.show()
+        out.savefig(fig)
+
+
+def frame_means(array, channels, cmap, format, output, aname, fname):
+    '''
+    Plot frames and their channel-wise and tick-wise means
+    '''
+
+    import matplotlib.pyplot as plt
+    from matplotlib.gridspec import GridSpec
+    import matplotlib.cm as cm
+    from matplotlib.colors import Normalize
+    
+    # layout = "constrained"
+    layout = "tight"            # this gives warning but closer to what I want.
+    fig = plt.figure(layout=layout, figsize=(10,8))
+    fig.suptitle(f'array "{aname}" from {fname}\nand time/channel projected means')
+    # base + 
+    # [0:mean, 1:image, 2:colorbar]
+    # [      , 4:mean,            ]
+    # x3
+
+    nplns=3
+    nrows=2
+    ncols=2
+    gridspec = GridSpec(nplns*nrows+1, ncols,
+                        figure=fig,
+                        height_ratios=[1,3,1,3,1,3,1], width_ratios=[1,30],
+                        left=0.05, right=0.95, hspace=0.0001, wspace=0.0001)
+    def gs(pln, row, col):
+        return gridspec[(pln*nrows+1)*ncols + row*ncols + col]
+
+    steerx = None
+    steerc = None
+    steert = None
+
+    normalizer=Normalize(numpy.min(array), numpy.max(array))
+    cb = cm.ScalarMappable(norm=normalizer)
+    
+    aximgs = list()
+    for pln, letter in enumerate("UVW"):
+
+        pgs = lambda r,c: gs(pln, r, c)
+
+        base = pln*6
+
+        if steerx is None:
+            aximg = fig.add_subplot(pgs(0, 1))
+            steerx = aximg
+        else:
+            aximg = fig.add_subplot(pgs(0, 1), sharex=steerx)
+
+        aximg.set_axis_off()
+        aximgs.append(aximg)
+
+        if steerc is None:
+            axmu0 = fig.add_subplot(pgs(0, 0), sharey=aximg)
+            steerc = axmu0
+        else:
+            axmu0 = fig.add_subplot(pgs(0, 0), sharey=aximg, sharex=steerc)
+
+        if steert is None:
+            axmu1 = fig.add_subplot(pgs(1, 1), sharex=steerx)
+            steert = axmu1
+        else:
+            axmu1 = fig.add_subplot(pgs(1, 1), sharex=steerx, sharey=steert)
+        axmus = [axmu1, axmu0]
+
+        if pln == 0:
+            plt.setp( axmu1.get_xticklabels(), visible=False)
+            axmu0.xaxis.tick_top()
+            axmu0.tick_params(axis="x", labelrotation=90)
+        if pln == 1:
+            plt.setp( axmu1.get_xticklabels(), visible=False)
+            axmu0.set_ylabel('channels')
+            plt.setp( axmu0.get_xticklabels(), visible=False)
+        if pln == 2:
+            axmu1.set_xlabel("ticks")
+            plt.setp( axmu0.get_xticklabels(), visible=False)
+
+        axmu0.ticklabel_format(useOffset=False)
+        axmu1.ticklabel_format(useOffset=False)
+
+        crange = channels[pln]
+        achans = numpy.array(range(*crange))
+        aticks = numpy.array(range(array.shape[1]))
+        xses = [aticks, achans]
+        plane = array[achans,:]
+        im = aximg.imshow(plane, cmap=cmap, norm=normalizer,
+                          extent=(aticks[0], aticks[-1], crange[1], crange[0]),
+                          interpolation="none", aspect="auto")
+
+        for axis in [0,1]:
+            mu = plane.sum(axis=axis)/plane.shape[axis]
+            axmu = axmus[axis]
+            xs = xses[axis]
+
+            if axis: 
+                axmu.plot(mu, xs)
+            else:
+                axmu.plot(xs, mu)
+                      
+            
+    axcb = fig.add_subplot(gridspec[1])
+    fig.colorbar(cb, cax=axcb, ax=aximgs, cmap=cmap, location='top')
+
+    fig.savefig(output, format=format, bbox_inches='tight')
+    

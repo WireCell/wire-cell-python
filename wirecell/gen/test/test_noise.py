@@ -13,7 +13,7 @@ def spec_wids(specs):
     return wids
 
 
-class TestNoise:
+class Noise:
 
     def __init__(self, pdf, nsamples=256, period=1.0, rms=1.0, nrm=0.2): 
         self.pdf = pdf
@@ -226,7 +226,7 @@ def doit(nsamples=256, period=1.0, rms=1.0, nrm=0.2):
     filename = f'test_noise_N{nsamples}_T{p100}_sigma{nrm100}_rms{rms100}.pdf'
     print(filename)
     with PdfPages(filename) as pdf:
-        tn = TestNoise(pdf, nsamples, period, rms, nrm)
+        tn = Noise(pdf, nsamples, period, rms, nrm)
         tn.white()
         tn.interp()
         tn.extrap()
