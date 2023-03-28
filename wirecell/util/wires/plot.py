@@ -118,11 +118,11 @@ def select_channels(store, pdffile, channels, labels=True):
 
     
 
-def allplanes(store, pdffile):
+def allplanes(store, pdffile, wire_step, drift_axis):
     '''
     Plot each plane of wires on a page of a PDF file.
     '''
-    wire_step = 10                            # how many wires to skip
+    # wire_step = 10                            # how many wires to skip
 
     from matplotlib.backends.backend_pdf import PdfPages
 
@@ -160,7 +160,7 @@ def allplanes(store, pdffile):
                         p = pt(w)
                         print (p,w.channel)
                         edge_z.append(p.z/units.m)
-                        edge_x.append(p.x/units.m)
+                        edge_x.append(p.x/units.m if drift_axis==0 else p.y/units.m)
                         edge_n.append(w.channel)
                         edge_s.append('f%d p%d c%d wid%d' % (face.ident, plane.ident, w.channel,  w.ident))
                     add_edge(wires[0])
@@ -182,7 +182,7 @@ def allplanes(store, pdffile):
 
             ax.set_title("Edge Channels AnodeID: %d" % (anode.ident))
             ax.set_xlabel("Z [meter]")
-            ax.set_ylabel("X [meter]")
+            ax.set_ylabel("X [meter]" if drift_axis==0 else "Y [meter]")
             pdf.savefig(fig)
             plt.close()
 
@@ -201,8 +201,8 @@ def allplanes(store, pdffile):
                         p1 = store.points[wire.tail]
                         p2 = store.points[wire.head]
                         seg = wire.segment
-                        seg_x1[seg].append(p1.x/units.meter)
-                        seg_x2[seg].append(p2.x/units.meter)
+                        seg_x1[seg].append(p1.x/units.meter if drift_axis==0 else p1.y/units.meter)
+                        seg_x2[seg].append(p2.x/units.meter if drift_axis==0 else p2.y/units.meter)
                         seg_z1[seg].append(p1.z/units.meter)
                         seg_z2[seg].append(p2.z/units.meter)
                         seg_col[seg].append(plane_colors[iplane%(len(plane_colors))])
@@ -217,7 +217,7 @@ def allplanes(store, pdffile):
                 ax.set_title("AnodeID %d wires, seg %d, head (%d wires)" %
                              (anode.ident, seg, len(seg_col[seg])))
                 ax.set_xlabel("Z [meter]")
-                ax.set_ylabel("X [meter]")
+                ax.set_ylabel("X [meter]" if drift_axis==0 else "Y [meter]")
 
             plt.tight_layout()
             pdf.savefig(fig)
@@ -230,7 +230,7 @@ def allplanes(store, pdffile):
                 ax.set_title("AnodeID %d wires, seg %d, tail (%d wires)" %
                              (anode.ident, seg, len(seg_col[seg])))
                 ax.set_xlabel("Z [meter]")
-                ax.set_ylabel("X [meter]")
+                ax.set_ylabel("X [meter]" if drift_axis==0 else "Y [meter]")
 
             plt.tight_layout()
             pdf.savefig(fig)
@@ -266,10 +266,11 @@ def allplanes(store, pdffile):
                         p2 = store.points[wire.head]
                         width = wire.segment + .1
                         ax.plot((p1.z/units.meter, p2.z/units.meter),
-                                (p1.y/units.meter, p2.y/units.meter), linewidth = width)
-                        wire_x1.append(p1.x/units.meter)
+                                (p1.y/units.meter if drift_axis==0 else p1.x/units.meter,
+                                 p2.y/units.meter if drift_axis==0 else p2.x/units.meter), linewidth = width)
+                        wire_x1.append(p1.x/units.meter if drift_axis==0 else p1.y/units.meter)
                         wire_z1.append(p1.z/units.meter)
-                        wire_x2.append(p2.x/units.meter)
+                        wire_x2.append(p2.x/units.meter if drift_axis==0 else p2.y/units.meter)
                         wire_z2.append(p2.z/units.meter)
                         wire_anode.append(anode.ident)
 
@@ -280,8 +281,8 @@ def allplanes(store, pdffile):
                         p1 = store.points[wire.tail]
                         p2 = store.points[wire.head]
                         x = p2.z/units.meter
-                        y = p2.y/units.meter
-                        wirex = p2.x/units.meter
+                        y = p2.y/units.meter if drift_axis==0 else p2.x/units.meter
+                        wirex = p2.x/units.meter if drift_axis==0 else p2.y/units.meter
                         hal="center"
                         # if wcount == 1:
                         #    hal = "right"
@@ -305,7 +306,7 @@ def allplanes(store, pdffile):
 
 
                     ax.set_xlabel("Z [meter]")
-                    ax.set_ylabel("Y [meter]")
+                    ax.set_ylabel("Y [meter]" if drift_axis==0 else "X [meter]")
                     ax.set_title("AnodeID %d, FaceID %d, PlaneID %d every %dth wire, x=%.3fm" % \
                                  (anode.ident, face.ident, plane.ident, wire_step, wirex))
                     pdf.savefig(fig)
@@ -364,14 +365,14 @@ def allplanes(store, pdffile):
             ax.scatter(wire_z1, wire_x1,s=1, c=wire_anode, marker='.')
             ax.set_title("AnodeID %d wires, tail" % anode.ident)
             ax.set_xlabel("Z [meter]")
-            ax.set_ylabel("X [meter]")
+            ax.set_ylabel("X [meter]" if drift_axis==0 else "Y [meter]")
             pdf.savefig(fig)
             plt.close()
             fig, ax = plt.subplots(nrows=1, ncols=1)
             ax.scatter(wire_z2, wire_x2,s=1, c=wire_anode, marker='.')
             ax.set_title("AnodeID %d wires, head" % anode.ident)
             ax.set_xlabel("Z [meter]")
-            ax.set_ylabel("X [meter]")
+            ax.set_ylabel("X [meter]" if drift_axis==0 else "Y [meter]")
             pdf.savefig(fig)
             plt.close()
             all_wire_x1 += wire_x1

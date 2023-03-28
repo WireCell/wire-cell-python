@@ -80,7 +80,7 @@ def convert_icarustpc_wires(ctx, input_file, output_file):
 
 @cli.command("convert-dunevd-wires")
 @click.option('-t', '--type', default="3view",
-              help='2view, 3view, 3view_30deg, coldbox, protodunevd')
+              help='2view, 3view, 3view_30deg, coldbox, protodunevd, protodunevd_drifty')
 @click.argument("input-file")
 @click.argument("output-file")
 @click.pass_context
@@ -89,7 +89,7 @@ def convert_dunevd_wires(ctx, type, input_file, output_file):
     Convert txt wire geom to json format
     '''
     from wirecell.util.wires import dunevd, persist
-    if type == 'protodunevd':
+    if type == 'protodunevd' or type == 'protodunevd_drifty':
         input_file = dunevd.merge_tpc(input_file)
     store = dunevd.load(input_file, type)
     persist.dump(output_file, store)
@@ -224,17 +224,21 @@ def wires_volumes(ctx, anode, response, cathode, json_file):
 
 
 @cli.command("plot-wires")
+@click.option('-w', '--wire-step', default=10,
+               help='Number of wires to skip in the wire plots (default: 10)')
+@click.option('-d', '--drift-axis', default=0,
+               help='Index of the drift direction [0 (default): x-axis, 1: y-axis]')
 @click.argument("json-file")
 @click.argument("pdf-file")
 @click.pass_context
-def plot_wires(ctx, json_file, pdf_file):
+def plot_wires(ctx, json_file, pdf_file, wire_step, drift_axis):
     '''
     Plot wires from a WCT JSON(.bz2) wire file
     '''
     import wirecell.util.wires.persist as wpersist
     import wirecell.util.wires.plot as wplot
     wires = wpersist.load(json_file)
-    wplot.allplanes(wires, pdf_file)
+    wplot.allplanes(wires, pdf_file, wire_step, drift_axis)
 
 
 @cli.command("plot-select-channels")
