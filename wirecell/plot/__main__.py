@@ -144,15 +144,15 @@ def frame(ctx, name, tag, unit, range, interactive, datafile, output):
               help="running in interactive mode")
 @click.option("-o", "--output", type=click.Path(exists=False, dir_okay=False), required=True,
               help="The output file name, subject to mangling if not multipage format")
+@click.option("--markers", default='o . , + X *', help="a space-separated list of markers")
 @click.argument("datafiles", nargs=-1)
 # @click.argument("output")
 @click.pass_context
 def comp1d(ctx, name, tier, frames, chmin, chmax, unit, xrange,
-           single, transform, interactive, output, datafiles):
+           single, transform, interactive, output, markers, datafiles):
     '''
     Compare waveforms from files
     '''
-    print("transforms:", transform)
     from .frames import comp1d as plotter
     if frames is None:
         frames = tier
@@ -163,10 +163,12 @@ def comp1d(ctx, name, tier, frames, chmin, chmax, unit, xrange,
     else:
         out = plottools.pages(output)
 
+    markers=[m.strip() for m in markers.split(' ')]
     plotter(datafiles, out,
             name=name, frames=frames, chbeg=chmin, chend=chmax,
             unit=unit, xrange=xrange,
-            interactive=interactive, transforms=transform)
+            interactive=interactive, transforms=transform,
+            markers=markers)
 
 @cli.command("channel-correlation")
 @click.option("-t", "--tier", default="orig",
@@ -195,7 +197,7 @@ def channel_correlation(ctx, tier, chmin, chmax, unit, interactive, datafile, ou
 @cli.command("frame-image")
 @frame_to_image
 @image_output
-def frame_image(array, channels, cmap, format, output, aname, fname):
+def frame_image(markers, array, channels, cmap, format, output, aname, fname):
     '''
     Dump frame array to image, ignoring channels.
     '''

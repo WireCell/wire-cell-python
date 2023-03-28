@@ -133,7 +133,6 @@ def comp1d(datafiles, out, name='wave', frames='orig',
     The "baseline" sets if and how a re-baselining is performed.
 
     '''
-    print (transforms)
 
     # Head-off bad calls
     if name not in ['wave', 'spec']:
@@ -177,7 +176,6 @@ def comp1d(datafiles, out, name='wave', frames='orig',
     def extract(fname, dat):
         frame = numpy.array(dat[fname], dtype=dtype)
         chans = channel_selection(fname, dat)
-        print(frame.shape)
         frame = frame[chans,:]
         # frame = numpy.array((frame.T - numpy.median(frame, axis=1)).T, dtype=dtype)
         if "median" in transforms:
@@ -190,7 +188,6 @@ def comp1d(datafiles, out, name='wave', frames='orig',
             frame /= 1.0*uscale
 
         if "ac" in transforms:  # treat special so we ac-couple either spec or wave
-            print("applying ac-coupled transform")
             cspec = numpy.fft.fft(frame)
             cspec[:,0] = 0      # set all zero freq bins to zero
             if name == "spec":
@@ -215,7 +212,7 @@ def comp1d(datafiles, out, name='wave', frames='orig',
             thing = extract(fname, dat)
             marker = markers[ind%len(markers)]
             
-            tit = dat.path+f'\nmean:{numpy.mean(thing):.2f} std:{numpy.std(thing):.2f}'
+            tit = dat.path+f'\nN:{thing.size} mean:{numpy.mean(thing):.2f} std:{numpy.std(thing):.3f}'
             ax.plot(thing, marker, label=tit)
 
         ax.set_xlabel("tick [0.5 $\mu$s]")
