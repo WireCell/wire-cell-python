@@ -73,6 +73,13 @@ def load(filename, type='3view'):
                 return -0.5*(p2.y + p1.y)
             elif plane == 2:
                 return 0.5*(p1.z + p2.z)
+        elif type == 'protodunevd_drifty':
+            if plane == 0:
+                return 0.5*(p2.x + p1.x)
+            elif plane == 1:
+                return -0.5*(p2.x + p1.x)
+            elif plane == 2:
+                return 0.5*(p1.z + p2.z)
         elif type == '2view' :
             return 0.5*(p1.z + p2.z) + 0.5*(p2.y + p1.y)
         else :
