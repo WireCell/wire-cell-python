@@ -564,6 +564,34 @@ def channel_responses(ctx, tscale, scale, name, infile, outfile):
     return
 
 
+@cli.command("plot-configured-spectra")
+@click.option("-t","--type", default="GroupNoiseModel", help="component type name")
+@click.option("-n","--name", default="inco", help="component instance name")
+@click.option("-d","--data", default="spectra", help="the key in .data holding configured spectra")
+@click.option("-c", "--coupling", type=click.Choice(["ac","dc"]), default="dc",
+              help="To suppress zero-frequency bin ('ac') or not ('dc'), def=dc")
+@click.option("-o","--output", default="/dev/stdout", help="output for plots")
+@click.argument("cfgfile")
+@click.argument("output")
+def configured_spectra(type, name, data, coupling, output, cfgfile):
+    '''
+    Plot configured spectra
+    '''
+    from wirecell.util import jsio
+    from wirecell.sigproc.noise.plots import plot_many
+
+    got = None
+    for one in jsio.load(cfgfile):
+        if one['type'] == type and one['name'] == name:
+            got=one['data'][data]
+            break
+    if got is None:
+        raise click.BadParameter(f'failed to find node {type}:{name}')
+
+    zero_suppress = coupling == "ac"
+    plot_many(got, output, zero_suppress)
+    
+
 def main():
     cli(obj=dict())
 
