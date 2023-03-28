@@ -278,8 +278,10 @@ def frame_means(array, channels, cmap, format, output, aname, fname):
     import matplotlib.cm as cm
     from matplotlib.colors import Normalize
     
-    # layout = "constrained"
-    layout = "tight"            # this gives warning but closer to what I want.
+    # this gives more wasted white space but less likely to have axes labels overlapping
+    layout = "constrained" 
+    # this gives warning but closer to what I want.
+    # layout = "tight"
     fig = plt.figure(layout=layout, figsize=(10,8))
     fig.suptitle(f'array "{aname}" from {fname}\nand time/channel projected means')
     # base + 
@@ -371,5 +373,5 @@ def frame_means(array, channels, cmap, format, output, aname, fname):
     axcb = fig.add_subplot(gridspec[1])
     fig.colorbar(cb, cax=axcb, ax=aximgs, cmap=cmap, location='top')
 
-    fig.savefig(output, format=format, bbox_inches='tight')
+    fig.savefig(output, format=format)
     
