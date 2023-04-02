@@ -103,20 +103,26 @@ def ntier_frames(cmap, output, files):
               help="The color units")
 @click.option("-r", "--range", default=25.0, type=float,
               help="The color range")
+@click.option("-s", "--single", is_flag=True, default=False,
+              help="force a single plot without file name mangling")
 @click.option("--interactive", is_flag=True, default=False,
               help="running in interactive mode")
 @click.argument("datafile")
 @click.argument("output")
 @click.pass_context
-def frame(ctx, name, tag, unit, range, interactive, datafile, output):
+def frame(ctx, name, tag, unit, range, interactive, single, datafile, output):
     '''
     Make frame plots of given type.
     '''
     from . import frames
     mod = getattr(frames, name)
     dat = ario.load(datafile)
-    with plottools.pages(output) as out:
-        mod(dat, out, tag, unit, range, interactive=interactive)
+    if single:
+        out = plottools.NameSingleton(output)
+    else:
+        out = plottools.pages(output)
+
+    mod(dat, out, tag, unit, range, interactive=interactive)
 
 
 @cli.command("comp1d")
