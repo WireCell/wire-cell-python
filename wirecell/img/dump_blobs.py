@@ -21,8 +21,8 @@ def bsignature(gr, bnode, tick=500):
         ndata = gr.nodes[node]
         if ndata['code'] == 's':
             # print(ndata)
-            tmin = ndata['start']//tick
-            tmax = tmin + ndata['span']//tick
+            tmin = int(ndata['start']//tick)
+            tmax = int(tmin + ndata['span']//tick)
             sig.append(tmin)
             sig.append(tmax)
             for key in ndata['signal']:
@@ -78,7 +78,9 @@ def _sort(arr):
     arr = numpy.array([arr[i] for i in ind])
     return arr
 
-def dump_blobs(gr, out_file):
+def dump_blobs(gr, sigfile=None, dumpfile="/dev/stdout"):
+    out = open(dumpfile, "w")
+
     sigs = []
     count = 0
     for node, ndata in gr.nodes.data():
@@ -93,7 +95,7 @@ def dump_blobs(gr, out_file):
             sigs.append(sig)
         else:
             count += 1
-    print('#0-blobs:', count)
+    out.write(f'#0-blobs:{count}\n')
     sigs = numpy.array(sigs)
     # sigs = sigs[sigs[:,8]>0,:]
     # sigs = sigs[sigs[:,9]>0,:]
@@ -102,15 +104,14 @@ def dump_blobs(gr, out_file):
     # sigs = sigs[sigs[:,0]==1024,:]
     # sigs = sigs[sigs[:,6]<5000,:]
     sigs = _sort(sigs)
-    print(sigs.shape)
+    out.write(f'{sigs.shape}\n')
     # for i in range(min([sigs.shape[0], 20])):
     for i in range(sigs.shape[0]):
         # print(i, sigs[i,:])
-        print(sigs[i,0:2],
-            sigs[i,2], ':', sigs[i,3]+1, ',',
-            sigs[i,4], ':', sigs[i,5]+1, ','
-            ,sigs[i,6], ':', sigs[i,7]+1
-            ,sigs[i,8:]
-            )
-    if out_file is not None:
-        numpy.save(out_file, sigs)
+        out.write(f'{sigs[i,0:2]} ')
+        out.write(f'{sigs[i,2]} : {sigs[i,3]+1}, ')
+        out.write(f'{sigs[i,4]} : {sigs[i,5]+1}, ')
+        out.write(f'{sigs[i,6]} : {sigs[i,7]+1} ')
+        out.write(f'{sigs[i,8:]}\n')
+    if sigfile is not None:
+        numpy.save(sigfile, sigs)

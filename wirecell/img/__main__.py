@@ -14,6 +14,11 @@ from wirecell import units
 from wirecell.util.functions import unitify, unitify_parse
 from wirecell.util import ario
 from wirecell.util.plottools import pages
+
+import functools
+import wirecell.gen.depos as deposmod
+from . import tap, converter
+
 from scipy.spatial.transform import Rotation
 from zipfile import ZipFile
 from zipfile import ZIP_DEFLATED as ZIP_COMPRESSION
@@ -39,8 +44,6 @@ def cli(ctx):
 # 1. wrapper to handle undrift and loading of depo and cluster files.
 # 2. retrofit all the commands.
 
-import functools
-
 def cluster_file(func):
     ''' A CLI decorator giving the command a "clusters" argument
     providing a generator of cluster graphs.  '''
@@ -59,9 +62,6 @@ def cluster_file(func):
         kwds['clusters'] = cgraphs
         return func(*args, **kwds)
     return wrapper
-
-import wirecell.gen.depos as deposmod
-from . import tap, converter
 
 
 def deposet_file(func):
@@ -195,14 +195,16 @@ def plot_blobs(ctx, plot, clusters, plot_file):
 
 @cli.command("dump-blobs")
 @cluster_file
+@click.option("-o", "--output", default="/dev/stdout", help="output file name")
+@click.option("-s", "--signals", default=None, help="file to dump signals")
 @click.pass_context
-def dump_blobs(ctx, clusters, out_file=None):
+def dump_blobs(ctx, clusters, output, signals):
     '''
-    dump blob signitures in cluster to a file.
+    dump blob signatures in cluster to a file.
     '''
     import wirecell.img.dump_blobs as db
     for gr in clusters:
-        db.dump_blobs(gr, out_file)
+        db.dump_blobs(gr, signals, output)
 
 @cli.command("dump-bb-clusters")
 @cluster_file

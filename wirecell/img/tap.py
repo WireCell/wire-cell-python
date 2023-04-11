@@ -6,6 +6,7 @@ A cluster file is an archive (zip or tar, compressed or not) holding
 an ICluster graph as a JSON object or as a set of Numpy arrays.  As a
 special case, a bare .json file can be read for a single cluster
 graph.
+
 '''
 
 import json
@@ -105,7 +106,7 @@ def pg2nx(name, pg):
         def add_node(irow, ident, **kwds):
             nonlocal count
             nonlocal lu
-            gr.add_node(count, ident=ident, code=nc, **kwds)
+            gr.add_node(count, ident=int(ident), code=nc, **kwds)
             lu[f'{nc}{irow}'] = count;
             count += 1
 
@@ -116,12 +117,12 @@ def pg2nx(name, pg):
         if ntype == "channel":
             for irow, row in enumerate(ndat):
                 add_node(irow, row[0], value=row[1], error=row[2],
-                         index=row[3], wpid=row[4])
+                         index=int(row[3]), wpid=int(row[4]))
                 
         if ntype == "wire":
             for irow, row in enumerate(ndat):
-                add_node(irow, row[0], index=row[1], seg=row[2],
-                         chid=row[3], wpid=row[4],
+                add_node(irow, row[0], index=int(row[1]), seg=int(row[2]),
+                         chid=int(row[3]), wpid=int(row[4]),
                          tail=dict(x=row[5], y=row[6], z=row[7]),
                          head=dict(x=row[8], y=row[9], z=row[10]))
 
@@ -136,19 +137,20 @@ def pg2nx(name, pg):
                     cz = row[ncorners_index+1+2*icorn+1]
                     corners.append((t0, cy, cz))
                 add_node(irow, row[0], value=row[1], error=row[2],
-                         faceid=row[3], sliceid=row[4], start=row[5], span=row[6],
-                         bounds=row[7:13].reshape(3,2),
-                         corners=corners)
+                         faceid=int(row[3]), sliceid=int(row[4]),
+                         start=row[5], span=row[6],
+                         bounds=numpy.array(row[7:13].reshape(3,2), dtype=int),
+                         corners=numpy.array(corners, dtype=int))
 
         if ntype == "slice":
             for irow, row in enumerate(ndat):
-                # fixme: need "signal" aka activity (array of channel val+unc)
-                add_node(irow, row[0], frameid=row[3],
+                # See painful walk below.
+                add_node(irow, row[0], frameid=int(row[3]),
                          start=row[4], span=row[5])
 
         if ntype == "measure":
             for irow, row in enumerate(ndat):
-                add_node(irow, row[0], val=row[1], unc=row[2], wpid=row[3])
+                add_node(irow, row[0], val=row[1], unc=row[2], wpid=int(row[3]))
 
     # edge_types = ('cw','bs','bw','bb','cm','bm')
     for ec in edge_types:
@@ -162,6 +164,28 @@ def pg2nx(name, pg):
             hn = lu[f'{hc}{hi}']
             gr.add_edge(tn, hn)
 
+    # A very painful walk to provide "signals" data on slices.  This
+    # is something saved in the JSON format but it really "shouldn't"
+    # have been saved since it is redundant info.  However, it's
+    # annoying to rebuild.  So, we do it here by collecting all
+    # channels reachable by a walk: s->b->m->c.
+    for snode, sdata in gr.nodes.data():
+        if sdata['code'] != 's':
+            continue
+        signal = dict() # chid to dict of val and unc
+        for bnode in gr.neighbors(snode):
+            if gr.nodes[bnode]['code'] != 'b':
+                continue
+            for mnode in gr.neighbors(bnode):
+                if gr.nodes[mnode]['code'] != 'm':
+                    continue
+                for cnode in gr.neighbors(mnode):
+                    cdata = gr.nodes[cnode]
+                    if cdata['code'] != 'c':
+                        continue
+                    signal[cdata['ident']] = dict(val=cdata['value'], unc=cdata['error'])
+        sdata['signal'] = signal
+        
     return gr
 
 
