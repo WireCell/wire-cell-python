@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+import os
 from wirecell import units
 from wirecell.util import ario
 from wirecell.util.plottools import lg10
@@ -56,7 +58,12 @@ def wave(dat, out, tier='orig', unit='ADC', vmm=25, interactive=False):
     '''
     Plot frames
     '''
-    frames = sorted([f for f in dat.keys() if f.startswith(f'frame_{tier}')])
+    frame_keys = [f for f in dat.keys() if f.startswith('frame_')]
+    frames = sorted([f for f in frame_keys if f.startswith(f'frame_{tier}')])
+    if not frames:
+        found = ', '.join(frame_keys)
+        msg = f'No frames of tier "{tier}": found: {found}'
+        raise IOError(msg)
 
     if unit == 'ADC':
         uscale = 1
@@ -109,6 +116,7 @@ def wave(dat, out, tier='orig', unit='ADC', vmm=25, interactive=False):
             plt.show()
         out.savefig(fig)
 
+
 def comp1d(datafiles, out, name='wave', frames='orig',
            chbeg=0, chend=1, unit='ADC', xrange=None,
            interactive=False, transforms=(),
@@ -137,6 +145,15 @@ def comp1d(datafiles, out, name='wave', frames='orig',
     # Head-off bad calls
     if name not in ['wave', 'spec']:
         raise('name not in [\'wave\', \'spec\']!')
+
+    # when run from a historical test it is common to have long,
+    # common path prefixes in the input files.  Below we apply trunc()
+    # to shorten the path names in the legend.
+    pre = os.path.commonpath(datafiles)
+    def trunc(path):
+        if path.startswith(pre):
+            return path[len(pre)+1:]
+        return path
 
     # Open data files if we have a file name, else assume an ario-like
     # file object.
@@ -212,7 +229,7 @@ def comp1d(datafiles, out, name='wave', frames='orig',
             thing = extract(fname, dat)
             marker = markers[ind%len(markers)]
             
-            tit = dat.path+f'\nN:{thing.size} mean:{numpy.mean(thing):.2f} std:{numpy.std(thing):.3f}'
+            tit = trunc(dat.path)+f'\nN:{thing.size} mean:{numpy.mean(thing):.2f} std:{numpy.std(thing):.3f}'
             ax.plot(thing, marker, label=tit)
 
         ax.set_xlabel("tick [0.5 $\mu$s]")

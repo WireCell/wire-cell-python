@@ -8,8 +8,13 @@ import json
 import click
 import pathlib
 from collections import Counter
+import logging
+
+log = logging.getLogger(__name__)
+
 import numpy
 import matplotlib.pyplot as plt
+
 from wirecell import units
 from wirecell.util.functions import unitify, unitify_parse
 from wirecell.util import ario
@@ -29,8 +34,9 @@ from io import BytesIO
 cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
 
 @click.group("img", **cmddef)
+@click.option("-L","--level", default="info", help="set logging level [default:info]")
 @click.pass_context
-def cli(ctx):
+def cli(ctx, level):
     '''
     Wire Cell Toolkit Imaging Commands
 
@@ -38,7 +44,8 @@ def cli(ctx):
     holding JSON or Numpy or as a special case may be a single JSON.
 
     '''
-    pass
+    log.setLevel(getattr(logging, level.upper()))
+    return
 
 
 # 1. wrapper to handle undrift and loading of depo and cluster files.
@@ -101,12 +108,12 @@ def paraview_file(ext, percent="-%03d"):
             pf = kwds.pop("paraview_file")
             
             if not pf.endswith(ext):
-                print (f'paraview expects a {ext} file extension, fixing')
+                log.warning (f'paraview expects a {ext} file extension, fixing')
                 b = os.path.splitext(pf)[0]
                 pf = b + ext
 
             if percent and '%' not in pf:
-                print(f"Warning: no '%d' code found in {pf}, will add one")
+                log.warning(f"no '%d' code found in {pf}, will add one")
                 b,e = os.path.splitext(pf)
                 pf = b + percent + e
             kwds['paraview_file'] = pf
@@ -139,7 +146,7 @@ def plot_depos_blobs(index, plot, deposets, clusters, plot_file, params):
         k,v = p.split("=",1)
         v = unitify(v)
         kwargs[k] = v
-        print(f'{k} : {v}')
+        log.debug(f'{k} : {v}')
 
     plotter = getattr(depo_blob_plotters, "plot_"+plot)
 
@@ -150,13 +157,13 @@ def plot_depos_blobs(index, plot, deposets, clusters, plot_file, params):
             if 0 == cgraph.number_of_nodes():
                 if index is not None:
                     count = index
-                click.echo(f'empty cluster at index={count} of file cluster_file')
+                log.warning(f'empty cluster at index={count} of file cluster_file')
                 return
 
             fig = plotter(depos, cgraph, **kwargs)
             printer.savefig(dpi=300)
             break               # fixme
-    click.echo(plot_file)
+    log.info(plot_file)
 
 
 import wirecell.img.plot_blobs as blob_plotters
@@ -182,16 +189,16 @@ def plot_blobs(ctx, plot, clusters, plot_file):
             nnodes = gr.number_of_nodes()
 
             if 0 == nnodes:
-                click.echo("no verticies")
+                log.error("no verticies")
                 return
 
             try:
                 fig = plotter(gr)
             except ValueError:
-                print(f'failed to plot graph with {nnodes} vertices')
+                log.error(f'failed to plot graph with {nnodes} vertices')
                 continue
             printer.savefig()
-    click.echo(plot_file)
+    log.info(plot_file)
 
 @cli.command("dump-blobs")
 @cluster_file
@@ -211,7 +218,7 @@ def dump_blobs(ctx, clusters, output, signals):
 @click.pass_context
 def dump_bb_clusters(ctx, clusters):
     '''
-    dump blob cluster signitures
+    dump blob cluster signatures
     '''
     import wirecell.img.dump_bb_clusters as dc
     for gr in clusters:
@@ -219,48 +226,131 @@ def dump_bb_clusters(ctx, clusters):
 
 
 @cli.command("inspect")
+@click.option("-o", "--output", default="/dev/stdout", help="output file name")
+@click.option("--verbose", default=False, is_flag=True, help="print a lot more")
 @click.argument("cluster-file")
 @click.pass_context
-def inspect(ctx, cluster_file):
+def inspect(ctx, output, verbose, cluster_file):
     '''
     Inspect a cluster file
     '''
     from . import converter, tap, clusters
 
+    out = open(output,"w")
+
+    def out_stats(name, dat):
+        ntot = len(dat)
+        zeros = [d for d in dat if d == 0]
+        dat = [d for d in dat if d > 0]
+        vtot = sum(dat)
+        vmean = vmin = vmax = None
+        n = len(dat)
+        nz = ntot - n
+        if n > 0:
+            vmean = vtot / ntot
+            vmin = min(dat)
+            vmax = max(dat)
+
+        out.write(f'\t\tmean {name} in {ntot} ({nz} zeros): {vmin} <= {vmean} <= {vmax}, tot:{vtot}\n')
+
     path = pathlib.Path(cluster_file)
     if not path.exists():
-        print(f'no such file: {path}')
+        log.error(f'no such file: {path}')
         return
 
     if path.name.endswith(".json"):
-        print ('JSON file assuming from JsonClusterTap')
+        log.debug ('JSON file assuming from JsonClusterTap')
     elif '.tar' in path.name:
-        print ('TAR file assuming from ClusterFileSink')
+        log.debug ('TAR file assuming from ClusterFileSink')
 
     graphs = list(tap.load(str(path)))
-    print (f'number of graphs: {len(graphs)}')
+    out.write(f'number of graphs: {len(graphs)}\n')
     for ig, gr in enumerate(graphs):
+        # def by_code(code):
+        #     return [n for c,n in gr.nodes(data=True) if n['code'] == code]
+
         cm = clusters.ClusterMap(gr)
 
-        print(f'{ig}: {gr.number_of_nodes()} vertices, {gr.number_of_edges()} edges')
-        counter = Counter(dict(gr.nodes(data='code')).values())
-        for code, count in sorted(counter.items()):
-            print(f'\t{code}: {count} nodes')
+        out.write(f'{ig}: {gr.number_of_nodes()} vertices\n')
+        node_counter = Counter(dict(gr.nodes(data='code')).values())
+        for code, count in sorted(node_counter.items()):
+
+            ndat = cm.data_oftype(code)
+            nodes_of_type = cm.nodes_oftype(code)
+
+            neighbor_counts = Counter()
+            for n in nodes_of_type:
+                for nn in gr[n]:
+                    neighbor_counts[gr.nodes[nn]['code']] += 1
+            out.write(f'\t{code}: {count} nodes, neighbors:')
+            for c,n in sorted(neighbor_counts.items()):
+                out.write(f' {c}={n}')
+            out.write('\n')
+
+            def burp_neighbors():
+                for n in nodes_of_type:
+                    d = gr.nodes[n]
+                    ident = d['ident']
+                    out.write(f'\t\tnn for {code} {ident}:')
+                    nnc = Counter()
+                    for nn in gr[n]:
+                        nnc[gr.nodes[nn]['code']] += 1
+                    for c,n in sorted(nnc.items()):
+                        out.write(f' {c}={n}')
+                    out.write('\n')
 
             if code == 'b':
-                q = sum([n['value'] for c,n in gr.nodes(data=True) if n['code'] == code])
-                print(f'\t\ttotal charge: {q}')
+                for key in ['value', 'error']:
+                    out_stats(key, [n[key] for n in ndat])
+                if verbose:
+                    burp_neighbors()
+                continue
+
+            if code == 'c':
+                for key in ['value', 'error']:
+                    # we do a get because some channels are not
+                    # reachable from the slice->blob->measure that is
+                    # done to add 'value' key.
+                    out_stats(key, [n.get(key, 0) for n in ndat])
+                continue
+
+            if code == 'm':
+                for key in ['val', 'unc']:
+                    out_stats(key, [n[key] for n in ndat])
+                if verbose:
+                    burp_neighbors()
                 continue
 
             if code == 's':
-                q=0
-                for snode in cm.nodes_oftype('s'):
+                sigs = list()
+                errs = list()
+                nums = list()
+                for snode in nodes_of_type:
                     sdat = cm.gr.nodes[snode]
+                    ident = sdat['ident']
                     sig = sdat['signal']
-                    q += sum([v['val'] for v in sig.values()])
-                print(f'\t\ttotal charge: {q}')
+                    sval = [v['val'] for v in sig.values()]
+                    serr = [v['unc'] for v in sig.values()]
+                    if verbose:
+                        out_stats(f"sunc{ident}", serr)
+                        out_stats(f"sval{ident}", sval)
+                    nums.append(len(sval))
+                    sigs += sval
+                    errs += serr
+
+                # print(sval[:20])
+                out_stats("val", sigs)
+                out_stats("unc", errs)
+                out_stats("num", nums)
                 continue
-        
+
+        out.write(f'{ig}: {gr.number_of_edges()} edges\n')
+        # A truly unholly counter
+        edge_counter = Counter([''.join(sorted([gr.nodes[e[0]]["code"],gr.nodes[e[1]]["code"]])) for e in gr.edges])
+        for code, count in sorted(edge_counter.items()):
+            out.write(f'\t{code}: {count} edges\n')
+
+
 
 @cli.command("paraview-blobs")
 @cluster_file
@@ -276,19 +366,19 @@ def paraview_blobs(ctx, clusters, paraview_file):
     from tvtk.api import write_data
 
     if len(clusters) == 0:
-        print('no graphs')
+        log.error('no graphs')
         sys.exit(-1)
 
     for n, gr in enumerate(clusters):
         if 0 == gr.number_of_nodes():
-            click.echo("no verticies")
+            log.error("no verticies")
             sys.exit(-1)
         dat = converter.clusters2blobs(gr)
         fname = paraview_file
         if '%' in paraview_file:
             fname = paraview_file%n
         write_data(dat, fname)
-        click.echo(fname)
+        log.info(fname)
 
     return
 
@@ -306,7 +396,7 @@ def paraview_activity(ctx, clusters, paraview_file):
     
     for n, gr in enumerate(clusters):
         if 0 == gr.number_of_nodes():
-            click.echo("no verticies")
+            log.error("no verticies")
             return
 
         fname,ext=os.path.splitext(paraview_file)
@@ -317,7 +407,7 @@ def paraview_activity(ctx, clusters, paraview_file):
         for wpid, dat in alldat.items():
             pname = f'{fname}-plane{wpid}{ext}'
             write_data(dat, pname)
-            click.echo(pname)
+            log.info(pname)
 
     return
 
@@ -353,7 +443,7 @@ def paraview_depos(ctx, index, deposets, paraview_file):
             fname = fname % count
 
         write_data(ugrid, fname)
-        click.echo(fname)
+        log.info(fname)
         return
 
 
@@ -406,9 +496,9 @@ def bee_blobs(output, geom, rse, sampling, speed, t0, density, cluster_files):
     for ctf in cluster_files:
         gr = list(tap.load(ctf))[0] # fixme: for now ignore subsequent graphs
         gr = converter.undrift_blobs(gr, speed, t0)
-        print ("got %d" % gr.number_of_nodes())
+        log.debug ("got %d" % gr.number_of_nodes())
         if 0 == gr.number_of_nodes():
-            print("skipping empty graph %s" % ctf)
+            log.warning("skipping empty graph %s" % ctf)
             continue
         bnodes = nodes_oftype(gr,'b')
         bgr = gr.subgraph(bnodes)
@@ -417,7 +507,7 @@ def bee_blobs(output, geom, rse, sampling, speed, t0, density, cluster_files):
             arr = converter.blobpoints(gr.subgraph(bc), sampling_func)
             if len(arr.shape) < 2:
                 continue
-            print ("%s: %d points" % (ctf, arr.shape[0]))
+            log.debug ("%s: %d points" % (ctf, arr.shape[0]))
             dat['x'] += fclean(arr[:,0]/units.cm)
             dat['y'] += fclean(arr[:,1]/units.cm)
             dat['z'] += fclean(arr[:,2]/units.cm)
@@ -440,7 +530,7 @@ def divine_planes(nch):
         return [400, 400, 400, 400, 480, 480]
     if nch == 8256:             # microboone
         return [2400, 2400, 3456]
-    print(f'not a canonical number of channels in a known detector: {nch}')
+    log.warning(f'not a canonical number of channels in a known detector: {nch}')
     return [nch]
 
 @cli.command("activity")
@@ -469,7 +559,7 @@ def activity(output, slices, slice_line, speed, t0, cluster_file):
     cm = clusters.ClusterMap(gr)
     ahist = plots.activity(cm)
     arr = ahist.arr
-    print(f'channel x slice array shape: {arr.shape}')
+    log.debug(f'channel x slice array shape: {arr.shape}')
     extent = list()
     if slices:
         arr = arr[:,slices[0]:slices[1]]
@@ -503,10 +593,10 @@ def activity(output, slices, slice_line, speed, t0, cluster_file):
     try:
         plt.colorbar(im, ax=ax)
     except ValueError:
-        print("colorbar complains, probably have zero data")
-        print('total:', numpy.sum(arr))
+        log.error("colorbar complains, probably have zero data")
+        log.error('total:', numpy.sum(arr))
         return
-        pass
+
     ax.set_title(cluster_file)
     ax.set_xlabel("slice ID")
     ax.set_ylabel("channel IDs")
@@ -661,7 +751,7 @@ def transform_depos(forward, locate, move, rotate, output, depos):
     with ZipFile(output or "/dev/stdout", "w", compression=ZIP_COMPRESSION) as zf:
 
         def save(name, arr):
-            print(name, arr.shape)
+            log.debug(name, arr.shape)
             bio = BytesIO()
             numpy.save(bio, arr)
             bio.seek(0)
@@ -695,7 +785,7 @@ def transform_depos(forward, locate, move, rotate, output, depos):
             for one in rotate:
                 code, args = one.split(":",1)
                 args = numpy.array(unitify(args.split(",")))
-                print(f'rotate {code} {args}')
+                log.debug(f'rotate {code} {args}')
                 if code == 'q':
                     R = Rotation.from_quat(args)
                 elif code == 'v':

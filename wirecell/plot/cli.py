@@ -7,7 +7,7 @@ Decorators and functions for constructing Click commands.
 
 import click
 import functools
-
+from wirecell.util import ario
     
 # Decorator for a CLI that is common to a couple commands.
 #
@@ -20,17 +20,13 @@ import functools
 # Note, the args finally passed to the function are substantially processed.
 # See existing usage in __main__.py for examples.
 #
-def frame_to_image(func):
+def frame_input(func):
     # import here hide dependencies from command that do not use this decorator.
     import numpy
-    from matplotlib import colormaps
 
     @click.option("-a", "--array", default="frame_*_0", help="array name")
     @click.option("-c", "--channels", default="800,800,960", help="comma list of channel counts per plane in u,v,w order")
-    @click.option("-f", "--format", default=None, help="Output file format, def=auto")
-    @click.option("-o", "--output", default=None, help="Output file, def=stdout")
-    @click.option("-C", "--cmap", default="gist_ncar", help="Color map name def=gist_ncar")
-    @click.argument("npzfile")
+    @click.argument("ariofile")
     @functools.wraps(func)
     def wrapper(*args, **kwds):
 
@@ -46,9 +42,10 @@ def frame_to_image(func):
                 chrange.append((l, l+c))
         kwds["channels"] = chrange
         
-        fname = kwds.pop("npzfile")
+        fname = kwds.pop("ariofile")
         kwds['fname'] = fname
-        fp = numpy.load(fname)
+        # fp = numpy.load(fname)
+        fp = ario.load(fname)
         
         aname = kwds.pop("array")
         if aname in fp:
@@ -58,13 +55,16 @@ def frame_to_image(func):
             raise click.BadParameter(f'array "{aname}" not in "{fname}".  try: "{have}"')
         kwds['aname'] = aname
 
-        kwds["cmap"] = colormaps[kwds["cmap"]]
-
         return func(*args, **kwds)
     return wrapper
 
 
 def image_output(func):
+    from matplotlib import colormaps
+
+    @click.option("-C", "--cmap", default="gist_ncar", help="Color map name def=gist_ncar")
+    @click.option("--vmin", default=None, help="Set min value")
+    @click.option("--vmax", default=None, help="Set max value")
     @click.option("-f", "--format", default=None, help="Output file format, def=auto")
     @click.option("-o", "--output", default=None, help="Output file, def=stdout")
     @functools.wraps(func)
@@ -78,6 +78,9 @@ def image_output(func):
                 kwds["format"] = out.split(".")[-1]
         if out is None:
             kwds["output"] = "/dev/stdout"
+
+        kwds["cmap"] = colormaps[kwds["cmap"]]
+
         return func(*args, **kwds)
     return wrapper
 

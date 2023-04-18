@@ -90,6 +90,11 @@ class ClusterMap(object):
         Return a list of nodes of given type code
         '''
         return [n for n,d in self.gr.nodes.data() if d['code'] == typecode]
+    def data_oftype(self, typecode):
+        '''
+        Return a list of nodes of given type code
+        '''
+        return [d for n,d in self.gr.nodes.data() if d['code'] == typecode]
 
     def neighbors_oftype(self, node, typecode):
         '''

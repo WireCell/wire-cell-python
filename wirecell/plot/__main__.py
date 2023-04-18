@@ -10,7 +10,7 @@ from wirecell.util import jsio
 
 import numpy
 import matplotlib.pyplot as plt
-from .cli import frame_to_image, image_output
+from .cli import frame_input, image_output
 
 cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
 
@@ -96,7 +96,8 @@ def ntier_frames(cmap, output, files):
 
 @cli.command("frame")
 @click.option("-n", "--name", default="wave",
-              help="The frame plot name")
+              type=click.Choice(["wave","spectra"]),
+              help="The frame plot type name [default=waf]")
 @click.option("-t", "--tag", default="orig",
               help="The frame tag")
 @click.option("-u", "--unit", default="ADC",
@@ -117,6 +118,9 @@ def frame(ctx, name, tag, unit, range, interactive, single, datafile, output):
     from . import frames
     mod = getattr(frames, name)
     dat = ario.load(datafile)
+    if not dat:
+        raise IOError(f'ario load failed with {datafile}')
+
     if single:
         out = plottools.NameSingleton(output)
     else:
@@ -200,19 +204,57 @@ def channel_correlation(ctx, tier, chmin, chmax, unit, interactive, datafile, ou
         tier=tier, chmin=chmin, chmax=chmax, unit=unit, interactive=interactive)
 
 
-@cli.command("frame-image")
-@frame_to_image
+def imopts(**kwds):
+    '''
+    Only pass options relevant to imsave() type functions.
+    '''
+    ret = dict()
+    for key in 'vmin vmax cmap'.split():
+        if key in kwds:
+            ret[key] = kwds[key]
+    return ret
+
+
+@cli.command("frame-diff")
+@frame_input
 @image_output
-def frame_image(markers, array, channels, cmap, format, output, aname, fname):
+@click.option("--style", type=click.Choice(["image", "axes"]), default="image")
+@click.argument("ariofile2")
+def frame_diff(array, channels, format, output, aname, style, ariofile2, **kwds):
+    '''
+    Take diff between two frames and write result as image
+    '''
+    import matplotlib.image
+    f2 = ario.load(ariofile2)
+    a2 = f2[aname]
+    adiff = array - a2
+    if style == "image":
+        matplotlib.image.imsave(output, adiff, format=format, **imopts(**kwds))
+        return
+    plt.imshow(adiff, **kwds)
+    plt.tight_layout()
+    plt.savefig(output, format=format)
+
+
+@cli.command("frame-image")
+@click.option("--transform", default='none',
+              type=click.Choice(["median","mean","ac","none"]), 
+              help="type of image transformations")
+@frame_input
+@image_output
+def frame_image(transform, array, channels, format, output, aname, fname, **kwds):
     '''
     Dump frame array to image, ignoring channels.
     '''
     import matplotlib.image
-
-    matplotlib.image.imsave(output, array, format=format, cmap=cmap)
+    from . import rebaseline
+    tr = getattr(rebaseline, transform)
+    array = tr(array)
+    print(array.shape)
+    matplotlib.image.imsave(output, array, format=format, **kwds)
 
 @cli.command("frame-means")
-@frame_to_image
+@frame_input
 @image_output
 def frame_means(array, channels, cmap, format, output, aname, fname):
     '''
