@@ -6,11 +6,15 @@ from wirecell.util.plottools import lg10
 import matplotlib.pyplot as plt
 import numpy
 
-def spectra(dat, out, tier='orig', unit='ADC', range=25, interactive=False):
+def spectra(dat, out, tier='orig', unit='ADC', interactive=False,  **kwds):
     '''
     Plot per-channel spectra of fp['frame_{tier}*'] to out
     '''
     frames = sorted([f for f in dat.keys() if f.startswith(f'frame_{tier}')])
+
+    cmap = kwds.get("cmap", "viridis")
+    vmin = kwds.get('vmin',0)
+    vmax = kwds.get('vmax',5000)
 
     for fname in frames:
         _,tag,num = fname.split("_")
@@ -36,14 +40,17 @@ def spectra(dat, out, tier='orig', unit='ADC', range=25, interactive=False):
         avg = tot / len(chans)
 
         fig,ax = plt.subplots(1,1)
-        ax.set_title("Per channel spectra")
+        ax.set_title(f"Per channel spectra ({unit}) \"{tier}\"")
+
         im = ax.imshow(chspecs, aspect='auto', interpolation='none',
-                       extent=(0,Fmax_MHz/2, chmax, chmin))
+                       vmin=vmin, vmax=vmax,
+                       extent=(0,Fmax_MHz/2, chmax, chmin), cmap=cmap)
 
         ax.set_xlabel("frequency [MHz]")
         ax.set_ylabel("channel")
         fig.colorbar(im, ax=ax)
-        out.savefig(fig)
+        out.savefig()
+
 
         fig,ax = plt.subplots(1,1)
         ax.set_title("Average spectra")
@@ -52,9 +59,11 @@ def spectra(dat, out, tier='orig', unit='ADC', range=25, interactive=False):
         ax.set_xlabel("frequency [MHz]")
         if interactive :
             plt.show()
-        out.savefig(fig)
+        out.savefig()
+
+
         
-def wave(dat, out, tier='orig', unit='ADC', vmm=25, interactive=False):
+def wave(dat, out, tier='orig', unit='ADC', interactive=False, **kwds):
     '''
     Plot frames
     '''
@@ -72,7 +81,13 @@ def wave(dat, out, tier='orig', unit='ADC', vmm=25, interactive=False):
         uscale = getattr(units, unit)
         dtype = float
 
-
+    cmap = kwds.get("cmap", "viridis")
+    if unit == 'ADC':
+        vmin = kwds.get('vmin',-25)
+        vmax = kwds.get('vmax', 25)
+    else:
+        vmin = kwds.get('vmin',0)
+        vmax = kwds.get('vmax',5000)
 
     for fname in frames:
         _,tag,num = fname.split("_")
@@ -94,11 +109,11 @@ def wave(dat, out, tier='orig', unit='ADC', vmm=25, interactive=False):
 
         fig,(ax,ax2) = plt.subplots(1,2, figsize=(10,6), sharey=True,
                                     gridspec_kw={'width_ratios': [5, 1]})
-        ax.set_title("Waveforms")
+        ax.set_title(f"Waveforms ({unit}) \"{tier}\"")
         im = ax.imshow(chwaves,
                        aspect='auto', interpolation='none',
                        extent=(0,maxtime/units.ms, chmax, chmin),
-                       cmap='seismic', vmin=-vmm, vmax=vmm)
+                       cmap=cmap, vmin=vmin, vmax=vmax)
 
         ax.set_xlabel("time [ms]")
         ax.set_ylabel("channel")
@@ -167,11 +182,17 @@ def comp1d(datafiles, out, name='wave', frames='orig',
     if isinstance(frames, str):
         fnames = set()
         for dat in dats:
-            fnames.update([n for n in dat.keys() if n.startswith(f'frame_{frames}')])
+            these_frames = [n for n in dat.keys() if n.startswith(f'frame_{frames}')]
+            if not these_frames:
+                raise IOError("No frames in " + dat.path)
+            fnames.update(these_frames)
         fnames = list(fnames)
         fnames.sort()
         frames = fnames
         
+    if not frames:
+        raise IOError("No frames")
+
     # Treat ADC special
     if unit == 'ADC':
         uscale = 1
@@ -282,7 +303,7 @@ def channel_correlation(datafile, out, tier='orig', chmin=0, chmax=1, unit='ADC'
         out.savefig(fig)
 
 
-def frame_means(array, channels, cmap, format, output, aname, fname):
+def frame_means(array, channels, cmap, aname, fname):
     '''
     Plot frames and their channel-wise and tick-wise means
     '''
@@ -386,6 +407,5 @@ def frame_means(array, channels, cmap, format, output, aname, fname):
             
     axcb = fig.add_subplot(gridspec[1])
     fig.colorbar(cb, cax=axcb, ax=aximgs, cmap=cmap, location='top')
-
-    fig.savefig(output, format=format)
+    return fig
     

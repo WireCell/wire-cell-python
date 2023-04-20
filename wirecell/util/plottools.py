@@ -10,8 +10,9 @@ import matplotlib.pyplot as plt
 import numpy
 from pathlib import Path
 
+
 class NameSequence(object):
-    def __init__(self, name, first=0):
+    def __init__(self, name, first=0, **kwds):
         '''
         Every time called, emit a new name with an index.
 
@@ -26,10 +27,13 @@ class NameSequence(object):
         The first may give the starting index sequence or if None no
         sequence will be used and the name will be kept as-is.
 
+        Any keywords will be applied to savefig().
+
         This is a callable and it mimics PdfPages.
         '''
         self.base, self.ext = os.path.splitext(name)
         self.index = first
+        self.opts = kwds
 
     def __call__(self):
         if self.index is None:
@@ -48,11 +52,14 @@ class NameSequence(object):
         '''
         Act like PdfPages
         '''
+        opts = dict(self.opts, **kwds)
+
         fn = self()
         dirn = os.path.dirname(fn)
         if dirn and not os.path.exists(dirn):
             os.makedirs(dirn)
-        plt.savefig(fn, **kwds)
+        plt.savefig(fn, **opts)
+
 
     def __enter__(self):
         return self
@@ -61,14 +68,18 @@ class NameSequence(object):
         
         
 class NameSingleton(object):
-    def __init__(self, path):
+    def __init__(self, path, **kwds):
         '''
         Like a NameSequence but force a singleton.
 
         No name mangling, and subsequent calls are ignored.
+
+        Any kwds are applied to savefig.
+
         '''
         self.path = Path(path)
         self.called = 0
+        self.opts = kwds
 
     def __call__(self):
         return self.path
@@ -77,10 +88,12 @@ class NameSingleton(object):
         '''
         Act like PdfPages
         '''
+        opts = dict(self.opts, **kwds)
+
         if self.called == 0:
             if not self.path.parent.exists():
                 self.path.parent.mkdir(parents=True)
-            plt.savefig(self.path.absolute(), **kwds)
+            plt.savefig(self.path.absolute(), **opts)
         self.called += 1
 
     def __enter__(self):
@@ -89,8 +102,9 @@ class NameSingleton(object):
         return
 
 
-def pages(name):
-    if name.endswith(".pdf"):
+
+def pages(name, format=None):
+    if name.endswith(".pdf") or format=="pdf":
         return PdfPages(name)
     return NameSequence(name)
 
@@ -120,3 +134,22 @@ def lg10(arr, eps = None, scale=None):
     arr[pos] = numpy.log10(arr[pos]*scale)
     arr[neg] = -numpy.log10(-arr[neg]*scale)
     return arr.reshape(shape)
+
+def image(array, style="image", fig=None, **kwds):
+    '''
+    Plot array as image, no axes.  Return result of imshow()
+    '''
+    if fig is None:
+        fig = plt.figure(frameon=False)
+
+    if style == "axes":
+        kwds['aspect'] = 'auto'
+        im = plt.imshow(array, **kwds)
+        plt.colorbar()
+        plt.tight_layout()
+        return im
+
+    ax = plt.Axes(fig, [0., 0., 1., 1.])
+    ax.set_axis_off()
+    fig.add_axes(ax)
+    return plt.imshow(array, **kwds)

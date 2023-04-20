@@ -8,9 +8,6 @@ import json
 import click
 import pathlib
 from collections import Counter
-import logging
-
-log = logging.getLogger(__name__)
 
 import numpy
 import matplotlib.pyplot as plt
@@ -19,6 +16,7 @@ from wirecell import units
 from wirecell.util.functions import unitify, unitify_parse
 from wirecell.util import ario
 from wirecell.util.plottools import pages
+from wirecell.util.cli import log, context
 
 import functools
 import wirecell.gen.depos as deposmod
@@ -31,21 +29,15 @@ from zipfile import ZIP_DEFLATED as ZIP_COMPRESSION
 # from zipfile import ZIP_BZIP2 as ZIP_COMPRESSION
 from io import BytesIO
 
-cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
 
-@click.group("img", **cmddef)
-@click.option("-L","--level", default="info", help="set logging level [default:info]")
-@click.pass_context
-def cli(ctx, level):
-    '''
-    Wire Cell Toolkit Imaging Commands
+@context("grp")
+def cli(ctx):
+    """
+    Wire-Cell Toolkit commands related to imaging.
+    """
+    pass
 
-    A cluster file is produced by ClusterFileSink and is an archive
-    holding JSON or Numpy or as a special case may be a single JSON.
 
-    '''
-    log.setLevel(getattr(logging, level.upper()))
-    return
 
 
 # 1. wrapper to handle undrift and loading of depo and cluster files.
@@ -546,7 +538,7 @@ def divine_planes(nch):
 @click.argument("cluster-file")
 def activity(output, slices, slice_line, speed, t0, cluster_file):
     '''
-    Plot activity
+    Plot activity from a cluster file.
     '''
     from matplotlib.colors import LogNorm
     from . import tap, clusters, plots
@@ -572,7 +564,7 @@ def activity(output, slices, slice_line, speed, t0, cluster_file):
     fig.set_size_inches(8.5,11.0)
 
     cmap = plt.get_cmap('gist_rainbow')
-    im = ax.imshow(arr, cmap=cmap, interpolation='none', norm=LogNorm(), extent=extent)
+    im = ax.imshow(arr, cmap=cmap, interpolation='none', norm=LogNorm(), extent=extent, aspect='auto')
     if slice_line > 0:
         ax.plot([slice_line, slice_line], [ahist.rangey[0], ahist.rangey[1]],
                 linewidth=0.1, color='black')
