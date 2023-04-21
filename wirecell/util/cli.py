@@ -200,13 +200,13 @@ def image_output(func):
 
     from matplotlib import colormaps
 
-    @click.option("--cmap", default="viridis", help="Color map name def=gist_ncar")
-    @click.option("--vmin", default=None, help="Set min value")
-    @click.option("--vmax", default=None, help="Set max value")
-    @click.option("--format", default=None, help="Output file format, def=auto")
-    @click.option("-o", "--output", default=None, help="Output file, def=stdout")
+    @click.option("--cmap", default="viridis", help="Color map name [default=viridis]")
+    @click.option("--vmin", type=float, default=None, help="Set min value [default=None]")
+    @click.option("--vmax", type=float, default=None, help="Set max value [default=None]")
+    @click.option("--format", default=None, help="Output file format, [default=auto]")
+    @click.option("-o", "--output", default=None, help="Output file, [default=stdout]")
     @click.option("--single", is_flag=True, default=False,
-                  help="Force a single plot without file name mangling")
+                  help="Force a single plot [default=False]")
     @click.option("--dpi", default=150,
                   help="Image resolution in dots-per-inch [default=150]")
     @functools.wraps(func)

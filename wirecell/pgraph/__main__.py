@@ -13,20 +13,19 @@ import click
 from wirecell import units
 from wirecell.util import jsio
 from wirecell.util.cli import jsonnet_loader
+from wirecell.util.cli import context, log
 
-cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
-
-@click.group("pgraph", **cmddef)
-@click.pass_context
+@context("pgraph")
 def cli(ctx):
     '''
     Wire Cell Signal Processing Features
     '''
+    pass
 
 class Node (object):
     def __init__(self, tn, params=True, **attrs):
         if not attrs:
-            print ("Node(%s) with no attributes"%tn)
+            log.debug ("Node(%s) with no attributes"%tn)
 
         self.tn = tn
         self._params = params
@@ -163,7 +162,6 @@ def dotify(edge_dat, attrs, params=True, services=True, graph_options=dict(rankd
     ret += ["\tnode[shape=record];"]
     for nn,node in sorted(nodes.items()):
         nodestr = '\t"%s"[label="%s"];' % (node.dot_name(), node.dot_label())
-        #print(nodestr)
         ret.append(nodestr)
     for e in edges:
         ret.append("\t%s;" % e)
@@ -231,10 +229,9 @@ def uses_to_params(uses):
     ret = dict()
     for one in uses:
         if type(one) != dict:
-            print (type(one),one)
+            log.debug (f'{type(one)}, {one}')
         tn = one[u"type"]
         if "name" in one and one['name']:
-            # print (one["name"])
             tn += ":" + str(one["name"])
         ret[tn] = one.get("data", {})
     return ret
@@ -298,24 +295,9 @@ def cmd_dotify(ctx, dpath, npath, epath, params, services, graph_options, in_fil
     if any ((npath, epath)):
         uses = resolve_path(dat, npath)
         edges = resolve_path(dat, epath)
-        # print ('special uses')
-        # print (uses)
-        # print ('special edges')
-        # print (edges)
     else:                       # wct cfg
         uses = dat
         edges = dat[-1]["data"]["edges"]
-
-    # graph_apps = ("Pgrapher", "TbbFlow")
-
-    # # the Pgrapher app holds edges in "data" attribute
-    # if cfg.get("type","") in graph_apps:
-    #     print ('Pgrapher object found at dpath: "%s" with %d nodes' % (dpath, len(dat)))
-    #     edges = cfg["data"]["edges"] 
-    #     uses = dat # if Pgrapher, then original is likely the full config sequence.
-    # else:
-    #     edges = cfg["edges"] # Pnodes have edges as top-level attribute
-    #     uses = cfg.get("uses", list())
 
     gopts = dict(rankdir="LR")
     if graph_options:

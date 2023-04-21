@@ -153,3 +153,15 @@ def image(array, style="image", fig=None, **kwds):
     ax.set_axis_off()
     fig.add_axes(ax)
     return plt.imshow(array, **kwds)
+
+
+def imopts(**kwds):
+    '''
+    Return subset of kwds which are relevant to imsave() type functions.
+    '''
+    ret = dict()
+    for key in 'vmin vmax cmap'.split():
+        if key in kwds:
+            ret[key] = kwds[key]
+    return ret
+

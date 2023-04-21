@@ -30,7 +30,7 @@ from zipfile import ZIP_DEFLATED as ZIP_COMPRESSION
 from io import BytesIO
 
 
-@context("grp")
+@context("img")
 def cli(ctx):
     """
     Wire-Cell Toolkit commands related to imaging.
@@ -330,7 +330,6 @@ def inspect(ctx, output, verbose, cluster_file):
                     sigs += sval
                     errs += serr
 
-                # print(sval[:20])
                 out_stats("val", sigs)
                 out_stats("unc", errs)
                 out_stats("num", nums)
@@ -463,6 +462,9 @@ def bee_blobs(output, geom, rse, sampling, speed, t0, density, cluster_files):
     '''
     Produce a Bee JSON file from a cluster file.
     '''
+    if output is None:
+        raise click.BadParameter("no output file provided")
+
     from . import tap, converter
 
     speed = unitify(speed)

@@ -3,12 +3,14 @@ import click
 
 from wirecell.util import ario, plottools
 
-@click.group("test")
-@click.pass_context
+from wirecell.util.cli import context, log
+
+@context("test")
 def cli(ctx):
     '''
     Wire Cell Test Commands
     '''
+    pass
 
 @cli.command("plot")
 @click.option("-n", "--name", default="noise",

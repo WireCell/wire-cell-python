@@ -5,7 +5,7 @@ Main CLI to wirecell.plot.
 
 import click
 from wirecell.util import ario, plottools
-from wirecell.util.cli import context, jsonnet_loader, frame_input, image_output
+from wirecell.util.cli import log, context, jsonnet_loader, frame_input, image_output
 from wirecell.util import jsio
 
 import numpy
@@ -16,7 +16,6 @@ def cli(ctx):
     '''
     wirecell-plot command line interface
     '''
-    # ctx.ensure_object(dict)
     pass
 
 
@@ -36,11 +35,14 @@ def ntier_frames(cmap, output, files):
     Each file should a "frame file" (an ario stream of
     frame/channels/tickinfo arrays)
     '''
+    if not files:
+        raise click.BadParameter('no input files given')
+
     if output.endswith("pdf"):
-        print(f'Saving to pdf: {output}')
+        log.info(f'Saving to pdf: {output}')
         Outer = plottools.PdfPages
     else:
-        print(f'Saving to: {output}')
+        log.info(f'Saving to: {output}')
         Outer = plottools.NameSequence
 
     cmaps = {kv[0]:kv[1] for kv in [x.split("=") for x in cmap]}
@@ -78,10 +80,10 @@ def ntier_frames(cmap, output, files):
                 try:
                     arr = reader[aname]
                 except KeyError:
-                    print(f'No such key "{aname}".  Have: {len(reader)}')
-                    print(' '.join(reader.keys()))
+                    log.warn(f'No such key "{aname}".  Have: {len(reader)}')
+                    log.warn(' '.join(reader.keys()))
                     continue
-                print(aname, arr.shape)
+                log.debug(aname, arr.shape)
                 arr = (arr.T - numpy.median(arr, axis=1)).T
                 cmap = cmaps.get(tier, "viridis")
                 im = ax.imshow(arr, aspect='equal', interpolation='none', cmap=cmap)
@@ -200,16 +202,6 @@ def channel_correlation(ctx, tier, chmin, chmax, unit, interactive, datafile, ou
         tier=tier, chmin=chmin, chmax=chmax, unit=unit, interactive=interactive)
 
 
-def imopts(**kwds):
-    '''
-    Only pass options relevant to imsave() type functions.
-    '''
-    ret = dict()
-    for key in 'vmin vmax cmap'.split():
-        if key in kwds:
-            ret[key] = kwds[key]
-    return ret
-
 
 @cli.command("frame-diff")
 @click.option("--style", type=click.Choice(["image", "axes"]), default="image")
@@ -225,7 +217,7 @@ def frame_diff(style, array, output, aname, ariofile2, **kwds):
     a2 = f2[aname]
     adiff = array - a2
     with output as out:
-        plottools.image(adiff, style, **imopts(**kwds))
+        plottools.image(adiff, style, **plottools.imopts(**kwds))
         out.savefig()
 
 
@@ -245,7 +237,7 @@ def frame_image(transform, style, array, output, aname, **kwds):
     tr = getattr(rebaseline, transform)
     array = tr(array)
     with output as out:
-        plottools.image(array, style, **imopts(**kwds))
+        plottools.image(array, style, **plottools.imopts(**kwds))
         out.savefig()
 
 

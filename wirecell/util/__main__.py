@@ -9,15 +9,15 @@ import numpy
 from collections import defaultdict
 from wirecell import units
 from wirecell.util.functions import unitify, unitify_parse
+from wirecell.util.cli import context, log
 
-cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
-
-@click.group("util", **cmddef)
-@click.pass_context
+@context("util")
 def cli(ctx):
     '''
     Wire Cell Toolkit Utility Commands
     '''
+    pass
+
 
 @cli.command("convert-oneside-wires")
 @click.argument("input-file")
@@ -159,7 +159,6 @@ def plot_wire_regions(ctx, wire_json_file, region_json_file, pdf_file):
                 assert wobj2.channel == one['ch2']
 
                 verts = wo2pg(wobj1,wobj2)
-                #print (verts)
                 pg = Polygon(verts, closed=True, facecolor=colors[pl],
                              alpha=0.3, fill=True, linewidth=.1, edgecolor='black')
                 ret.append(pg)
@@ -199,7 +198,7 @@ def wires_info(ctx, json_file):
     import wirecell.util.wires.info as winfo
     wires = wpersist.load(json_file)
     dat = winfo.summary(wires)
-    print ('\n'.join(dat))
+    log.info ('\n'.join(dat))
 
 
 @cli.command("wires-ordering")
@@ -244,7 +243,7 @@ def wires_ordering(ctx, output, json_file):
                 wires = plane["wires"]
                 h = numpy.array([tuple(w["head"].values()) for w in wires])
                 t = numpy.array([tuple(w["tail"].values()) for w in wires])
-                # (nwires,3)
+                # shape is (nwires,3)
                 m = 0.5*(h+t)   # midpoints
                 x,y,z = m.T
                 ymin = numpy.min(y)
@@ -258,34 +257,10 @@ def wires_ordering(ctx, output, json_file):
                 Z = numpy.array((0,0,1)) # z axis
                 s = yr*numpy.abs(numpy.dot(w,Z)) + zr*numpy.abs(numpy.dot(w,Y))
 
-                # from multitpc.py
-                # z_intercept = z - (y * dw[:,2]) / dw[:,1]
-
                 add_plot(0,y,f'Y a={aid} f={fid} p={pid}')
                 add_plot(1,z,f'Z a={aid} f={fid} p={pid}')
-#                add_plot(2,s,f'S a={aid} f={fid} p={pid}')
-                # add_plot(3,z_intercept,f'Zi a={aid} f={fid} p={pid}')
-
-                # for wire in plane["wires"]:
-                #     h = numpy.array(list(wire["head"].values()))
-                #     t = numpy.array(list(wire["tail"].values()))
-                #     x,y,z = 0.5*(h+t)
-                #     dw = h - t
-                #     w = dw / numpy.linalg.norm(dw) # unit vec along wire
-                #     s = y*abs(numpy.dot(w,(0,0,1)))+z*abs(numpy.dot(w,(0,1,0)))
-                #     i = wire["ident"]
-                #     a = math.atan2(w[1],w[2]) * 180/math.pi
-                #     print(f's={s:.1f} y={y:.1f} z={z:.1f} a={a:.1f}')
-                #     for p in "iasxyz":
-                #         dat[p].append(locals()[p])
-                # a,s,y,z=dat["a"],dat["s"], dat["y"], dat["z"]
-                # for ind in range(1,len(s)):
-                #     print('s','+' if s[ind]>s[ind-1] else '-',
-                #           'y','+' if y[ind]>y[ind-1] else '-',
-                #           'z','+' if z[ind]>z[ind-1] else '-',
-                #           'a',a[ind])
                         
-    print(output)
+    log.info(output)
     for ind, ax in enumerate(axes):
         ax.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
         ax.set_title(titles[ind])
@@ -365,7 +340,7 @@ def wires_channels(ctx, output, json_file):
             plt.tight_layout()
             pdf.savefig(fig)
             plt.close()
-    print(output)
+    log.info(output)
 
     
 
@@ -438,8 +413,6 @@ def gen_plot_wires(ctx, output_file):
     import wirecell.util.wires.generator as wgen
     s = wgen.onesided_wrapped()
     fig,ax = wplot.oneplane(s, 0)
-    #fig,ax = wplot.allplanes(s)
-    #fig,ax = wplot.allwires(s)
     fig.savefig(output_file)
 
 @cli.command("make-wires")
@@ -754,13 +727,12 @@ def frame_split(rebin, tick_offset, fpattern, apattern, metadata, archive):
     fp = ario.load(archive)
     for aname in fp.keys():
         if not aname.startswith("frame_"):
-            #print(f'skip array: {aname}')
             continue
         frame = fp[aname]
         meth = guess_splitter(frame.shape[0])
 
         parts = aname.split("_")
-        print(f'splitting: {parts}')
+        log.debug(f'splitting: {parts}')
         tag = parts[1] or "orig"
         index = int(parts[2])
 
@@ -818,8 +790,7 @@ def npz_to_img(output, array,
     import matplotlib.pyplot as plt
 
     if not output:
-        print("need output file")
-        return -1
+        raise click.BadParameter("need output file")
 
     fp = numpy.load(npzfile)
     if not array:
@@ -827,11 +798,8 @@ def npz_to_img(output, array,
     arr = fp[array]
 
     if baseline == "median":
-        #print("subtracting median")
-        #arr = arr - numpy.median(arr)
         arr = (arr.T - numpy.median(arr, axis=1)).T
     elif baseline is not None:
-        #print(f"subtracting {baseline}")
         arr = arr - float(baseline)
 
     args = dict(cmap=cmap, aspect='auto', interpolation='none')
@@ -883,9 +851,9 @@ def ls(filename):
         o = fp[key]
         if isinstance(o, dict):
             keys = ', '.join(o.keys())
-            print(f'{key:16s}\t{keys}')
+            log.info(f'{key:16s}\t{keys}')
             continue
-        print(f'{key:16s}\t{o.dtype}\t{o.shape}')
+        log.info(f'{key:16s}\t{o.dtype}\t{o.shape}')
 
 @cli.command("npz-to-wct")
 @click.option("-T", "--transpose", default=False, is_flag=True,
@@ -947,8 +915,8 @@ def npz_to_wct(transpose, output, name, format, tinfo, baseline, scale, dtype, c
         if transpose:
             arr = arr.T
         if len(arr.shape) != 2:
-            print(f'input array {aname} wrong shape: {arr.shape}')
-            return 1
+            raise click.BadParameter(f'input array {aname} wrong shape: {arr.shape}')
+
         nchans = arr.shape[0]
 
         # figure out channels in the loop as nchans may differ array
@@ -961,8 +929,8 @@ def npz_to_wct(transpose, output, name, format, tinfo, baseline, scale, dtype, c
         elif "," in channels:
             channels = unitify(channels)
             if len(channels) != nchans:
-                print(f'input array has {nchans} channels but given {len(channels)} channels')
-                return 1
+                raise click.BadParameter(f'input array has {nchans} channels but given {len(channels)} channels')
+
         elif channels.endswith(".npy"):
             channels = numpy.load(channels)
         elif ".npz:" in channels:
@@ -970,8 +938,8 @@ def npz_to_wct(transpose, output, name, format, tinfo, baseline, scale, dtype, c
             cfp = numpy.load(fname)
             channels = cfp[cname]
         else:
-            print(f'unsupported form for channels: {channels}')
-            return 1
+            raise click.BadParameter(f'unsupported form for channels: {channels}')
+
         channels = numpy.array(channels, 'i4')
 
         label = f'{name}_{event}'
@@ -987,8 +955,8 @@ def npz_to_wct(transpose, output, name, format, tinfo, baseline, scale, dtype, c
         else:
             numpy.savez(output, **out_arrays)
     else:
-        print(f'unsupported output file type: {output}')
-        return 1
+        raise click.BadParameter(f'unsupported output file type: {output}')
+
 
 @cli.command("ario-cmp")
 @click.option("-f","--filenames", type=str, default=None,
@@ -1015,27 +983,27 @@ def ario_cmp(filenames, ario1, ario2):
     else:
         keys = list(set(keys1 + keys2))
     keys.sort()
-    print(keys1, keys2)
+    log.debug(f'{keys1}, {keys2}')
 
     def are_same(key):
         d1 = a1[key];  d2 = a2[key]
         t1 = type(d1); t2 = type(d2) 
         if t1 != t2:
-            print(f'{key} type mismatch: {t1} and {t2}')
+            log.debug(f'{key} type mismatch: {t1} and {t2}')
             return False
         if isinstance(d1, numpy.ndarray):
             if d1.dtype != d2.dtype:
-                print(f'{key} array dtype mismatch: {d1.dtype} and {d2.dtype}')
+                log.debug(f'{key} array dtype mismatch: {d1.dtype} and {d2.dtype}')
                 return False
             if d1.shape != d2.shape:
-                print(f'{key} array shape mismatch: {d1.shape} and {d2.shape}')
+                log.debug(f'{key} array shape mismatch: {d1.shape} and {d2.shape}')
                 return False
             if not numpy.array_equal(d1, d2):
-                print(f'{key} array value mismatch')
+                log.debug(f'{key} array value mismatch')
                 return False
             return True
         if d1 != d2:
-            print(f'{key} object value mismatch')
+            log.debug(f'{key} object value mismatch')
             return False
         return True
 
@@ -1048,14 +1016,14 @@ def ario_cmp(filenames, ario1, ario2):
                 ndiffs += 1
             continue
         if have1:
-            print(f'{key} only in {ario1}')
+            log.debug(f'{key} only in {ario1}')
             ndiffs += 1
             continue
         if have2:
-            print(f'{key} only in {ario2}')
+            log.debug(f'{key} only in {ario2}')
             ndiffs += 1
             continue
-        print(f'{key} not found')
+        log.debug(f'{key} not found')
         continue
     sys.exit(ndiffs)
 
