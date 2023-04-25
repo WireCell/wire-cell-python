@@ -5,11 +5,9 @@ import sys
 import click
 
 from wirecell import units
+from wirecell.util.cli import context, log
 
-cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
-
-@click.group("validate", **cmddef)
-@click.pass_context
+@context("validate")
 def cli(ctx):
     '''
     Wire Cell Validation
@@ -78,7 +76,7 @@ def magnify_diff(ctx, epsilon, out, file1, file2):
 
     loners = names1 ^ names2
     for loner in loners:
-        print ("loner: %s" % loner)
+        log.info (f"loner: {loner}")
 
     names = list(names1 & names2)
     names.sort()
@@ -86,21 +84,18 @@ def magnify_diff(ctx, epsilon, out, file1, file2):
     hists1 = [tfile1.Get(name) for name in names]
     hists2 = [tfile2.Get(name) for name in names]
     t2 = time()
-    #print ("load: ", t2-t1)
     for name,obj1,obj2 in zip(names, hists1, hists2):
         obj1.Add(obj2, -1.0)
         mi = obj1.GetMinimum()
         ma = obj1.GetMaximum()
         if abs(mi) > epsilon or abs(ma) > epsilon:
             msg = "diff: %s %e %e" % (name, mi, ma)
-            print (msg)
+            log.info (msg)
         obj1.SetDirectory(out)
     t3 = time()
-    #print ("subtract: ", t3-t2)
     out.Write()
     out.Close()
     t4 = time()
-    #print ("done: ", t4-t3)
 
 @cli.command("magnify-jsonify")
 @click.option("-o", "--out", 
@@ -125,7 +120,7 @@ def magnify_jsonify(ctx, out, filename):
         d = root.hist_to_dict(key.ReadObj());
         name = key.GetName()
         dat[name] = d
-        #print (name, d)
+
     open(out,"w").write(json.dumps(dat, indent=4))
 
 @cli.command("magnify-dump")
@@ -145,7 +140,7 @@ def magnify_dump(ctx, out, filename):
     from root_numpy import hist2array
     from time import time
 
-    print ("Reading ROOT file")
+    log.debug ("Reading ROOT file")
     t1 = time()
     arrs = dict()
     tfile = ROOT.TFile.Open(filename)
@@ -161,11 +156,11 @@ def magnify_dump(ctx, out, filename):
         for dim,edge in enumerate(edges):
             arrs["%s_%sedge"%(hname, "xyz"[dim])] = edge
     t2 = time()
-    print (t2-t1) # takes 5.7 seconds compared to 5.3 seconds loading npz
-    print ("Writing NPZ file")
+    log.debug (t2-t1) # takes 5.7 seconds compared to 5.3 seconds loading npz
+    log.debug ("Writing NPZ file")
     numpy.savez_compressed(out, **arrs)
     t3 = time()
-    print (t3-t2)
+    log.debug (t3-t2)
         
 @cli.command("npz-load")
 @click.option("-o", "--out", 
@@ -178,10 +173,10 @@ def npz_load(ctx, out, filename):
     t1 = time()
     arrs1 = numpy.load(filename,'r+')
     t2 = time()
-    print ('Memmap load: %f'%(t2-t1,))
+    log.info (f'Memmap load: {t2-t1}')
     arrs2 = numpy.load(filename,None)
     t3 = time()
-    print ('Full load: %f'%(t3-t2))
+    log.info (f'Full load: {t3-t2}')
     outs=dict()
     for name in arrs1:
         arr1 = arrs1[name]
@@ -189,10 +184,10 @@ def npz_load(ctx, out, filename):
         arr = arr2-arr1
         outs[name] = arr
     t4 = time()
-    print ('Subtract: %f' % (t4-t3))
+    log.info (f'Subtract: {t4-t3}')
     numpy.savez_compressed(out, **outs)
     t5 = time()
-    print ('Done: %f' % (t5-t4))
+    log.info (f'Done: {t5-t4}')
 
 @cli.command("magnify-plot-reduce")
 @click.option("-n", "--name", default="orig",
@@ -226,7 +221,6 @@ def magnify_plot_reduce(ctx, name, out, filename):
 
     edges = [ae[1] for ae in aes]
     extents = [(e[0][0],e[0][-1]) for e in edges]
-    #print (extents)
 
     arrs_by_name = dict()
     for mname, meth in methods:
@@ -284,11 +278,11 @@ def magnify_plot(ctx, name, trebin, crebin, baseline, threshold, saturate, out, 
         ce,te = e
         ext = ((ce[0],ce[-1]), (te[0],te[-1]))
 
-        print ("%s: X:%d in [%.0f %.0f] Y:%d in [%.0f %.0f]" % \
+        log.info ("%s: X:%d in [%.0f %.0f] Y:%d in [%.0f %.0f]" % \
             (h.GetName(),
              nx, xa.GetBinLowEdge(1), xa.GetBinUpEdge(nx),
              ny, ya.GetBinLowEdge(1), ya.GetBinUpEdge(ny),))
-        print ("\t shape=%s ext=%s" % (a.shape, ext))
+        log.info ("\t shape=%s ext=%s" % (a.shape, ext))
 
         arrs.append(numpy.fliplr(a))
         extents.append(ext)
@@ -325,13 +319,10 @@ def magnify_plot(ctx, name, trebin, crebin, baseline, threshold, saturate, out, 
     tit = 'Type "%s" (rebin: ch=x%d tick=x%d), file:%s' % (name, crebin, trebin, os.path.basename(filename))
     
     if threshold > 0.0:
-        #print ("thresholding at", threshold)
         tit += " [threshold at %d]" % threshold
         arrs = [numpy.ma.masked_where(numpy.abs(arr)<=threshold, arr) for arr in arrs]
 
     if saturate > 0.0:
-        #print ("saturating at", saturate)
-        #tit += "saturate=%d" % saturate
         newarrs = list()
         for arr in arrs:
             arr[arr > saturate] =  saturate
@@ -344,7 +335,7 @@ def magnify_plot(ctx, name, trebin, crebin, baseline, threshold, saturate, out, 
     extents = [(e[0][0], e[0][1], e[1][0], e[1][1]) for e in extents]
 
     for a,e in zip(arrs,extents):
-        print (a.shape, e)
+        log.info (f'{a.shape}, {e}')
 
 
     fig = three_horiz(arrs, extents, name, baselines)

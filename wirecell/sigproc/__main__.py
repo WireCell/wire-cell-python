@@ -8,14 +8,14 @@ import click
 
 from wirecell import units
 
-cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
+from wirecell.util.cli import context, log
 
-@click.group("sigproc", **cmddef)
-@click.pass_context
+@context("sigproc")
 def cli(ctx):
     '''
     Wire Cell Signal Processing Features
     '''
+    pass
 
 @cli.command("fr2npz")
 @click.option("-g", "--gain", default=0.0, type=float,
@@ -105,7 +105,7 @@ def frzero(ctx, number, output, infile):
 
             wire = int(path.pitchpos / pr.pitch)
             if abs(wire) <= number:
-                print(f'keep wire: {wire}, pitch = {path.pitchpos} / {pr.pitch}')
+                log.info(f'keep wire: {wire}, pitch = {path.pitchpos} / {pr.pitch}')
                 continue
 
             nc = len(path.current)
@@ -122,10 +122,10 @@ def response_info(ctx, json_file):
     '''
     import wirecell.sigproc.response.persist as per
     fr = per.load(json_file)
-    print ("origin:%.2f cm, period:%.2f us, tstart:%.2f us, speed:%.2f mm/us, axis:(%.2f,%.2f,%.2f)" % \
+    log.info ("origin:%.2f cm, period:%.2f us, tstart:%.2f us, speed:%.2f mm/us, axis:(%.2f,%.2f,%.2f)" % \
            (fr.origin/units.cm, fr.period/units.us, fr.tstart/units.us, fr.speed/(units.mm/units.us), fr.axis[0],fr.axis[1],fr.axis[2]))
     for pr in fr.planes:
-        print ("\tplane:%d, location:%.4fmm, pitch:%.4fmm" % \
+        log.info ("\tplane:%d, location:%.4fmm, pitch:%.4fmm" % \
                (pr.planeid, pr.location/units.mm, pr.pitch/units.mm))
 
 @cli.command("convert-garfield")
@@ -243,7 +243,7 @@ def plot_garfield_track_response(ctx, gain, shaping, tick, tick_padding, electro
     dat = gar.load(garfield_fileset, normalization, zero_wire_locs)
 
     if regions:
-        print ("Limiting to %d regions" % regions)
+        log.debug ("Limiting to %d regions" % regions)
         dat = [r for r in dat if abs(r.region) in range(regions)]
 
     uvw = res.line(dat, electrons)
@@ -253,7 +253,7 @@ def plot_garfield_track_response(ctx, gain, shaping, tick, tick_padding, electro
         detector = "MicroBooNE"
     if "dune_" in garfield_fileset:
         detector = "DUNE"
-    print ('Using detector hints: "%s"' % detector)
+    log.debug ('Using detector hints: "%s"' % detector)
 
     nwires = len(set([abs(r.region) for r in dat])) - 1
     #msg = "%d electrons, +/- %d wires" % (electrons, nwires)
@@ -266,11 +266,11 @@ def plot_garfield_track_response(ctx, gain, shaping, tick, tick_padding, electro
                                          detector = detector,
                                          ymin=ymin, ymax=ymax, msg=msg,
                                          tick_padding=tick_padding)
-    print ("plotting to %s" % pdffile)
+    log.debug ("plotting to %s" % pdffile)
     fig.savefig(pdffile)
 
     if dump_data:
-        print ("dumping data to %s" % dump_data)
+        log.debug ("dumping data to %s" % dump_data)
 
         if dump_data.endswith(".npz"):
             import numpy
@@ -317,13 +317,13 @@ def plot_response_compare_waveforms(ctx, plane, irange, trange, responsefile1, r
     def plot_paths(rfile, n):
         fr = per.load(rfile)
         pr = fr.planes[plane]
-        print(f'{colors[n]} {rfile}: plane={plane} {len(pr.paths)} paths:')
+        log.debug(f'{colors[n]} {rfile}: plane={plane} {len(pr.paths)} paths:')
         for ind in irange:
             path = pr.paths[ind]
             tot_q = numpy.sum(path.current)*fr.period
             dt_us = fr.period/units.us
             tot_es = tot_q / units.eplus
-            print (f'\t{ind}: {path.pitchpos:f}: {len(path.current)} samples, dt={dt_us:.3f} us, tot={tot_es:.3f} electrons')
+            log.debug (f'\t{ind}: {path.pitchpos:f}: {len(path.current)} samples, dt={dt_us:.3f} us, tot={tot_es:.3f} electrons')
             plt.gca().set_xlim(*trange)
 
             times = plots.time_linspace(fr, plane)

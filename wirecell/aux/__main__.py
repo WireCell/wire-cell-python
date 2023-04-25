@@ -14,15 +14,13 @@ import subprocess
 from wirecell.aux import idft, sysinfo
 from matplotlib.backends.backend_pdf import PdfPages
 
-cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
-
-@click.group(**cmddef)
-@click.pass_context
+from wirecell.util.cli import context, log
+@context("aux")
 def cli(ctx):
     '''
     wirecell-aux command line interface
     '''
-    ctx.ensure_object(dict)
+    pass
 
 
 @cli.command("run-idft")
@@ -45,6 +43,10 @@ def run_idft(epsilon, verbosity, output, plugin, typename, config, command, arra
     """
     Perform DFT transforms with check_idft and numpy and compare.
     """
+    command = Path(command)
+    if not command.exists():
+        raise click.BadParameter(f'no such program: {command}')
+
     if not array_files:
         arrays = idft.gen_arrays()
         idft.save_arrays("run-idft-gen.tar.bz2", arrays)
@@ -53,7 +55,7 @@ def run_idft(epsilon, verbosity, output, plugin, typename, config, command, arra
         arrays = idft.get_arrays(array_files)
 
     if verbosity>1:
-        print(" ".join(arrays.keys()))
+        log.info(" ".join(arrays.keys()))
 
     if not config:
         config = "run-idft-gen.json"
@@ -62,7 +64,7 @@ def run_idft(epsilon, verbosity, output, plugin, typename, config, command, arra
     py_out = dict()
     for one in jsio.load(config):
         if verbosity > 2:
-            print(one)
+            log.info(one)
         arr = arrays[one["src"]]
         op = getattr(idft, one["op"], None)
         if op is None:          # literally no-op :D
@@ -79,10 +81,19 @@ def run_idft(epsilon, verbosity, output, plugin, typename, config, command, arra
 
     cmdstr = " ".join(cmd)
     if verbosity>0:
-        print(f"\nRunning: {cmdstr}...\n")
-    subprocess.check_output(cmd)
+        log.info(f"\nRunning: {cmdstr}...\n")
+    try:
+        subprocess.check_output(cmd)
+    except Exception:
+        cmdstr = ' '.join(cmd)
+        log.error(f'Failed to run: "{cmdstr}"')
+        log.error('''Perhaps try:
+        - give "--command /path/to/check_idft" option
+        - run "./wcb --tests --target=check_idft to install
+        - examine above error messages''')
+        raise
     if verbosity>0:
-        print(f"\n...done\n")
+        log.info(f"\n...done\n")
     wc_out = idft.get_arrays([output])
 
     keys = list(set(list(wc_out.keys()) + list(py_out.keys())))
@@ -95,19 +106,19 @@ def run_idft(epsilon, verbosity, output, plugin, typename, config, command, arra
         def summary():
             if verbosity < 1:
                 return
-            print (f'\tconfig: {one}')
-            print (f'\tshapes: numpy:{p.shape} wirecell:{w.shape}')
-            print (f'\tdtypes: numpy:{p.dtype} wirecell:{w.dtype}')
+            log.info (f'\tconfig: {one}')
+            log.info (f'\tshapes: numpy:{p.shape} wirecell:{w.shape}')
+            log.info (f'\tdtypes: numpy:{p.dtype} wirecell:{w.dtype}')
             if verbosity < 2:
                 return
-            print (f'\tsum: numpy:{numpy.sum(p)}, wirecell:{numpy.sum(w)}')
-            print (f'\tnumpy:\n{p}\n\twirecell:\n{w}')
+            log.info (f'\tsum: numpy:{numpy.sum(p)}, wirecell:{numpy.sum(w)}')
+            log.info (f'\tnumpy:\n{p}\n\twirecell:\n{w}')
             
 
         def fail(what):
             nonlocal err
             err += 1
-            print (f'fail: {key}: {what} (error #{err})')
+            log.error(f'fail: {key}: {what} (error #{err})')
             summary()
 
         if p is None:
@@ -140,13 +151,13 @@ def run_idft(epsilon, verbosity, output, plugin, typename, config, command, arra
             fail(f'large L1: {l1}')
             continue
 
-        print(f'pass: {key} {p.shape} {p.dtype}')
+        log.info(f'pass: {key} {p.shape} {p.dtype}')
         summary()
 
     if err == 1:
-        print (f'1 error')
+        log.info (f'1 error')
     else:
-        print (f'{err} errors')
+        log.info (f'{err} errors')
 
 
     # run check_idft, make output file

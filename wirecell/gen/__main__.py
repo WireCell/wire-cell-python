@@ -4,16 +4,14 @@ import math
 import click
 from wirecell import units
 from wirecell.util.functions import unitify, unitify_parse
-from wirecell.util.cli import jsonnet_loader
+from wirecell.util.cli import jsonnet_loader, context, log, frame_input, image_output
 
-cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
-
-@click.group("util", **cmddef)
-@click.pass_context
+@context("gen")
 def cli(ctx):
     '''
     Wire Cell Signal Simulation Commands
     '''
+    pass
 
 @cli.command("unitify-depos")
 @click.option("-j", "--json_path", default='depos',
@@ -75,21 +73,21 @@ def move_depos(ctx, json_path, center, offset,
 
 @cli.command("plot-depos")
 @click.option("-g", "--generation", default=0,
-              help="The depo generation index")
+              help="The depo generation index. [default=0]")
 @click.option("-i", "--index", default=0,
-              help="The depos set index in the file")
+              help="The depos set index in the file. [default=0]")
 @click.option("-p", "--plot", default='qxz',
-              help="The plot to make.")
+              type=click.Choice("qxz qxy qzy qxt qzt t x xzqscat xyqscat tzqscat tyqscat".split(' ')),
+              help="The plot to make. [default=qxz]")
 @click.option("-s", "--speed", default=None,
-              help="Assign x position based on drift speed, use units like '1.6*mm/us'.")
+              help="Drift speed, with units eg '1.6*mm/us'. [default=None]")
 @click.option("--t0", default="0*ns",
-              help="Arbitrary additive time used in drift speed assignment, use units")
+              help="Arbitrary additive time used in drift speed assignment, use units. [default=0*ns]")
 @click.argument("input-file")
-@click.argument("output-file")
-@click.pass_context
-def plot_depos(ctx, generation, index, plot,
-               speed, t0,
-               input_file, output_file):
+#@click.argument("output-file")
+@image_output
+def plot_depos(generation, index, plot, speed, t0,
+               input_file, output, **kwds):
     '''
     Make a plot from a WCT depo file.
 
@@ -108,26 +106,19 @@ def plot_depos(ctx, generation, index, plot,
     plotter = getattr(deposmod, "plot_"+plot)
     depos = deposmod.load(input_file, index, generation)
     if 't' not in depos or len(depos['t']) == 0:
-        print(f'No depos for index={index} and generation={generation} in {input_file}')
-        return
+        raise click.BadParameter(f'No depos for index={index} and generation={generation} in {input_file}')
+
     t0 = unitify(t0)
     if speed is not None:
         speed = unitify(speed)
-        print(f'applying speed: {speed/(units.mm/units.us)} mm/us')
+        log.debug(f'applying speed: {speed/(units.mm/units.us)} mm/us')
         depos['x'] = speed*(depos['t']+t0)
     else:
         depos['t'] += t0
 
-    #depos = deposmod.remove_zero_steps(depos)
-    try:
-        plotter(depos, output_file)
-    except ValueError as e:
-        print(e)
-        # punt, but make a file to satisfy workflow managers
-        print(f'writing empty file {output_file}')
-        import matplotlib.pyplot as plt
-        plt.savefig(output_file)
-
+    with output as out:
+        plotter(depos, **kwds) # may throw
+        out.savefig()
 
 @cli.command("plot-test-boundaries")
 @click.option("-t", "--times", default=[100.0,105.0], type=float, nargs=2,
@@ -143,8 +134,6 @@ def plot_test_boundaries(ctx, times, npz_file, pdf_file):
 
     this makes a test_boundaries.npz file which is input to this command.
     '''
-    print (times)
-
     from wirecell.gen import sim
     from matplotlib.backends.backend_pdf import PdfPages
     import matplotlib.pyplot as plt
@@ -204,10 +193,10 @@ def plot_sim(ctx, input_file, output_file, ticks, plot, tag, time_range, number,
     from wirecell.util.plottools import NameSequence
 
     if output_file.endswith("pdf"):
-        print(f'Saving to pdf: {output_file}')
+        log.info(f'Saving to pdf: {output_file}')
         Outer = PdfPages
     else:
-        print(f'Saving to: {output_file}')
+        log.info(f'Saving to: {output_file}')
         Outer = NameSequence
 
     if not time_range:
@@ -243,7 +232,7 @@ def plot_sim(ctx, input_file, output_file, ticks, plot, tag, time_range, number,
                             ch.append([one])
                 else:
                     ch = wirecell.gen.sim.group_channel_indices(fr.channels)
-                print ("Using channel groups: ", ch)
+                log.debug ("Using channel groups: ", ch)
 
                 if ticks:
                     plotter = fr.plot_ticks
@@ -291,9 +280,8 @@ def depo_lines(electron_density, step_size, time, tracks, sets,
     Generate ideal line-source "tracks" of depos
     '''
 
-    if not output.endswith(".npz"):
-        print(f'unsupported file type: {output}')
-        return -1
+    if output is None or not output.endswith(".npz"):
+        raise click.BadParameter(f'unsupported file type: {output}')
 
     seed = list(map(int, seed.split(",")))
     import numpy.random
@@ -312,7 +300,7 @@ def depo_lines(electron_density, step_size, time, tracks, sets,
 
     arrays = lines(tracks, sets, p0, p1, time, eperstep, step_size, track_speed)
 
-    print("saving:", list(arrays.keys()))
+    log.info("saving:", list(arrays.keys()))
     numpy.savez(output, **arrays) 
 
 @cli.command("depo-point")
@@ -331,6 +319,9 @@ def depo_point(number, time, position, sigma, output):
     '''
     Generate a single point depo.
     '''
+    if output is None:
+        raise click.BadParameter("no output file provided")
+
     import numpy
     number = unitify(number)
     if number > 0:
@@ -368,9 +359,10 @@ def depo_sphere(radius, electron_density, step_size,
     Generate ideal phere of depos
     '''
 
+    if output is None:
+        raise click.BadParameter("no output file provided")
     if not output.endswith(".npz"):
-        print(f'unsupported file type: {output}')
-        return -1
+        raise click.BadParameter(f'unsupported file type: {output}')
 
     seed = list(map(int, seed.split(",")))
     import numpy.random
@@ -396,10 +388,9 @@ def depo_sphere(radius, electron_density, step_size,
         
 
 @cli.command("frame-stats")
-@click.option("-a", "--array", default="frame_*_0", help="array name")
 @click.option("-c", "--channels", default="800,800,960", help="comma list of channel counts per plane in u,v,w order")
-@click.argument("npzfile")
-def frame_stats(array, channels, npzfile):
+@frame_input
+def frame_stats(array, channels, ariofile, **kwds):
     '''
     Return (print) stats on the time distribution of a frame.
 
@@ -414,9 +405,6 @@ def frame_stats(array, channels, npzfile):
         outliers = [sum(arel >= sigma*rms) for sigma in range(0,11)]
         return [n,mu,rms]+outliers
 
-    fp = numpy.load(npzfile)
-    array = fp[array]
-    
     channels = [int(c) for c in channels.split(',')]
     chan0=0
     for chan, letter in zip(channels,"UVW"):
@@ -425,10 +413,9 @@ def frame_stats(array, channels, npzfile):
 
         tsum = plane.sum(axis=0)/plane.shape[0]
         csum = plane.sum(axis=1)/plane.shape[1]
-        # print(plane.shape, tsum.size, csum.size, (chan0, chan0+chan), numpy.sum(plane))
 
-        print(' '.join([letter, 't'] + list(map(str,calc_stats(tsum)))))
-        print(' '.join([letter, 'c'] + list(map(str,calc_stats(csum)))))
+        log.info(' '.join([letter, 't'] + list(map(str,calc_stats(tsum)))))
+        log.info(' '.join([letter, 'c'] + list(map(str,calc_stats(csum)))))
 
         chan0 += chan
 

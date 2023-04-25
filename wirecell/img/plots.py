@@ -9,6 +9,9 @@ from collections import defaultdict
 from wirecell import units
 from wirecell.util.wires.schema import plane_face_apa;
 
+import logging
+log = logging.getLogger("wirecell.img")
+
 
 class Hist2D(object):
     def __init__(self, nx, xmin, xmax, ny, ymin, ymax):
@@ -59,17 +62,22 @@ def activity(cm):
     cmax = max(channels);
     smin = min(slices);
     smax = max(slices);
-    print ("activity: c:[%d,%d], s:[%d,%d]" % (cmin, cmax, smin, smax))
     
     hist = Hist2D(smax-smin+1, smin, smax+1,
                   cmax-cmin+1, cmin, cmax+1)
+    nzeros=0
     for snode in cm.nodes_oftype('s'):
         sdat = cm.gr.nodes[snode]
         si = sdat['ident']
         for c,sig in sdat['signal'].items():
             ci = int(c)
             v = sig['val']
+            if not v or numpy.sum(v) == 0:
+                nzeros += 1
+                continue
             hist.fill(si+.1, ci+.1, v)
+
+    log.debug (f'activity: c:[{cmin,cmax}], s:[{smin},{smax}] nzero={nzeros}')
 
     return hist
     # fig,ax = plt.subplots(nrows=1, ncols=1)

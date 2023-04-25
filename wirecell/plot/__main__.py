@@ -5,25 +5,23 @@ Main CLI to wirecell.plot.
 
 import click
 from wirecell.util import ario, plottools
-from wirecell.util.cli import jsonnet_loader
+from wirecell.util.cli import log, context, jsonnet_loader, frame_input, image_output
 from wirecell.util import jsio
 
 import numpy
 import matplotlib.pyplot as plt
-from .cli import frame_input, image_output
 
-cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
-
-@click.group(**cmddef)
-@click.pass_context
+@context("plot")
 def cli(ctx):
     '''
     wirecell-plot command line interface
     '''
-    ctx.ensure_object(dict)
+    pass
 
 
 @cli.command("ntier-frames")
+# @frame_input
+# @image_output
 @click.option("-o", "--output", default="ntier-frames.pdf",
               help="Output file")
 @click.option("-c", "--cmap",
@@ -37,11 +35,14 @@ def ntier_frames(cmap, output, files):
     Each file should a "frame file" (an ario stream of
     frame/channels/tickinfo arrays)
     '''
+    if not files:
+        raise click.BadParameter('no input files given')
+
     if output.endswith("pdf"):
-        print(f'Saving to pdf: {output}')
+        log.info(f'Saving to pdf: {output}')
         Outer = plottools.PdfPages
     else:
-        print(f'Saving to: {output}')
+        log.info(f'Saving to: {output}')
         Outer = plottools.NameSequence
 
     cmaps = {kv[0]:kv[1] for kv in [x.split("=") for x in cmap]}
@@ -79,10 +80,10 @@ def ntier_frames(cmap, output, files):
                 try:
                     arr = reader[aname]
                 except KeyError:
-                    print(f'No such key "{aname}".  Have: {len(reader)}')
-                    print(' '.join(reader.keys()))
+                    log.warn(f'No such key "{aname}".  Have: {len(reader)}')
+                    log.warn(' '.join(reader.keys()))
                     continue
-                print(aname, arr.shape)
+                log.debug(aname, arr.shape)
                 arr = (arr.T - numpy.median(arr, axis=1)).T
                 cmap = cmaps.get(tier, "viridis")
                 im = ax.imshow(arr, aspect='equal', interpolation='none', cmap=cmap)
@@ -102,31 +103,21 @@ def ntier_frames(cmap, output, files):
               help="The frame tag")
 @click.option("-u", "--unit", default="ADC",
               help="The color units")
-@click.option("-r", "--range", default=25.0, type=float,
-              help="The color range")
-@click.option("-s", "--single", is_flag=True, default=False,
-              help="force a single plot without file name mangling")
 @click.option("--interactive", is_flag=True, default=False,
               help="running in interactive mode")
+@image_output
 @click.argument("datafile")
-@click.argument("output")
-@click.pass_context
-def frame(ctx, name, tag, unit, range, interactive, single, datafile, output):
+def frame(name, unit, tag, interactive, datafile, output, **kwds):
     '''
     Make frame plots of given type.
     '''
     from . import frames
     mod = getattr(frames, name)
+
     dat = ario.load(datafile)
-    if not dat:
-        raise IOError(f'ario load failed with {datafile}')
 
-    if single:
-        out = plottools.NameSingleton(output)
-    else:
-        out = plottools.pages(output)
-
-    mod(dat, out, tag, unit, range, interactive=interactive)
+    with output as out:
+        mod(dat, out, tag, unit, interactive=interactive, **kwds)
 
 
 @cli.command("comp1d")
@@ -162,16 +153,21 @@ def comp1d(ctx, name, tier, frames, chmin, chmax, unit, xrange,
            single, transform, interactive, output, markers, datafiles):
     '''
     Compare waveforms from files
+
+    FIXME: migrate to use of frame_input and image_output
     '''
     from .frames import comp1d as plotter
     if frames is None:
         frames = tier
     else:
         frames = [f.strip() for f in frames.split(",")]
+
+    # too high and the pixel marker disappears.
+    opts=dict(dpi=150)
     if single:
-        out = plottools.NameSingleton(output)
+        out = plottools.NameSingleton(output, **opts)
     else:
-        out = plottools.pages(output)
+        out = plottools.pages(output, **opts)
 
     markers=[m.strip() for m in markers.split(' ')]
     plotter(datafiles, out,
@@ -197,6 +193,8 @@ def comp1d(ctx, name, tier, frames, chmin, chmax, unit, xrange,
 def channel_correlation(ctx, tier, chmin, chmax, unit, interactive, datafile, output):
     '''
     Compare waveforms from files
+
+    FIXME: migrate to use of frame_input and image_output
     '''
     from . import frames
     with plottools.pages(output) as out:
@@ -204,23 +202,13 @@ def channel_correlation(ctx, tier, chmin, chmax, unit, interactive, datafile, ou
         tier=tier, chmin=chmin, chmax=chmax, unit=unit, interactive=interactive)
 
 
-def imopts(**kwds):
-    '''
-    Only pass options relevant to imsave() type functions.
-    '''
-    ret = dict()
-    for key in 'vmin vmax cmap'.split():
-        if key in kwds:
-            ret[key] = kwds[key]
-    return ret
-
 
 @cli.command("frame-diff")
+@click.option("--style", type=click.Choice(["image", "axes"]), default="image")
 @frame_input
 @image_output
-@click.option("--style", type=click.Choice(["image", "axes"]), default="image")
 @click.argument("ariofile2")
-def frame_diff(array, channels, format, output, aname, style, ariofile2, **kwds):
+def frame_diff(style, array, output, aname, ariofile2, **kwds):
     '''
     Take diff between two frames and write result as image
     '''
@@ -228,48 +216,55 @@ def frame_diff(array, channels, format, output, aname, style, ariofile2, **kwds)
     f2 = ario.load(ariofile2)
     a2 = f2[aname]
     adiff = array - a2
-    if style == "image":
-        matplotlib.image.imsave(output, adiff, format=format, **imopts(**kwds))
-        return
-    plt.imshow(adiff, **kwds)
-    plt.tight_layout()
-    plt.savefig(output, format=format)
+    with output as out:
+        plottools.image(adiff, style, **plottools.imopts(**kwds))
+        out.savefig()
 
 
 @cli.command("frame-image")
 @click.option("--transform", default='none',
               type=click.Choice(["median","mean","ac","none"]), 
               help="type of image transformations")
+@click.option("--style", type=click.Choice(["image", "axes"]), default="image")
 @frame_input
 @image_output
-def frame_image(transform, array, channels, format, output, aname, fname, **kwds):
+def frame_image(transform, style, array, output, aname, **kwds):
     '''
-    Dump frame array to image, ignoring channels.
+    Dump frame array to image
     '''
     import matplotlib.image
     from . import rebaseline
     tr = getattr(rebaseline, transform)
     array = tr(array)
-    print(array.shape)
-    matplotlib.image.imsave(output, array, format=format, **kwds)
+    with output as out:
+        plottools.image(array, style, **plottools.imopts(**kwds))
+        out.savefig()
+
 
 @cli.command("frame-means")
 @frame_input
 @image_output
-def frame_means(array, channels, cmap, format, output, aname, fname):
+@click.option("--channels", default="800,800,960", help="Channels per plane")
+def frame_means(array, channels, cmap, output, aname, ariofile, **kwds):
     '''
     Plot frames and their channel-wise and tick-wise means
     '''
+    from wirecell.util.channels import parse_range
+    channels = parse_range(channels)
     from . import frames
-    frames.frame_means(array, channels, cmap, format, output, aname, fname)
+    with output as out:
+        frames.frame_means(array, channels, cmap, aname, ariofile.path)
+        out.savefig()
 
 
 @cli.command("digitizer")
 @image_output
 @jsonnet_loader("jsiofile")
-def digitzer(output, format, jsiofile):
+def digitzer(output, jsiofile, **kwds):
     '''
     Plots with output JSON file from test_digitizer
+
+    See gen/test/test_digitizer_pdsp.cxx
     '''
     fadc = numpy.array(jsiofile["adc"])
     adc = {
@@ -278,23 +273,25 @@ def digitzer(output, format, jsiofile):
         "floor": numpy.floor(fadc)}
     volts = numpy.array(jsiofile["volts"])
     
-    fig, axes = plt.subplots(2,1, figsize=(10,6))
+    with output as out:
 
-    num = 25
+        fig, axes = plt.subplots(2,1, figsize=(10,6))
 
-    plt.suptitle("Digitizer with round vs floor")
-    markers = ['o','P','X']
-    def plot_slice(ax, slc):
-        for ind, (key,val) in enumerate(adc.items()):
-            ax.plot(volts[slc], val[slc], markers[ind]+'-', alpha=0.3, label=key)
-        ax.legend()
-        ax.set_xlabel("voltage [V]")
-        ax.set_ylabel("ADC")
-    plot_slice(axes[0], slice(0,25))
-    plot_slice(axes[1], slice(-25,volts.size))
+        num = 25
 
-    plt.tight_layout()
-    plt.savefig(output, format=format)
+        plt.suptitle("Digitizer with round vs floor")
+        markers = ['o','P','X']
+        def plot_slice(ax, slc):
+            for ind, (key,val) in enumerate(adc.items()):
+                ax.plot(volts[slc], val[slc], markers[ind]+'-', alpha=0.3, label=key)
+            ax.legend()
+            ax.set_xlabel("voltage [V]")
+            ax.set_ylabel("ADC")
+        plot_slice(axes[0], slice(0,25))
+        plot_slice(axes[1], slice(-25,volts.size))
+
+        plt.tight_layout()
+        out.savefig()
 
 
 def main():

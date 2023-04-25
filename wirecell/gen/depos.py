@@ -155,7 +155,7 @@ def center(depos, point):
     return move(depos, offset)
 
 
-def _abc_hist(a, b, c, da, db):
+def _abc_hist(a, b, c, da, db, **kwds):
     '''
     Plot b vs a weighted by c in da x db bins.  Return axis
     '''
@@ -178,72 +178,75 @@ def _abc_hist(a, b, c, da, db):
     ax = fig.add_subplot(111)
 
     hist, abins, bbins = numpy.histogram2d(a, b, bins=(aedges, bedges), weights=c)
-    im = ax.imshow(numpy.ma.masked_where(hist==0, hist), interpolation='none',
-                   extent=(amm[0], amm[1], bmm[1], bmm[0]))
+    im = ax.imshow(numpy.ma.masked_where(hist==0, hist), interpolation='none', aspect='auto',
+                   extent=(amm[0], amm[1], bmm[1], bmm[0]),
+                   cmap=kwds.get("cmap", "viridis"),
+                   vmin=kwds.get("vmin", 0),
+                   vmax=kwds.get("vmax", 100000))
     plt.colorbar(im, ax=ax)
     return ax
 
-def plot_qxz(depos, output):
+def plot_qxz(depos, **kwds):
     'Plot colz q as X vs Z'
     q = numpy.abs(depos["q"])
     x = depos["x"]
     z = depos["z"]
 
-    ax = _abc_hist(x, z, q, units.cm, units.cm)
+    ax = _abc_hist(x, z, q, units.cm, units.cm, **kwds)
     ax.set_title("depo electrons")
     ax.set_xlabel("X [cm]")
     ax.set_ylabel("Z [cm]")
-    plt.savefig(output, dpi=300)
+#    plt.savefig(output, dpi=300)
 
-def plot_qxy(depos, output):
+def plot_qxy(depos, **kwds):
     'Plot colz q as X vs Y'
     q = numpy.abs(depos["q"])
     x = depos["x"]
     y = depos["y"]
 
-    ax = _abc_hist(x, y, q, units.cm, units.cm)
+    ax = _abc_hist(x, y, q, units.cm, units.cm, **kwds)
     ax.set_title("depo electrons")
     ax.set_xlabel("X [cm]")
     ax.set_ylabel("Y [cm]")
-    plt.savefig(output, dpi=300)
+#    plt.savefig(output, dpi=300)
 
-def plot_qzy(depos, output):
+def plot_qzy(depos, **kwds):
     'Plot colz q as Z vs Y'
     q = numpy.abs(depos["q"])
     z = depos["z"]
     y = depos["y"]
 
-    ax = _abc_hist(z, y, q, units.cm, units.cm)
+    ax = _abc_hist(z, y, q, units.cm, units.cm, **kwds)
     ax.set_title("depo electrons")
     ax.set_xlabel("Z [cm]")
     ax.set_ylabel("Y [cm]")
-    plt.savefig(output, dpi=300)
+    # plt.savefig(output, dpi=300)
 
-def plot_qxt(depos, output):
+def plot_qxt(depos, **kwds):
     'Plot colz q as X vs T'
     q = numpy.abs(depos["q"])
     x = depos["x"]
     t = depos["t"]
 
-    ax = _abc_hist(x, t, q, units.cm, units.us)
+    ax = _abc_hist(x, t, q, units.cm, units.us, **kwds)
     ax.set_title("depo electrons")
     ax.set_xlabel("X [cm]")
     ax.set_ylabel("T [us]")
-    plt.savefig(output, dpi=300)
+#    plt.savefig(output, dpi=300)
 
-def plot_qzt(depos, output):
+def plot_qzt(depos, **kwds):
     'Plot colz q as Z vs T'
     q = numpy.abs(depos["q"])
     z = depos["z"]
     t = depos["t"]
 
-    ax = _abc_hist(z, t, q, units.cm, units.us)
+    ax = _abc_hist(z, t, q, units.cm, units.us, **kwds)
     ax.set_title("depo electrons")
     ax.set_xlabel("Z [cm]")
     ax.set_ylabel("T [us]")
-    plt.savefig(output, dpi=300)
+#    plt.savefig(output, dpi=300)
 
-def plot_t(depos, output):
+def plot_t(depos, **kwds):
     'Plot t histogram weighted by q'
     q = numpy.abs(depos["q"])
     t = depos["t"]
@@ -251,9 +254,9 @@ def plot_t(depos, output):
     fig, ax = plt.subplots(1,1, tight_layout=True)
     ax.hist(t/units.us, bins=1000)
     ax.set_xlabel('T [us]')
-    plt.savefig(output)
+    # plt.savefig(output)
 
-def plot_x(depos, output):
+def plot_x(depos, **kwds):
     'Plot x histogram weighted by q'
     q = numpy.abs(depos["q"])
     x = depos["x"]
@@ -261,9 +264,9 @@ def plot_x(depos, output):
     fig, ax = plt.subplots(1,1, tight_layout=True)
     ax.hist(x/units.cm, bins=1000)
     ax.set_xlabel('X [cm]')
-    plt.savefig(output)
+    # plt.savefig(output)
 
-def _plot_abc(title, a, b, c, atit, btit, ctit, output, cmap='viridis'):
+def _plot_abc(title, a, b, c, atit, btit, ctit, cmap='viridis', **kwds):
     '''
     Plot b vs a colored by c.
     '''
@@ -280,41 +283,41 @@ def _plot_abc(title, a, b, c, atit, btit, ctit, output, cmap='viridis'):
     ax.set_ylabel(btit)
     sc = ax.scatter(a, b, c=c, cmap=cmap)
     plt.colorbar(sc)
-    fig.savefig(output)
+    # fig.savefig(output)
     
 
-def plot_xzqscat(depos, output):
+def plot_xzqscat(depos, **kwds):
     'Plot charge as scatter plot'
 
     _plot_abc('Charge',
               depos["x"]/units.mm, 
               depos["z"]/units.mm, 
               numpy.abs(depos["q"]),
-              "x [mm]", "z [mm]", "q [ele]", output)
+              "x [mm]", "z [mm]", "q [ele]", **kwds)
 
-def plot_xyqscat(depos, output):
+def plot_xyqscat(depos, **kwds):
     'Plot charge as scatter plot'
 
     _plot_abc('Charge',
               depos["x"]/units.mm, 
               depos["y"]/units.mm, 
               numpy.abs(depos["q"]),
-              "x [mm]", "y [mm]", "q [ele]", output)
+              "x [mm]", "y [mm]", "q [ele]", **kwds)
 
-def plot_tzqscat(depos, output):
+def plot_tzqscat(depos, **kwds):
     'Plot charge as scatter plot'
 
     _plot_abc('Charge',
               depos["t"]/units.us, 
               depos["z"]/units.mm, 
               numpy.abs(depos["q"]),
-              "t [mus]", "z [mm]", "q [ele]", output)
+              "t [mus]", "z [mm]", "q [ele]", **kwds)
 
-def plot_tyqscat(depos, output):
+def plot_tyqscat(depos, **kwds):
     'Plot charge as scatter plot'
 
     _plot_abc('Charge',
               depos["t"]/units.us, 
               depos["y"]/units.mm, 
               numpy.abs(depos["q"]),
-              "t [mus]", "y [mm]", "q [ele]", output)
+              "t [mus]", "y [mm]", "q [ele]", **kwds)

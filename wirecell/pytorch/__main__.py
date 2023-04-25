@@ -3,18 +3,16 @@
 Main CLI for things related to wire-cell-toolkit/pytorch/ 
 '''
 
+import sys
 import click
-import torch
+from wirecell.util.cli import context, log
 
-cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
-
-@click.group(**cmddef)
-@click.pass_context
+@context("pytorch")
 def cli(ctx):
     '''
     wirecell-pytorch command line interface
     '''
-    ctx.ensure_object(dict)
+    pass
 
 
 @cli.command("make-dft")
@@ -23,6 +21,12 @@ def make_dft(filename):
     '''
     Generate the DFT torch script module into given file.
     '''
+    try:
+        import torch
+    except ImportError:
+        log.error("no torch module")
+        sys.exit(1)
+
     from .script import DFT
     ts = torch.jit.script(DFT());
     ts.save(filename)
