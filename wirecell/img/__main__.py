@@ -304,17 +304,17 @@ def inspect(ctx, output, verbose, cluster_file):
                     out.write('\n')
 
             if code == 'b':
-                for key in ['value', 'error']:
+                for key in ['val', 'unc']:
                     out_stats(key, [n[key] for n in ndat])
                 if verbose:
                     burp_neighbors()
                 continue
 
             if code == 'c':
-                for key in ['value', 'error']:
+                for key in ['val', 'unc']:
                     # we do a get because some channels are not
                     # reachable from the slice->blob->measure that is
-                    # done to add 'value' key.
+                    # done to add 'val' key.
                     out_stats(key, [n.get(key, 0) for n in ndat])
                 continue
 

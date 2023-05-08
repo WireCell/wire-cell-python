@@ -284,7 +284,7 @@ def blob_center(bdat):
     Return an array of one point at the center of the blob
     '''
     thickness = bdat['span']
-    value = bdat['value']
+    value = bdat['val']
     arr = numpy.asarray(bdat['corners'])
 
     npts = arr.shape[0]
@@ -302,7 +302,7 @@ def blob_uniform_sample(bdat, density):
     import random
     from shapely.geometry import Polygon, Point
     thickness = bdat['span']
-    value = bdat['value']
+    value = bdat['val']
 
     # z is x, y is y
     xstart = bdat['corners'][0][0]

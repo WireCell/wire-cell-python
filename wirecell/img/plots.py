@@ -162,7 +162,7 @@ def wire_blob_slice(cm, sliceid):
         faceid = bdata['faceid']
         blob_xs_byface[faceid].append(cx)
         blob_ys_byface[faceid].append(cy)
-        blob_cs_byface[faceid].append(bdata['value'])
+        blob_cs_byface[faceid].append(bdata['val'])
 
 
     cmap = plt.get_cmap('gist_rainbow')

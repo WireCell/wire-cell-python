@@ -113,7 +113,7 @@ def make_pggraph(name, dat):
 
 class PgFiller:
 
-    # cluster array schema
+    # Map cluster array schema to cluster graph schema
     dtypes = dict(
         a=[                     # 6
             ('desc',int), ('ident',int),
@@ -126,7 +126,7 @@ class PgFiller:
             ('headx',float),('heady',float),('headz',float)],
         b=[                     # 39
             ('desc',int), ('ident',int),
-            ('value',float), ('error',float),
+            ('val',float), ('unc',float),
             ('faceid',int),('sliceid',int), # 6
             ('start',float),('span',float),
             ('min1',int), ('max1',int),
@@ -135,7 +135,7 @@ class PgFiller:
             ('ncorners',int)] + [(f'c{i}',int) for i in range(24)],
         s=[                     # 7
             ('desc',int), ('ident',int),
-            ('value',float), ('error',float),
+            ('val',float), ('unc',float),
             ('frameid',int),
             ('start',float),('span',float)],
         m=[                     # 5
@@ -206,13 +206,14 @@ class PgFiller:
         for irow, desc in enumerate(descs):
             # this re-adds same c node many times
             self.gr.add_node(desc, code="c", desc=desc,
-                             val=vals[irow], unc=uncs[irow],
+                             # suppress this to match JSON
+                             # val=vals[irow], unc=uncs[irow],
                              index=indexs[irow],
                              ident=idents[irow], wpid=wpids[irow])
 
     def add_blob(self):
         ndat, arr = self.get_both("b")
-        data = {k:arr[k] for k in 'value error faceid sliceid start span'.split()}
+        data = {k:arr[k] for k in 'val unc faceid sliceid start span'.split()}
         descs = self.add_common("b", arr, **data)
         
         corners = ndat[:,15:].reshape((-1,12,2))

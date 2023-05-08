@@ -101,7 +101,7 @@ def plot_views(gr):
         raise ValueError('graph with no blobs')
 
     # (N,)
-    qall = numpy.array([b['value'] for b in blobs])
+    qall = numpy.array([b['val'] for b in blobs])
     ind = qall>0
     q = qall[ind]
     if q.size == 0:

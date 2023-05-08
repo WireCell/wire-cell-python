@@ -87,7 +87,7 @@ def dump_blobs(gr, sigfile=None, dumpfile="/dev/stdout"):
         if ndata['code'] != 'b':
             continue;
         sig = bsignature(gr, node)
-        sig.append(int(ndata['value']))
+        sig.append(int(ndata['val']))
         # print(ndata)
         # print(sig)
         # exit()

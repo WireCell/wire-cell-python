@@ -75,7 +75,7 @@ def blob_coord(blobs, axis=0):
 def blob_charge(blobs):
     ret = numpy.zeros(len(blobs))
     for ind, b in enumerate(blobs):
-        ret[ind] = b['value']
+        ret[ind] = b['val']
     return ret
     
 
@@ -259,7 +259,7 @@ def plot_views(depos, cgraph):
     
 
     ## blobs
-    blobs = blob_nodes(cgraph)#, lambda b: b['value'] >= 0)
+    blobs = blob_nodes(cgraph)#, lambda b: b['val'] >= 0)
     bbs = blob_bounds(blobs) # (3,2,N), WIP bounds
     bq = blob_charge(blobs)  # (N,)
     bss = blob_slices(blobs) # (2,N), time (start,span)
