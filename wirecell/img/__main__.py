@@ -250,11 +250,6 @@ def inspect(ctx, output, verbose, cluster_file):
         log.error(f'no such file: {path}')
         return
 
-    if path.name.endswith(".json"):
-        log.debug ('JSON file assuming from JsonClusterTap')
-    elif '.tar' in path.name:
-        log.debug ('TAR file assuming from ClusterFileSink')
-
     graphs = list(tap.load(str(path)))
     out.write(f'number of graphs: {len(graphs)}\n')
     for ig, gr in enumerate(graphs):

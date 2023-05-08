@@ -44,8 +44,9 @@ def make_nxgraph(name, dat):
         vdesc = vtx['ident']
         gr.add_node(vdesc, desc=vdesc, code=vtx['type'], **vtx['data'])
     for edge in dat['edges']:
-        gr.add_edge(*edge)
+        gr.add_edge(edge['tail'], edge['head'])
 
+    log.debug(f'load {name} with {gr.number_of_nodes()} nodes and {gr.number_of_edges()} edges')
     return gr
 
 # Expand possible node array codes
@@ -363,9 +364,11 @@ def load(filename, **kwds):
     '''
     Yield a sequence of graphs loaded from file like object.
     '''
-    if filename.endswith((".json", ".json.gz", ".json.bz2", '.jsonnet')):
+    if filename.endswith((".json", "json.gz", ".json.bz2", '.jsonnet')):
+        log.debug("loading cluster file as JSON")
         for one in load_jsio(filename, **kwds):
             yield one
     else:
+        log.debug("loading cluster file as ario")
         for one in load_ario(filename, **kwds):
             yield one
