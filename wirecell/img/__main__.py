@@ -270,15 +270,27 @@ def inspect(ctx, output, verbose, cluster_file):
             ndat = cm.data_oftype(code)
             nodes_of_type = cm.nodes_oftype(code)
 
+            keys = set()
+            for n in nodes_of_type:
+                keys.update(gr.nodes[n].keys())
+            keys = list(keys)
+            keys.sort()
+
+            uniq_idents = set()
+            uniq_descs = set()
             neighbor_counts = Counter()
             for n in nodes_of_type:
+                uniq_idents.add(gr.nodes[n]['ident'])
+                uniq_descs.add(gr.nodes[n]['desc'])
                 for nn in gr[n]:
                     neighbor_counts[gr.nodes[nn]['code']] += 1
-            out.write(f'\t{code}: {count} nodes, neighbors:')
+            out.write(f'\t{code}: {count} nodes ({len(uniq_idents)} idents, {len(uniq_descs)} descs), neighbors:')
             for c,n in sorted(neighbor_counts.items()):
                 out.write(f' {c}={n}')
-            out.write('\n')
-
+            out.write(f' data: {keys}\n')
+            if code != 'w':
+                assert len(uniq_idents) == count
+            assert len(uniq_descs) == count
             def burp_neighbors():
                 for n in nodes_of_type:
                     d = gr.nodes[n]
@@ -305,6 +317,11 @@ def inspect(ctx, output, verbose, cluster_file):
                     # done to add 'value' key.
                     out_stats(key, [n.get(key, 0) for n in ndat])
                 continue
+
+            if code == 'w':
+                for thing in ['seg', 'wpid']:
+                    c = Counter([n.get(thing,-1) for n in ndat])
+                    out.write(f'\t\t{thing}: {c}\n')
 
             if code == 'm':
                 for key in ['val', 'unc']:

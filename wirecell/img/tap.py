@@ -13,9 +13,15 @@ import json
 from pathlib import Path
 from collections import namedtuple, defaultdict
 import numpy
+from numpy.core.records import fromarrays
 import networkx as nx
 
+from collections import Counter
+
 from wirecell.util import ario, jsio
+
+import logging
+log = logging.getLogger("wirecell.img")
 
 def slice_channels(gr, snode):
     '''
@@ -35,7 +41,8 @@ def make_nxgraph(name, dat):
     '''
     gr = nx.Graph(name=name)
     for vtx in dat['vertices']:
-        gr.add_node(vtx['ident'], code=vtx['type'], **vtx['data'])
+        vdesc = vtx['ident']
+        gr.add_node(vdesc, desc=vdesc, code=vtx['type'], **vtx['data'])
     for edge in dat['edges']:
         gr.add_edge(*edge)
 
@@ -44,7 +51,6 @@ def make_nxgraph(name, dat):
 # Expand possible node array codes
 node_types = dict(a="activity", w="wire", b="blob", s="slice", m="measure")
 edge_types = ('aw','bs','bw','bb','am','bm','as')
-
 
 def make_pggraph(name, dat):
     '''Return graph data represented in a manner similar to
@@ -100,131 +106,197 @@ def make_pggraph(name, dat):
             nt2 = node_types[ec[1]]
             pghd[nt1,ec,nt2] = Edge(edge_index=arr)
             continue
-        print(f'Warning: unexpected array: "{key}"')
+        log.warning(f'Warning: unexpected array: "{key}"')
 
     return pghd
 
 
+class PgFiller:
+
+    # cluster array schema
+    dtypes = dict(
+        a=[                     # 6
+            ('desc',int), ('ident',int),
+            ('val',float), ('unc',float),
+            ('index',int), ('wpid',int)],
+        w=[                     # 12
+            ('desc',int),('ident',int),
+            ('index',int),('seg',int),('chid',int),('wpid',int),
+            ('tailx',float),('taily',float),('tailz',float),
+            ('headx',float),('heady',float),('headz',float)],
+        b=[                     # 39
+            ('desc',int), ('ident',int),
+            ('value',float), ('error',float),
+            ('faceid',int),('sliceid',int), # 6
+            ('start',float),('span',float),
+            ('min1',int), ('max1',int),
+            ('min2',int), ('max2',int),
+            ('min3',int), ('max3',int), # 14
+            ('ncorners',int)] + [(f'c{i}',int) for i in range(24)],
+        s=[                     # 7
+            ('desc',int), ('ident',int),
+            ('value',float), ('error',float),
+            ('frameid',int),
+            ('start',float),('span',float)],
+        m=[                     # 5
+            ('desc',int), ('ident',int),
+            ('val',float), ('unc',float),
+            ('wpid',int)]
+        )
+
+    def __init__(self, gr, pg):
+        self.gr = gr
+        self.pg = pg
+        for nc, ntype in node_types.items():
+            ndat=self.get_ndat(nc)
+            getattr(self, f'add_{ntype}')()
+        for ec in edge_types:
+            self.add_edges(ec)
+        
+
+    def get_ndat(self, nc):
+        ntype = node_types[nc]
+        return self.pg[ntype].x
+
+    def get_arr(self, nc):
+        ntype = node_types[nc]
+        ndat = self.pg[ntype].x
+        return fromarrays(ndat.T, dtype=self.dtypes[nc])
+
+    def get_both(self, nc):
+        ntype = node_types[nc]
+        ndat = self.pg[ntype].x
+        arr = fromarrays(ndat.T, dtype=self.dtypes[nc])
+        return (ndat,arr)
+
+
+    def debug(self, context):
+        node_counter = Counter(dict(self.gr.nodes(data='code')).values())
+        log.debug(f'{context}: {node_counter}')
+    
+
+    def add_common(self, nc, arr, **data):
+        '''
+        Common creation of nodes (except s/c).
+        '''
+        # all node types have these two
+        descs = data["desc"] = arr["desc"]
+        data["ident"] = arr["ident"]
+        for irow, desc in enumerate(data["desc"]):
+            params = dict(code=nc)
+            for k,v in data.items():
+                params[k] = v[irow]
+            self.gr.add_node(desc, **params)
+        self.debug(f'add {nc}')
+        return descs
+
+    def add_activity(self):
+        '''
+        Activity gets coalesced back to channels.
+        '''
+        # this is all DIY
+        arr = self.get_arr("a")
+        descs = arr["desc"]
+        idents = arr["ident"]
+        indexs = arr["index"]
+        wpids = arr["wpid"]
+        vals = arr["val"]
+        uncs = arr["unc"]
+
+        for irow, desc in enumerate(descs):
+            # this re-adds same c node many times
+            self.gr.add_node(desc, code="c", desc=desc,
+                             val=vals[irow], unc=uncs[irow],
+                             index=indexs[irow],
+                             ident=idents[irow], wpid=wpids[irow])
+
+    def add_blob(self):
+        ndat, arr = self.get_both("b")
+        data = {k:arr[k] for k in 'value error faceid sliceid start span'.split()}
+        descs = self.add_common("b", arr, **data)
+        
+        corners = ndat[:,15:].reshape((-1,12,2))
+        starts = data['start']
+        starts = numpy.tile(starts.reshape(-1,1), 12)
+        starts = starts.reshape((-1,12,1))
+        corners = numpy.dstack((starts, corners))
+        for irow,desc in enumerate(descs):
+            self.gr.nodes[desc]["corners"] = corners[irow]
+            self.gr.nodes[desc]["bounds"] = numpy.array(ndat[irow][8:14].reshape(3,2), dtype=int)
+
+    def add_measure(self):
+        arr = self.get_arr("m")
+        data = {k:arr[k] for k in "val unc wpid".split()}
+        self.add_common("m", arr, **data)
+
+    def add_slice(self):
+        ndat, arr = self.get_both("s")
+        arr = fromarrays(ndat.T, dtype=self.dtypes["s"])
+        data = {k:arr[k] for k in "frameid start span".split()}
+        data['signal'] = [dict() for _ in range(arr["desc"].size)] # filled later
+        self.add_common("s", arr, **data)
+
+    def add_wire(self):
+        arr = self.get_arr("w")
+        data = {k:arr[k] for k in "index seg chid wpid".split()}
+        descs = self.add_common("w", arr, **data)
+        for irow, desc in enumerate(descs):
+            for ep in ['tail','head']:
+                self.gr.nodes[desc][ep]={c:arr[f'{ep}{c}'][irow] for c in "xyz"};
+
+    def add_edges(self, ec):
+        '''
+        Add all edges with given two-letter edge code.
+
+        Edges to activity (a-nodes) are changed to edges to channel (c-nodes).
+        '''
+        tc,hc = ec
+        ekey = (node_types[tc], ec, node_types[hc])
+        # these are rows
+        edat = self.pg[ekey].edge_index
+
+        nedges = self.gr.number_of_edges()
+        assert(edat.shape[1] == 3)
+        tarr = self.get_arr(tc)
+        harr = self.get_arr(hc)
+        uniq = set()
+        for edesc,trow,hrow in edat:
+            key = (trow,hrow)
+            if key in uniq:
+                continue
+            uniq.add(key)
+            tvtx = tarr["desc"][trow]
+            hvtx = harr["desc"][hrow]
+
+            if ec == "as":      # this is an entry in slice signal
+                tdat = self.gr.nodes[tvtx]
+                hdat = self.gr.nodes[hvtx]
+                hdat['signal'][tdat['ident']] = dict(val=tarr["val"][trow], unc=tarr["unc"][trow])
+                continue
+
+            self.gr.add_edge(tvtx, hvtx, desc=edesc)
+        nedges = self.gr.number_of_edges() - nedges
+
+
 def pg2nx(name, pg):
-    '''Convert a pg graph such as returned by make_pggraph() to a
-    networkx graph such as returned by make_nxgraph().
+    '''Convert a pg graph to an nx graph.
 
-    This will convert activity nodes to channel nodes and
-    slice-activity edges to entries in a "signal" attribute on slice
-    nodes.
+    The pg graph should be as returned by make_pggraph().
 
+    The nx graph will be returned by make_nxgraph().
+
+    In particular, cluster array activity nodes will be created to
+    cluster graph channel nodes and slice-activity edges will be
+    converted to entries in a "signal" attribute on slice nodes.
+
+    nx node values are those of the original cluster graph vertex
+    descriptor.
     '''
-    gr = nx.Graph(name=name)
 
     # See ClusterArrays.org for column definitions
     # See ClusterHelpersJsonify for nx schema
 
-    # nodes
-    count = 0;
-    row2node = dict()           # by code+row
-    ident2node = dict()         # by code+ident
-
-    for nc, ntype in node_types.items():
-
-        def add_node(irow, ident, **kwds):
-            nonlocal count
-            nonlocal row2node
-            nonlocal ident2node
-            ident = int(ident)
-            code = nc
-
-            if code == 'a':   # transform activity row to channel node
-                code = 'c'
-                cid = f'c{ident}'
-                if cid in ident2node: # reuse first seen
-                    rid = f'c{irow}'  # alias this row
-                    row2node[rid] = ident2node[cid] 
-                    return
-
-            gr.add_node(count, ident=ident, code=code, **kwds)
-            row2node[f'{code}{irow}'] = count;
-            ident2node[f'{code}{ident}'] = count
-            count += 1
-
-        ndat = pg[ntype].x
-
-        # print(f'{ntype}: {ndat.shape}')
-
-        if ntype == "activity": # this one is special
-            for irow, row in enumerate(ndat):
-                add_node(irow, row[0], # makes no sense: value=row[1], error=row[2],
-                         index=int(row[3]), wpid=int(row[4]));
-                
-        if ntype == "wire":
-            for irow, row in enumerate(ndat):
-                add_node(irow, row[0], index=int(row[1]), seg=int(row[2]),
-                         chid=int(row[3]), wpid=int(row[4]),
-                         tail=dict(x=row[5], y=row[6], z=row[7]),
-                         head=dict(x=row[8], y=row[9], z=row[10]))
-
-        if ntype == "blob":
-            for irow, row in enumerate(ndat):
-                ncorners_index = 13
-                ncorners = int(row[ncorners_index])
-                corners = list()
-                t0 = row[5]     # start time
-                for icorn in range(ncorners):
-                    cy = row[ncorners_index+1+2*icorn]
-                    cz = row[ncorners_index+1+2*icorn+1]
-                    corners.append((t0, cy, cz))
-                add_node(irow, row[0], value=row[1], error=row[2],
-                         faceid=int(row[3]), sliceid=int(row[4]),
-                         start=row[5], span=row[6],
-                         bounds=numpy.array(row[7:13].reshape(3,2), dtype=int),
-                         corners=numpy.array(corners, dtype=int))
-
-        if ntype == "slice":
-            for irow, row in enumerate(ndat):
-                # Activity gets filled below
-                add_node(irow, row[0], frameid=int(row[3]),
-                         start=row[4], span=row[5], signal=dict())
-
-        if ntype == "measure":
-            for irow, row in enumerate(ndat):
-                add_node(irow, row[0], val=row[1], unc=row[2], wpid=int(row[3]))
-
-    for ec in edge_types:
-        tc,hc = ec
-        ekey = (node_types[tc], ec, node_types[hc])
-        edat = pg[ekey].edge_index
-
-        # print(f'{ekey}: {edat.shape}')
-        if tc != 'a':           # relies on 'a' l.t. all other codes
-            for row in edat:
-                ti,hi = row
-                tn = row2node[f'{tc}{ti}']
-                hn = row2node[f'{hc}{hi}']
-                gr.add_edge(tn, hn)
-            continue
-
-        # special case transformation from activity to channel
-
-        if hc == 's':           # fill slice's "activity map"
-            for ti, hi in edat:
-                arow = pg['activity'].x[ti]
-                srow = pg['slice'].x[hi]
-                snode = row2node[f's{hi}']
-                sdata = gr.nodes[snode]
-                sdata['signal'][int(arow[0])] = dict(val=arow[1], unc=arow[2])
-                # no edge created
-            continue
-
-        if hc == 'w' or hc == 'm':
-            for ti, hi in edat:
-                arow = pg['activity'].x[ti]
-                cident = int(arow[0])
-                hn = row2node[f'{hc}{hi}']
-                tn = ident2node[f'c{cident}']
-                gr.add_edge(tn, hn)
-            continue
-
-    return gr
-
+    return PgFiller(nx.Graph(name=name), pg).gr
 
 def load_jsio(filename, path=(), **kwds):
     '''
