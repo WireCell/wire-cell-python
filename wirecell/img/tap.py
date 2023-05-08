@@ -40,7 +40,7 @@ def make_nxgraph(name, dat):
     Return networkx graph from dict base data 
     '''
     gr = nx.Graph(name=name)
-    for vtx in dat['vertices']:
+    for vtx in dat['nodes']:
         vdesc = vtx['ident']
         gr.add_node(vdesc, desc=vdesc, code=vtx['type'], **vtx['data'])
     for edge in dat['edges']:
@@ -222,8 +222,9 @@ class PgFiller:
         starts = starts.reshape((-1,12,1))
         corners = numpy.dstack((starts, corners))
         for irow,desc in enumerate(descs):
+            b = numpy.array(ndat[irow][8:14].reshape(3,2), dtype=int)
+            self.gr.nodes[desc]["bounds"] = [ dict(beg=b[ind][0], end=b[ind][1]) for ind in range(3) ]
             self.gr.nodes[desc]["corners"] = corners[irow]
-            self.gr.nodes[desc]["bounds"] = numpy.array(ndat[irow][8:14].reshape(3,2), dtype=int)
 
     def add_measure(self):
         arr = self.get_arr("m")
@@ -234,7 +235,7 @@ class PgFiller:
         ndat, arr = self.get_both("s")
         arr = fromarrays(ndat.T, dtype=self.dtypes["s"])
         data = {k:arr[k] for k in "frameid start span".split()}
-        data['signal'] = [dict() for _ in range(arr["desc"].size)] # filled later
+        data['signal'] = [list() for _ in range(arr["desc"].size)] # filled later
         self.add_common("s", arr, **data)
 
     def add_wire(self):
@@ -272,7 +273,8 @@ class PgFiller:
             if ec == "as":      # this is an entry in slice signal
                 tdat = self.gr.nodes[tvtx]
                 hdat = self.gr.nodes[hvtx]
-                hdat['signal'][tdat['ident']] = dict(val=tarr["val"][trow], unc=tarr["unc"][trow])
+                hdat['signal'].append(dict(
+                    ident=tdat['ident'], val=tarr["val"][trow], unc=tarr["unc"][trow]))
                 continue
 
             self.gr.add_edge(tvtx, hvtx, desc=edesc)

@@ -54,8 +54,7 @@ def activity(cm):
     slices = set()
     for snode in cm.nodes_oftype('s'):
         sdat = cm.gr.nodes[snode]
-        for c in sdat['signal']:
-            channels.add(int(c))
+        channels.update([s['ident'] for s in sdat['signal']])
         slices.add(sdat['ident'])
     
     cmin = min(channels);
@@ -69,8 +68,8 @@ def activity(cm):
     for snode in cm.nodes_oftype('s'):
         sdat = cm.gr.nodes[snode]
         si = sdat['ident']
-        for c,sig in sdat['signal'].items():
-            ci = int(c)
+        for sig in sdat['signal']:
+            ci = sig['ident']
             v = sig['val']
             if not v or numpy.sum(v) == 0:
                 nzeros += 1
@@ -134,8 +133,8 @@ def wire_blob_slice(cm, sliceid):
     snode = snodes[0]
     by_face = defaultdict(list)
     sdata = cm.gr.nodes[snode]
-    for cdat,sig in sdata["signal"].items():
-        chid = int(cdat)
+    for sig in sdata["signal"]:
+        chid = sig['ident']
         cval = sig['val']
         cnode = cm.channel(chid)
         cdata = cm.gr.nodes[cnode]

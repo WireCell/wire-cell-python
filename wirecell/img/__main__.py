@@ -187,7 +187,7 @@ def plot_blobs(ctx, plot, clusters, plot_file):
             try:
                 fig = plotter(gr)
             except ValueError:
-                log.error(f'failed to plot graph with {nnodes} vertices')
+                log.error(f'failed to plot graph with {nnodes} nodes')
                 continue
             printer.savefig()
     log.info(plot_file)
@@ -263,7 +263,7 @@ def inspect(ctx, output, verbose, cluster_file):
 
         cm = clusters.ClusterMap(gr)
 
-        out.write(f'{ig}: {gr.number_of_nodes()} vertices\n')
+        out.write(f'{ig}: {gr.number_of_nodes()} nodes\n')
         node_counter = Counter(dict(gr.nodes(data='code')).values())
         for code, count in sorted(node_counter.items()):
 
@@ -338,8 +338,8 @@ def inspect(ctx, output, verbose, cluster_file):
                     sdat = cm.gr.nodes[snode]
                     ident = sdat['ident']
                     sig = sdat['signal']
-                    sval = [v['val'] for v in sig.values()]
-                    serr = [v['unc'] for v in sig.values()]
+                    sval = [v['val'] for v in sig]
+                    serr = [v['unc'] for v in sig]
                     if verbose:
                         out_stats(f"sunc{ident}", serr)
                         out_stats(f"sval{ident}", sval)

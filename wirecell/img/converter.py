@@ -255,13 +255,15 @@ def clusters2views(gr):
         sdat = gr.nodes[snode]
         snum = sdat['ident']
         perwpid[wpid].allind.append(snum)
-        sigs = sdat['signal']
-        val = 0.0
+
         chids = [d[1]["ident"] for d in get_neighbors_oftype(gr, node, 'c', True)]
         perwpid[wpid].allchs += chids
-        for chid in chids:
-            val += float(sigs[str(chid)]['val'])
+
+        ident2sigs = {str(s['ident']):s for s in sdat['signal']}
+        val = sum([ident2sigs[str(chid)]['val'] for chid in chids])
+
         perwpid[wpid].values.append((snum,chids,val))
+
     all_imgdat=dict()
     for wpid, dat in perwpid.items():
         smin = min(dat.allind)

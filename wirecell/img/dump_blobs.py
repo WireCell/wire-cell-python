@@ -13,7 +13,7 @@ def bsignature(gr, bnode, tick=500):
     id2name = {1:'u', 2:'v', 4:'w'}
     chan_index = dict()
     chan_status = dict()
-    signal = dict()
+    nn_signal = dict()
     for id in id2name:
         chan_index[id] = []
         chan_status[id] = []
@@ -25,8 +25,8 @@ def bsignature(gr, bnode, tick=500):
             tmax = int(tmin + ndata['span']//tick)
             sig.append(tmin)
             sig.append(tmax)
-            for key in ndata['signal']:
-                signal[int(key)] = ndata['signal'][key]
+            nn_signal.update({s['ident']:s for s in ndata['signal']})
+
     for node in gr.neighbors(bnode):
         ndata = gr.nodes[node]
         if ndata['code'] == 'w':
@@ -36,22 +36,9 @@ def bsignature(gr, bnode, tick=500):
             wpid = ndata['wpid']
             index = ndata['index']
             chan_index[wpid].append(index)
-            if chid in signal:
-                val = signal[chid]['val']
-            else:
-                val = -1
-                # for key in sorted(signal):
-                #     print(key, ': ', signal[key]['val'])
-                # raise RuntimeError(f'{chid} not in signal')
-            # 0.1: dummy; 0.2: masked
-            # status = -1
-            # # print(f'val = {val}')
-            # if math.isclose(val, 0.1,rel_tol=1e-6):
-            #     status = 1
-            # elif math.isclose(val, 0.2,rel_tol=1e-6):
-            #     status = 0
-            if val < 1:
-                val = 0
+            val = 0
+            if chid in nn_signal:
+                val = nn_signal[chid]['val']
             chan_status[wpid].append(val)
     chan_offset = {1:0, 2:2400, 4: 4800}
     for wpid in chan_index:
