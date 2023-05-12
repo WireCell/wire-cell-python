@@ -6,9 +6,4 @@ networkx
 gojsonnet
 semver
 sqlalchemy
-
-
-
-
-
-
+semver
