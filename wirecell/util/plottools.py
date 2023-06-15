@@ -163,5 +163,6 @@ def imopts(**kwds):
     for key in 'vmin vmax cmap'.split():
         if key in kwds:
             ret[key] = kwds[key]
+            continue
     return ret
 

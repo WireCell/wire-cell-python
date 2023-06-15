@@ -46,9 +46,11 @@ class Hist2D(object):
         return Hist2D(self.nx, self.rangex[0], self.rangex[1],
                       self.ny, self.rangey[0], self.rangey[1])
 
-def activity(cm):
-    '''
-    Given a ClusterMap, return a figure showing activity
+def activity(cm, amin):
+    '''Given a ClusterMap, return a figure showing activity
+
+    Only include activity greater than or equal to amin.
+
     '''
     channels = set()
     slices = set()
@@ -71,7 +73,7 @@ def activity(cm):
         for sig in sdat['signal']:
             ci = sig['ident']
             v = sig['val']
-            if not v or numpy.sum(v) == 0:
+            if not v or numpy.sum(v) < amin:
                 nzeros += 1
                 continue
             hist.fill(si+.1, ci+.1, v)
@@ -84,15 +86,30 @@ def activity(cm):
     # plt.colorbar(im, ax=ax)
     # return fig,ax,hist
 
-def blobs(cm, hist):
+def blobs(cm, hist, value=False):
+    '''
+    Fill hist channel/slice covered by blobs.
+
+    If value is True then fill with blob charge value o.w. fill with
+    unity value  '''
     for bnode in cm.nodes_oftype('b'):
         bdat = cm.gr.nodes[bnode]
+
+        planes = defaultdict(list)
         for wnode in cm.gr[bnode]:
             wdat = cm.gr.nodes[wnode]
             if wdat['code'] != 'w':
                 continue;
-            
-            hist.fill(bdat['sliceid']+0.1, wdat['chid']+.1, 1)
+            p,f,a = plane_face_apa(wdat['wpid'])
+            planes[p].append(wdat)
+        for plane, wdats in planes.items():
+            val = 1
+            if value:
+                val = bdat['val']/len(wdats)
+
+            for wdat in wdats:
+                hist.fill(bdat['sliceid']+0.1, wdat['chid']+.1, val)
+
     return hist
     # fig,ax = plt.subplots(nrows=1, ncols=1)
     # im = hist.imshow(ax)
@@ -100,17 +117,23 @@ def blobs(cm, hist):
     # return fig,ax,hist
     
 
-def mask_blobs(a, b, sel=lambda a: a < 1, extent=None):
+def mask_blobs(a, b, sel=lambda a: a < 1, extent=None, vmin=0.01, invert=False, **kwds):
     '''
     Plot the activity with blobs masked out
     '''
     cmap = plt.get_cmap('gist_rainbow')
     #cmap = plt.cm.gist_rainbow
-    cmap.set_bad(color='black')
+    if not invert:
+        cmap.set_bad(color='black')
+        cmap.set_under(color='white')
+    else:
+        cmap.set_bad(color='white')
+        cmap.set_under(color='black')
+
     arr = numpy.ma.masked_where(sel(b), a)
     fig,ax = plt.subplots(nrows=1, ncols=1)
     fig.set_size_inches(8.5,11.0)
-    im = ax.imshow(arr, cmap=cmap, interpolation='none', extent=extent)
+    im = ax.imshow(arr, cmap=cmap, vmin=vmin, interpolation='none', extent=extent, **kwds)
     minorLocator = AutoMinorLocator()
     ax.yaxis.set_minor_locator(minorLocator)
     ax.tick_params(which="both", width=1)
@@ -127,8 +150,8 @@ def wire_blob_slice(cm, sliceid):
 
     snodes = cm.find('s', ident=sliceid)
     if len(snodes) != 1:
-        print('slice IDs:')
-        print([cm.gr.nodes[s]['ident'] for s in cm.find('s')])
+        log.error('slice IDs:')
+        log.error([cm.gr.nodes[s]['ident'] for s in cm.find('s')])
         raise ValueError(f'Unexpected number of slices with ID: {sliceid}, found {len(snodes)}')
     snode = snodes[0]
     by_face = defaultdict(list)
@@ -140,7 +163,8 @@ def wire_blob_slice(cm, sliceid):
         cdata = cm.gr.nodes[cnode]
         wnodes = cm.neighbors_oftype(cnode, 'w')
         if not wnodes:
-            print("No wires for channel %d" % chid)
+            log.error(f'No wires for channel {chid}')
+            raise ValueError(f'No wires for channel {chid}')
         for wnode in wnodes:
             wdat = cm.gr.nodes[wnode]
             wpid = wdat['wpid']

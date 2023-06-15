@@ -6,6 +6,37 @@ from wirecell.util.plottools import lg10
 import matplotlib.pyplot as plt
 import numpy
 
+def common_channels(chanset1, chanset2):
+    '''
+    Return channels common to both sets.
+    '''
+    return [c for c in chanset1 if c in chanset2]
+
+def select_channels(farr, chans, want):
+    '''
+    Return a array with channels "want" from array "farr" with channels "chans".
+
+    If a channel is present multiple times in chans, these rows are added.
+
+    If a channel is present multiple times in want, these rows are duplicated
+
+    If a channel in want is omitted in chans, a row of zeros will be made.
+
+    '''
+    rows = list()
+    for ch in want:
+        row = numpy.zeros_like(farr[0])
+        for ind in numpy.where(chans == ch):
+            row = row + farr[ind]
+        rows.append(row)
+    return numpy.vstack(rows)
+
+def time_column0(start, tick, tbin0=0):
+    '''
+    Return time of column0 offset by tbin0 ticks from start
+    '''
+    return start + tick * tbin0
+
 def spectra(dat, out, tier='orig', unit='ADC', interactive=False,  **kwds):
     '''
     Plot per-channel spectra of fp['frame_{tier}*'] to out

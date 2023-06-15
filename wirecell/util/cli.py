@@ -129,60 +129,80 @@ def jsonnet_loader(jfilekey):
 
 
     
-def frame_input(func):
-    '''
-    A decorator for a command that inputs a frame file.
+def frame_input(suffix=""):
+    '''Return a decorator for a command taking a frame as input.
 
-    Provides arguments to command:
-
-    - array :: the frame array object
-    - aname :: the name of the frame array
-    - ariofile :: the ario file object
+    For multi-frame input, pass a unique suffix which will be appended
+    to command line flag and keyword identifiers.
 
     '''
-    import numpy
 
-    @click.option("--ident", default=None, type=str, help="locate frame with ident [default=first]")
-    @click.option("--tier", default='*', type=str, help="locate frame array by data tier [default='*']")
-    @click.option("--frame", default=None, type=str, help="explicitly name frame array")
-    @click.argument("ariofile")
-    @functools.wraps(func)
-    def wrapper(*args, **kwds):
+    def frame_input_one(func):
+        '''
+        A decorator for a command that inputs a frame file.
 
-        fname = kwds.pop("ariofile")
-        fp = ario.load(fname)
-        kwds["ariofile"] = fp
-        
-        def no_frame(msg):
-            have = '", "'.join(fp.keys())
-            raise click.BadParameter(f'{msg}: have frames: "{have}"')
+        Provides arguments to command:
 
-        frame_name = kwds.pop("frame", None)
-        if frame_name is None:
-            fnames = [key for key in fp.keys() if key.startswith("frame_")]
-            tier = kwds.pop("tier", '*')
-            if not tier: tier = '*'
-            if tier != '*':
-                fnames = [f for f in fnames if f.startswith(f'frame_{tier}')]
-            ident = kwds.pop("ident", None)
-            if ident is None:
-                frame_name = fnames[0]
-            else:
-                fnames = [f for f in fnames if f.endswith(f'_{ident}')]
+        - array :: the frame array object
+        - aname :: the name of the frame array
+        - ariofile :: the ario file object
+
+        '''
+        import numpy
+
+        dfix = suffix.replace("_","-")
+        ufix = suffix.replace("-","_")
+
+        @click.option("--ident"+dfix, default=None, type=str, help="locate frame with ident [default=first]")
+        @click.option("--tier"+dfix, default='*', type=str, help="locate frame array by data tier [default='*']")
+        @click.option("--frame"+dfix, default=None, type=str, help="explicitly name frame array")
+        @click.argument("ariofile"+dfix)
+        @functools.wraps(func)
+        def wrapper(*args, **kwds):
+
+            fname = kwds.pop("ariofile"+ufix)
+            fp = ario.load(fname)
+            kwds["ariofile"+ufix] = fp
+
+            def no_frame(msg):
+                have = '", "'.join(fp.keys())
+                raise click.BadParameter(f'{msg}: have keys: "{have}"')
+
+            frame_name = kwds.pop("frame"+ufix, None)
+            if frame_name is None:
+                fnames = [key for key in fp.keys() if key.startswith("frame_")]
                 if not fnames:
-                    no_frame(f'No matching frame with tier={tier}, ident={ident}')
-                frame_name = fnames[0]
+                    no_frame("no frame key")
 
-        if frame_name not in fp:
-            no_frame(f'array "{aname}" not in "{fname}"')
-        kwds["array"] = fp[frame_name]
-        kwds["aname"] = frame_name;
-        _, tier, ident = frame_name.split("_")
-        kwds["tier"] = tier
-        kwds["ident"] = ident
+                tier = kwds.pop("tier"+ufix, '*')
+                if not tier: tier = '*'
+                if tier != '*':
+                    fnames = [f for f in fnames if f.startswith(f'frame_{tier}')]
+                ident = kwds.pop("ident"+ufix, None)
+                if ident is None:
+                    frame_name = fnames[0]
+                else:
+                    fnames = [f for f in fnames if f.endswith(f'_{ident}')]
+                    if not fnames:
+                        no_frame(f'No matching frame with tier={tier}, ident={ident}')
+                    frame_name = fnames[0]
 
-        return func(*args, **kwds)
-    return wrapper
+            if frame_name not in fp:
+                no_frame(f'array "{aname}" not in "{fname}"')
+
+            _, tier, ident = frame_name.split("_")
+
+            arr = fp[frame_name]
+            kwds["array"+ufix] = arr
+            kwds["aname"+ufix] = frame_name;
+            kwds["tier"+ufix] = tier
+            kwds["ident"+ufix] = ident
+            kwds["channels"+ufix] = fp[f'channels_{tier}_{ident}']
+            kwds["tickinfo"+ufix] = fp[f'tickinfo_{tier}_{ident}']
+
+            return func(*args, **kwds)
+        return wrapper
+    return frame_input_one
 
 
 def image_output(func):

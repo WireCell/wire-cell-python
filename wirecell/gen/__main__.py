@@ -389,7 +389,7 @@ def depo_sphere(radius, electron_density, step_size,
 
 @cli.command("frame-stats")
 @click.option("-c", "--channels", default="800,800,960", help="comma list of channel counts per plane in u,v,w order")
-@frame_input
+@frame_input()
 def frame_stats(array, channels, ariofile, **kwds):
     '''
     Return (print) stats on the time distribution of a frame.

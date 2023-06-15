@@ -241,8 +241,6 @@ def clusters2views(gr):
             continue;
         bnode = get_blob(gr, node)
         if bnode is None:
-            #raise ValueError("bad graph structure")
-            #print ("no blob")
             continue
 
         #x = gr.nodes[bnode]['corners'][0][0] # "t"

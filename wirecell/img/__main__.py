@@ -16,7 +16,7 @@ from wirecell import units
 from wirecell.util.functions import unitify, unitify_parse
 from wirecell.util import ario
 from wirecell.util.plottools import pages
-from wirecell.util.cli import log, context
+from wirecell.util.cli import log, context, image_output
 
 import functools
 import wirecell.gen.depos as deposmod
@@ -166,16 +166,16 @@ blob_plots = [name[5:] for name in dir(blob_plotters) if name.startswith("plot_"
               type=click.Choice(blob_plots),
               help="The plot to make.")
 @cluster_file
-@click.argument("plot-file")
+@image_output
 @click.pass_context
-def plot_blobs(ctx, plot, clusters, plot_file):
+def plot_blobs(ctx, plot, clusters, output, **kwds):
     '''
     Produce plots related to blobs in cluster.
     '''
     from . import tap, converter
     plotter = getattr(blob_plotters, "plot_"+plot)
 
-    with pages(plot_file) as printer:
+    with output as printer:
 
         for gr in clusters:
             nnodes = gr.number_of_nodes()
@@ -190,7 +190,7 @@ def plot_blobs(ctx, plot, clusters, plot_file):
                 log.error(f'failed to plot graph with {nnodes} nodes')
                 continue
             printer.savefig()
-    log.info(plot_file)
+
 
 @cli.command("dump-blobs")
 @cluster_file
@@ -219,7 +219,7 @@ def dump_bb_clusters(ctx, clusters):
 
 @cli.command("inspect")
 @click.option("-o", "--output", default="/dev/stdout", help="output file name")
-@click.option("--verbose", default=False, is_flag=True, help="print a lot more")
+@click.option("--verbose", default=False, is_flag=True, help="output a lot more")
 @click.argument("cluster-file")
 @click.pass_context
 def inspect(ctx, output, verbose, cluster_file):
@@ -609,40 +609,109 @@ def activity(output, slices, slice_line, speed, t0, cluster_file):
     fig.savefig(output)
 
 
+@cli.command("blob-activity-stats")
+@click.option('-o', '--output', default="/dev/stdout",
+              help="Output to receive stats")
+@click.option('-f', '--format', default="key=val",
+              type=click.Choice(["key=val","json"]),
+              help="Format for stats")
+@click.option('--amin', default=0.0,
+              help="Set the minimum activity to consider")
+@click.argument("cluster-file")
+def blob_activity_stats(output, format, amin, cluster_file):
+    '''
+    Return statistics on blob vs activity
+    '''
+    from . import tap, clusters, plots
+
+    gr = list(tap.load(cluster_file))[0] # fixme
+    cm = clusters.ClusterMap(gr)
+    ahist = plots.activity(cm, amin)
+    bhist = ahist.like()
+    qhist = ahist.like()
+    plots.blobs(cm, bhist)
+    plots.blobs(cm, qhist, True)
+    
+    a = ahist.arr
+    b = bhist.arr
+    q = qhist.arr
+    atot = float(numpy.sum(a))
+    btot = float(numpy.sum(b))
+    qtot = float(numpy.sum(q))
+
+    nchan,nslice = a.shape
+    # arr = numpy.ma.masked_where(sel(b), a)
+    afound = float(numpy.sum(a[b >= 1.0]))
+    amissed = float(numpy.sum(a[b < 1.0]))
+
+    nbpix = float(numpy.sum(b >= 1))
+
+    dat = dict(amin=amin, nchan=nchan, nslice=nslice,
+               atot=atot, btot=btot, qtot=qtot,
+               afound=afound, amissed=amissed,
+               nbpix=nbpix,
+               pamissed=amissed/atot, pafound=afound/atot,
+               pqtot=qtot/atot, pqfound=qtot/afound)
+    
+    out = open(output, "w")
+    if format == "json":
+        out.write(json.dumps(dat, indent=4))
+    if format == "key=val":
+        for k,v in sorted(dat.items()):
+            out.write(f'{k}={v}\n')
+
 @cli.command("blob-activity-mask")
 @click.option('-o', '--output', help="The output plot file name")
 @click.option('-s', '--slices', nargs=2, type=int, 
               help="The output plot file name")
 @click.option('-S', '--slice-line', type=int, default=-1,
               help="Draw a line down a slice")
-@click.option("--speed", default="1.6*mm/us",
-              help="Drift speed (with units)")
-@click.option("--t0", default="0*ns",
-              help="Absolute time of first tick (with units)")
 @click.option('--found/--missed', default=True,
               help="Mask what blobs found or missed")
+@click.option('--invert/--normal', default=False,
+              help="Normally mask is black, zero is white or invert")
+@click.option('--vmin', default=0.0,
+              help="Set the minimum activity, below which is white")
+@click.option('--amin', default=0.0,
+              help="Set the minimum activity to consider")
 @click.argument("cluster-file")
-def blob_activity_mask(output, slices, slice_line, speed, t0, found, cluster_file):
-    '''
-    Plot blobs as maskes on channel activity.
+def blob_activity_mask(output, slices, slice_line, found, invert, vmin, amin, cluster_file):
+    '''Plot blobs as maskes on channel activity.
+
+    By default, a mask is black and white is activity strictly less
+    than --vmin and any other color is unmasked activity above or
+    equal to vmin.  Use --invert to reverse the meaning of black and
+    white.
+
+    With --found the regions covered by blobs are masked (drawn as
+    black by default).  A small --vmin=0.01 (eg) is recomended to
+    distinquish regions of small activity from regions of zero
+    activity.  Then, any remaining non-black/non-white color indicates
+    activity that was not captured by any blob.  Using --invert may
+    help to better see small regions with uncaptured activity.
+
+    With --missed the mask is reversed and regions that are not
+    covered by any blob are black.  Here a --vmin=0.01 (eg) will show
+    show as white any region that has little to no activity and
+    contributed to a blob.
+
     '''
     from . import tap, clusters, plots
 
-    speed = unitify(speed)
-    t0 = unitify(t0)
-
     gr = list(tap.load(cluster_file))[0] # fixme
-    gr = converter.undrift_blobs(gr, speed, t0)
     cm = clusters.ClusterMap(gr)
-    ahist = plots.activity(cm)
+    ahist = plots.activity(cm, amin)
     bhist = ahist.like()
     plots.blobs(cm, bhist)
+
+    # make mask selector to be applied to bhist
     if found:
-        sel = lambda a: a>= 1
+        sel = lambda p: p >= 1
         title="found mask"
     else:
-        sel = lambda a: a < 1
+        sel = lambda p: p < 1
         title="missed mask"
+
     extent = list()
     if slices:
         a = ahist.arr[:,slices[0]:slices[1]]
@@ -653,8 +722,9 @@ def blob_activity_mask(output, slices, slice_line, speed, t0, found, cluster_fil
         b = bhist.arr
         extent = [0, a.shape[1]]
     extent += [ahist.rangey[1], ahist.rangey[0]]
+    log.debug(f'extent: {extent}')
 
-    fig,ax = plots.mask_blobs(a, b, sel, extent)
+    fig,ax = plots.mask_blobs(a, b, sel, extent, vmin=vmin, invert=invert, aspect='auto')
     if slice_line > 0:
         ax.plot([slice_line, slice_line], [ahist.rangey[0], ahist.rangey[1]],
                 linewidth=0.1, color='black')

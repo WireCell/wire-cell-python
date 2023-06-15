@@ -20,8 +20,6 @@ def cli(ctx):
 
 
 @cli.command("ntier-frames")
-# @frame_input
-# @image_output
 @click.option("-o", "--output", default="ntier-frames.pdf",
               help="Output file")
 @click.option("-c", "--cmap",
@@ -205,19 +203,61 @@ def channel_correlation(ctx, tier, chmin, chmax, unit, interactive, datafile, ou
 
 @cli.command("frame-diff")
 @click.option("--style", type=click.Choice(["image", "axes"]), default="image")
-@frame_input
+@frame_input("1")
+@frame_input("2")
 @image_output
-@click.argument("ariofile2")
-def frame_diff(style, array, output, aname, ariofile2, **kwds):
+def frame_diff(array1, tickinfo1, channels1,
+               array2, tickinfo2, channels2,
+               style, output, **kwds):
     '''
     Take diff between two frames and write result as image
     '''
+    if tickinfo1[1] != tickinfo1[1]:
+        click.BadParameter(f'ticks must match, got {tickinfo1[1]} != {tickinfo1[1]}')
+    tick = float(tickinfo1[1])
+    if tick <= 0.0001:
+        raise click.BadParameter(f'tick must be nonzero')
+
     import matplotlib.image
-    f2 = ario.load(ariofile2)
-    a2 = f2[aname]
-    adiff = array - a2
+    from . import frames
+
+    # fixme: make configurable
+    channels = frames.common_channels(channels1, channels2)
+    array1 = frames.select_channels(array1, channels1, channels)
+    array2 = frames.select_channels(array2, channels2, channels)
+
+    t1 = tickinfo1[0] + tickinfo1[2]*tick
+    t2 = tickinfo2[0] + tickinfo2[2]*tick
+    tmin = min(t1,t2)
+
+    pad1 = int((t1-tmin)/tick)
+    pad2 = int((t2-tmin)/tick)
+
+    print(f'frame 1: pad={pad1} tickinfo={tickinfo1}')
+    print(f'frame 2: pad={pad2} tickinfo={tickinfo2}')
+
+    if pad1 > 0:
+        array1 = numpy.pad(array1, ((0,0),(pad1,0)))
+    elif pad1 < 0:
+        array1 = array1[:,pad1:]
+
+    if pad2 > 0:
+        array2 = numpy.pad(array2, ((0,0),(pad2,0)))
+    elif pad2 < 0:
+        array2 = array2[:,pad2:]
+
+    pad = array1.shape[1] - array2.shape[1]
+    if pad > 0:
+        array2 = numpy.pad(array2, ((0,0),(0,pad)))
+    elif pad < 0:
+        array1 = numpy.pad(array1, ((0,0),(0,-pad)))
+
+    if array1.shape != array2.shape:
+        raise click.UsageError("the programmer sucks")
+
+    adiff = array1 - array2
     with output as out:
-        plottools.image(adiff, style, **plottools.imopts(**kwds))
+        plottools.image(adiff, style, interpolation='none', **plottools.imopts(**kwds))
         out.savefig()
 
 
@@ -226,7 +266,7 @@ def frame_diff(style, array, output, aname, ariofile2, **kwds):
               type=click.Choice(["median","mean","ac","none"]), 
               help="type of image transformations")
 @click.option("--style", type=click.Choice(["image", "axes"]), default="image")
-@frame_input
+@frame_input()
 @image_output
 def frame_image(transform, style, array, output, aname, **kwds):
     '''
@@ -242,7 +282,7 @@ def frame_image(transform, style, array, output, aname, **kwds):
 
 
 @cli.command("frame-means")
-@frame_input
+@frame_input()
 @image_output
 @click.option("--channels", default="800,800,960", help="Channels per plane")
 def frame_means(array, channels, cmap, output, aname, ariofile, **kwds):

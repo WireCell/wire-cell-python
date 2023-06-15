@@ -10,6 +10,8 @@ Exposed functions take a graph return a figure:
 from wirecell import units
 import matplotlib.pyplot as plt
 import numpy
+import logging
+log = logging.getLogger("wirecell.img")
 
 from .converter import get_slice
 
@@ -108,10 +110,16 @@ def plot_views(gr):
         raise ValueError("no non-negative blob charges")
     t = (numpy.array([b['start'] for b in blobs])/units.ms)[ind]
     dt = (numpy.array([b['span'] for b in blobs])/units.ms)[ind]
-    wb = numpy.array([b['bounds'] for b in blobs])[ind,:,:]
-
-    print (numpy.min(t), numpy.mean(t), numpy.max(t))
-    print (numpy.min(dt), numpy.mean(dt), numpy.max(dt))
+    wb = numpy.zeros((len(blobs), 3, 2))
+    for iblob, blob in enumerate(blobs):
+        for ibound, bound in enumerate(blob['bounds']):
+            wb[iblob][ibound][0] = bound['beg']
+            wb[iblob][ibound][1] = bound['end']
+    log.debug(f'wb={wb.shape}')
+    wb = wb[ind]
+    log.debug(f'wb[ind]={wb.shape}')
+    log.debug(f't min={numpy.min(t)} mean={numpy.mean(t)} max={numpy.max(t)}')
+    log.debug(f'dt min={numpy.min(dt)} mean={numpy.mean(dt)} max={numpy.max(dt)}')
 
     # (N, 3, 2)
 
@@ -131,7 +139,7 @@ def plot_views(gr):
         tdens = q/(widths*dt)
         tmean = numpy.mean(tdens)
 
-        print(points.shape, widths.shape, heights.shape, qdens.shape, t.shape, dt.shape)
+        log.debug(f'shapes: points={points.shape}, widths={widths.shape}, heights={heights.shape}, qdens={qdens.shape}, t={t.shape}, dt={dt.shape}')
 
         r1 = [Rectangle(*args) for args in zip(points, widths, heights)]
         pc1 = PatchCollection(r1, alpha=alpha, cmap='viridis')

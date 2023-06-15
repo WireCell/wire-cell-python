@@ -845,15 +845,17 @@ def ls(filename):
     '''
     List contents of a WCT file (.npz, .zip or .tar[.gz])
     '''
-    from . import ario
+    from . import ario, tdm, cdm
     fp = ario.load(filename)
-    for key in fp:
-        o = fp[key]
-        if isinstance(o, dict):
-            keys = ', '.join(o.keys())
-            log.info(f'{key:16s}\t{keys}')
-            continue
-        log.info(f'{key:16s}\t{o.dtype}\t{o.shape}')
+    if tdm.looks_like(fp):
+        log.info(tdm.dumps(fp))
+        return
+    if cdm.looks_like(fp):
+        log.info(cdm.dumps(fp))
+        return
+    for key, val in fp:
+        log.info(f'{key} {type(val)}')
+    
 
 @cli.command("npz-to-wct")
 @click.option("-T", "--transpose", default=False, is_flag=True,
