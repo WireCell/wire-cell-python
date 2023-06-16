@@ -660,12 +660,34 @@ def blob_activity_stats(output, format, amin, cluster_file):
         for k,v in sorted(dat.items()):
             out.write(f'{k}={v}\n')
 
+def parse_ranges(text):
+    '''
+    Parse list of integers and inclusive integer ranges.
+
+    Text may look like "1,4-6,8,9" which returns [1,4,5,6,8,9].
+
+    Ranges are inclusive.
+    '''
+    chans = list()
+    for one in text.split(","):
+        parts = list(map(int, one.split("-",1)))
+        if len(parts) == 1:
+            chans.append(parts[0])
+        else:
+            chans += range(parts[0], parts[1]+1)
+    return chans
+            
+        
+
 @cli.command("blob-activity-mask")
-@click.option('-o', '--output', help="The output plot file name")
-@click.option('-s', '--slices', nargs=2, type=int, 
+@click.option('-o', '--output',
               help="The output plot file name")
-@click.option('-S', '--slice-line', type=int, default=-1,
-              help="Draw a line down a slice")
+@click.option('-s', '--slices', nargs=2, type=int, 
+              help="Narrow the range of slices")
+@click.option('--slice-lines', default="",
+              help="Draw lines at slices")
+@click.option('--channel-lines', default="",
+              help="Draw lines at channels")
 @click.option('--found/--missed', default=True,
               help="Mask what blobs found or missed")
 @click.option('--invert/--normal', default=False,
@@ -675,7 +697,7 @@ def blob_activity_stats(output, format, amin, cluster_file):
 @click.option('--amin', default=0.0,
               help="Set the minimum activity to consider")
 @click.argument("cluster-file")
-def blob_activity_mask(output, slices, slice_line, found, invert, vmin, amin, cluster_file):
+def blob_activity_mask(output, slices, channel_lines, slice_lines, found, invert, vmin, amin, cluster_file):
     '''Plot blobs as maskes on channel activity.
 
     By default, a mask is black and white is activity strictly less
@@ -724,10 +746,22 @@ def blob_activity_mask(output, slices, slice_line, found, invert, vmin, amin, cl
     extent += [ahist.rangey[1], ahist.rangey[0]]
     log.debug(f'extent: {extent}')
 
-    fig,ax = plots.mask_blobs(a, b, sel, extent, vmin=vmin, invert=invert, aspect='auto')
-    if slice_line > 0:
-        ax.plot([slice_line, slice_line], [ahist.rangey[0], ahist.rangey[1]],
-                linewidth=0.1, color='black')
+    fig,ax = plots.mask_blobs(a, b, sel, extent, vmin=vmin,
+                              invert=invert, aspect='auto',
+                              clabel="activity [ionization electrons / chan / slice]")
+
+    # fixme: would be better to use rectangles
+
+    if slice_lines:
+        for sl in parse_ranges(slice_lines):
+            ax.plot([sl, sl], [ahist.rangey[0], ahist.rangey[1]],
+                    linewidth=1, color='gray', alpha=0.3)
+
+    if channel_lines:
+        for ch in parse_ranges(channel_lines):
+            ax.plot([ahist.rangex[0], ahist.rangex[1]], [ch, ch],
+                    linewidth=1, color='gray', alpha=0.1)
+
     ax.set_title("%s %s" % (title, cluster_file))
     ax.set_xlabel("slice ID")
     ax.set_ylabel("channel IDs")

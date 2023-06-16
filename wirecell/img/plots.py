@@ -54,31 +54,42 @@ def activity(cm, amin):
     '''
     channels = set()
     slices = set()
+    all_slices = list()
     for snode in cm.nodes_oftype('s'):
         sdat = cm.gr.nodes[snode]
         channels.update([s['ident'] for s in sdat['signal']])
-        slices.add(sdat['ident'])
-    
+        sid = sdat['ident']
+        slices.add(sid)
+        all_slices.append(sid)
+    if len(slices) != len(all_slices):
+        raise ValueError(f'dupilicate slices: {len(slices)} != {len(all_slices)}')
+
     cmin = min(channels);
     cmax = max(channels);
     smin = min(slices);
     smax = max(slices);
     
+    log.debug(f'hist: {smax-smin+1}:[{smin}, {smax+1}], {cmax-cmin+1}:[{cmin}, {cmax+1}]')
     hist = Hist2D(smax-smin+1, smin, smax+1,
                   cmax-cmin+1, cmin, cmax+1)
     nzeros=0
+    negatives=0
+    epsilon = 0.1               # to avoid a histogram edge
     for snode in cm.nodes_oftype('s'):
         sdat = cm.gr.nodes[snode]
         si = sdat['ident']
         for sig in sdat['signal']:
             ci = sig['ident']
             v = sig['val']
-            if not v or numpy.sum(v) < amin:
+            if v < 0:
+                negatives += 1
+                continue
+            if not v or v < amin:
                 nzeros += 1
                 continue
-            hist.fill(si+.1, ci+.1, v)
+            hist.fill(si+epsilon, ci+epsilon, v)
 
-    log.debug (f'activity: c:[{cmin,cmax}], s:[{smin},{smax}] nzero={nzeros}')
+    log.debug (f'activity: c:[{cmin,cmax}], s:[{smin},{smax}] nzero={nzeros} negatives={negatives}')
 
     return hist
     # fig,ax = plt.subplots(nrows=1, ncols=1)
@@ -117,18 +128,20 @@ def blobs(cm, hist, value=False):
     # return fig,ax,hist
     
 
-def mask_blobs(a, b, sel=lambda a: a < 1, extent=None, vmin=0.01, invert=False, **kwds):
+def mask_blobs(a, b, sel=lambda a: a < 1, extent=None, vmin=0.01, invert=False, clabel="", **kwds):
     '''
     Plot the activity with blobs masked out
     '''
-    cmap = plt.get_cmap('gist_rainbow')
+    cmap = plt.get_cmap('gist_rainbow_r')
     #cmap = plt.cm.gist_rainbow
-    if not invert:
-        cmap.set_bad(color='black')
-        cmap.set_under(color='white')
-    else:
-        cmap.set_bad(color='white')
-        cmap.set_under(color='black')
+    bad,und,ove = 'black','lightgray','white'   # white for und turns to yellow in PDF sometimes???
+    if invert:
+        bad,und,ove = 'white','black','lightgray'
+
+    cmap.set_bad(color=bad)
+    cmap.set_under(und, 1.0)
+    cmap.set_over(ove, 1.0)
+    cmap.set_extremes(under=und,over=ove)
 
     arr = numpy.ma.masked_where(sel(b), a)
     fig,ax = plt.subplots(nrows=1, ncols=1)
@@ -139,7 +152,8 @@ def mask_blobs(a, b, sel=lambda a: a < 1, extent=None, vmin=0.01, invert=False, 
     ax.tick_params(which="both", width=1)
     ax.tick_params(which="major", length=7)
     ax.tick_params(which="minor", length=3)
-    plt.colorbar(im, ax=ax)
+
+    plt.colorbar(im, ax=ax, label=clabel, extend='both')
     return fig, ax
 
 def wire_blob_slice(cm, sliceid):
