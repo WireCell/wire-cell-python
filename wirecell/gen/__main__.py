@@ -388,9 +388,10 @@ def depo_sphere(radius, electron_density, step_size,
         
 
 @cli.command("frame-stats")
-@click.option("-c", "--channels", default="800,800,960", help="comma list of channel counts per plane in u,v,w order")
+@click.option("--plane-channels", default="800,800,960",
+              help="comma list of channel counts per plane in u,v,w order")
 @frame_input()
-def frame_stats(array, channels, ariofile, **kwds):
+def frame_stats(array, plane_channels, ariofile, **kwds):
     '''
     Return (print) stats on the time distribution of a frame.
 
@@ -405,7 +406,7 @@ def frame_stats(array, channels, ariofile, **kwds):
         outliers = [sum(arel >= sigma*rms) for sigma in range(0,11)]
         return [n,mu,rms]+outliers
 
-    channels = [int(c) for c in channels.split(',')]
+    channels = [int(c) for c in plane_channels.split(',')]
     chan0=0
     for chan, letter in zip(channels,"UVW"):
         plane = array[chan0:chan0+chan,:]
@@ -414,8 +415,9 @@ def frame_stats(array, channels, ariofile, **kwds):
         tsum = plane.sum(axis=0)/plane.shape[0]
         csum = plane.sum(axis=1)/plane.shape[1]
 
-        log.info(' '.join([letter, 't'] + list(map(str,calc_stats(tsum)))))
-        log.info(' '.join([letter, 'c'] + list(map(str,calc_stats(csum)))))
+        log.debug(f'chans:{chan0}+{chan}')
+        click.echo(' '.join([letter, 't'] + list(map(str,calc_stats(tsum)))))
+        click.echo(' '.join([letter, 'c'] + list(map(str,calc_stats(csum)))))
 
         chan0 += chan
 
