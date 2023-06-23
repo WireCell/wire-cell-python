@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import math
+import json
 import click
 from wirecell import units
 from wirecell.util.functions import unitify, unitify_parse
@@ -390,8 +391,10 @@ def depo_sphere(radius, electron_density, step_size,
 @cli.command("frame-stats")
 @click.option("--plane-channels", default="800,800,960",
               help="comma list of channel counts per plane in u,v,w order")
+@click.option("-o","--output", default="/dev/stdout",
+              help="File to receive output")
 @frame_input()
-def frame_stats(array, plane_channels, ariofile, **kwds):
+def frame_stats(array, plane_channels, ariofile, output, **kwds):
     '''
     Return (print) stats on the time distribution of a frame.
 
@@ -399,15 +402,16 @@ def frame_stats(array, plane_channels, ariofile, **kwds):
     import numpy
 
     def calc_stats(x):
-        n = x.size
+        n = int(x.size)
         mu = numpy.mean(x)
         arel = numpy.abs(x-mu)
         rms = numpy.sqrt( (arel**2).mean() )
-        outliers = [sum(arel >= sigma*rms) for sigma in range(0,11)]
-        return [n,mu,rms]+outliers
+        outliers = [int(sum(arel >= sigma*rms)) for sigma in range(0,11)]
+        return dict(n=n, mu=mu, rms=rms, outliers=outliers)
 
     channels = [int(c) for c in plane_channels.split(',')]
     chan0=0
+    dat=dict()
     for chan, letter in zip(channels,"UVW"):
         plane = array[chan0:chan0+chan,:]
         plane = (plane.T - numpy.median(plane, axis=1)).T
@@ -416,11 +420,13 @@ def frame_stats(array, plane_channels, ariofile, **kwds):
         csum = plane.sum(axis=1)/plane.shape[1]
 
         log.debug(f'chans:{chan0}+{chan}')
-        click.echo(' '.join([letter, 't'] + list(map(str,calc_stats(tsum)))))
-        click.echo(' '.join([letter, 'c'] + list(map(str,calc_stats(csum)))))
-
+        
+        dat[letter] = dict(t=calc_stats(tsum), c=calc_stats(csum))
+        # click.echo(' '.join([letter, 't'] + list(map(str,calc_stats(tsum)))))
+        # click.echo(' '.join([letter, 'c'] + list(map(str,calc_stats(csum)))))
         chan0 += chan
-
+    with open(output, "w") as fp:
+        fp.write(json.dumps(dat, indent=4) + "\n")
 
 
 def main():
