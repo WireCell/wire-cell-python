@@ -620,7 +620,28 @@ def activity(output, slices, slice_line, speed, t0, cluster_file):
 @click.argument("cluster-file")
 def blob_activity_stats(output, format, amin, cluster_file):
     '''
-    Return statistics on blob vs activity
+    Return various statistics on blob and activity including:
+
+    - atot :: total activity.
+
+    - btot :: number of blobs.
+
+    - qtot :: total of blob solved activity.
+
+    - nbpix :: number of channel/slice pixels covered by blobs.
+
+    - afound :: amount of activity captured by blobs.
+
+    - pafound :: fraction of found activity.
+
+    - amissed :: amount of activity missed by blobs.
+
+    - pamissed :: fraction of missed activity.
+
+    - pqtot :: ratio of total blob solved activity to total activity.
+
+    - pqfound :: ratio of total blob solved activity to total activity covered by blobs.
+
     '''
     from . import tap, clusters, plots
 
