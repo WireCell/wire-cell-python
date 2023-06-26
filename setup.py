@@ -19,7 +19,7 @@ setup(
         'sqlalchemy',
         'semver',
         'scipy',
-        'moo @ git+https://github.com/brettviren/moo.git@0.6.5#egg=moo',
+        'moo @ git+https://github.com/brettviren/moo.git@0.6.6#egg=moo',
 #        'mayavi',
 #        'vtk',
     ],
