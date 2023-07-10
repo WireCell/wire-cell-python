@@ -20,3 +20,4 @@ ltximg
 .direnv
 .envrc
 *.npz
+*.ipynb*
