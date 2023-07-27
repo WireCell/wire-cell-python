@@ -2,10 +2,10 @@
 '''
 Export wirecell.sigproc functionality to a main Click program.
 '''
-
+import re
 import sys
 import click
-
+import numpy
 from wirecell import units
 
 from wirecell.util.cli import context, log
@@ -77,7 +77,7 @@ def fr2npz(gain, shaping, json_file, npz_file):
     '''
     import wirecell.sigproc.response.persist as per
     import wirecell.sigproc.response.arrays as arrs
-    import numpy
+
     fr = per.load(json_file)
     gain *= units.mV/units.fC
     shaping *= units.us
@@ -273,10 +273,8 @@ def plot_garfield_track_response(ctx, gain, shaping, tick, tick_padding, electro
         log.debug ("dumping data to %s" % dump_data)
 
         if dump_data.endswith(".npz"):
-            import numpy
             numpy.savez(dump_data, data);
         if dump_data.endswith(".npy"):
-            import numpy
             numpy.save(dump_data, data);
         if dump_data.endswith(".txt"):
             with open(dump_data,"wt") as fp:
@@ -313,7 +311,7 @@ def plot_response_compare_waveforms(ctx, plane, irange, trange, responsefile1, r
     styles = ["solid","solid"]
 
     import matplotlib.pyplot as plt
-    import numpy
+
     def plot_paths(rfile, n):
         fr = per.load(rfile)
         pr = fr.planes[plane]
@@ -520,7 +518,6 @@ def channel_responses(ctx, tscale, scale, name, infile, outfile):
     '''
     import json
     import ROOT
-    import numpy
     from root_numpy import hist2array
 
     tscale = eval(tscale, units.__dict__)
@@ -591,6 +588,185 @@ def configured_spectra(type, name, data, coupling, output, cfgfile):
     zero_suppress = coupling == "ac"
     plot_many(got, output, zero_suppress)
     
+
+@cli.command("fwd")
+@click.option("--plots", type=str, default=None,
+              help="comma-separated list regex to match on plot categories")
+@click.option("-o","--output", default="/dev/stdout", help="output for plots")
+@click.argument("detector")
+def fwd(plots, output, detector):
+    '''
+    Simple exercise of ForWaRD
+    '''
+
+    if plots:
+        plots = [re.compile(p) for p in plots.split(",")]
+    def will_plot(key):
+        if not plots:
+            return True         # all
+        for p in plots:
+            if p.match(key):
+                return True
+        return False
+
+    from . import fwd
+    from wirecell.util.plottools import pages
+    import matplotlib.pyplot as plt
+
+    # ADC sample time basis
+    T=0.5*units.us
+    N=1024
+    Fmax = 1.0/T
+    times = fwd.make_times(N, T)
+
+    # FR and thus DR time basis is 5x more fine than ADC
+    dr_fine = fwd.DetectorResponse("det fine", detector)
+    print(dr_fine)
+    nrebin = int(T/dr_fine.T)
+
+    # A rebinned dr but that does not convolve in the slower sampling.
+    dr = fwd.rebin(dr_fine, nrebin, "det tick")
+    dr.er = fwd.rebin(dr_fine.er, nrebin, "elec tick")
+    dr.fr = fwd.rebin(dr_fine.fr, nrebin, "field tick")
+    print (dr)
+
+    # The noise "signal"
+    noi = fwd.Noise("noise", times, detector)
+
+    # Display units
+    dunits = fwd.unit_info()
+
+    # Simple diffusion model
+    smears = list()
+    sigmas = numpy.array([1,2,4,8])*units.us
+    for sigma in sigmas:
+        # smear = fwd.gauss_wave(times, sigma*units.us);
+        smear = fwd.gauss_wave(times, sigma, times[N//2]);
+        smears.append(fwd.Signal(f'{sigma/units.us} us smear', times, smear))
+
+    # Simple track signal model: MIP tracks of different sample time duration
+    speed = 1.6 * units.mm / units.us
+    mip_ione = 55000/units.cm * speed
+    qstep = mip_ione * T
+    track_widths = numpy.array([2, 10, 100, 400])*units.us
+    squares = [fwd.square(times, w, name=f'{w/units.us} us track') * qstep for w in track_widths]
+
+    # Simple multi-Gaussian "blips" signal model
+    blips = list()
+    blip_counts = (2, 10, 100)
+    for n in blip_counts:
+        wave = fwd.randgauss_wave(times, n=n,
+                                  amprange=(0.5*qstep, 2*qstep),
+                                  sigrange=(0.1*units.us, 0.5*units.us),
+                                  timerange=(200*units.us, 300*units.us))
+        sig = fwd.Signal(f'{n} blips', times, numpy.sum(wave, axis=0))
+        blips.append(sig)
+
+    # Note, order here matches forward.org presentation.
+    # Changing it will break rebuilding that file.
+    with pages(output) as out:
+
+        # Responses
+        if will_plot("responses"):
+            for one in [dr_fine, dr]:
+                fwd.plot_convo(one.fr, one.er, one,
+                               dunits['field'], dunits['elec'], dunits['det'],
+                               flimiter = fwd.range_limiter(0, Fmax / 2))
+                out.savefig()
+                plt.clf()
+
+        # Noise
+        if will_plot("noise"):
+            fwd.plot_noise(noi, dunits['noise'])
+            out.savefig()
+            plt.clf()
+
+        # Several pages of diffusion of tracks 
+        square_sigs = list()    # collect
+        for square in squares:
+            sigs = [fwd.Convolution(square.name, square, r, "same") for r in smears]
+            square_sigs.append(sigs)
+
+            if will_plot("square_sigs"):
+                fwd.plot_convo(square, smears, sigs,
+                               dunits['ionized'], dunits['diffusion'], dunits['drifted'],
+                               flimiter = fwd.range_limiter(0, Fmax / 2))
+                out.savefig()
+                plt.clf()
+
+        # Track (x) response
+        square_meas_quiet = list() # collect
+        for sigs, tw in zip(square_sigs, track_widths):
+            meas = [fwd.Convolution(f'{tw/units.us} us track', sig, dr) for sig in sigs]
+            square_meas_quiet.append(meas)
+            if will_plot("square_measures_quiet"):
+                fwd.plot_convo(sigs, dr, meas,
+                               dunits['drifted'], dunits['det'], dunits['quiet'],
+                               flimiter = fwd.range_limiter(0, Fmax / 2))
+                out.savefig()
+                plt.clf()
+
+        for sigs in square_meas_quiet:
+            if will_plot("square_measures_noise"):
+                sig = sigs[1]
+                tot = sig + noi
+                tot.name = sig.name + " + noise"
+                fwd.plot_signal_noise(sig, noi, tot,
+                                      dunits['noise'],
+                                      flimiter = fwd.range_limiter(0, Fmax / 2))
+                out.savefig()
+                plt.clf()
+
+
+        # Several pages of diffusion of different number of Gaussian "blips"
+        blips_sigs = list()
+        for sig in blips:
+            sigs = [fwd.Convolution(sig.name, sig, r, "same") for r in smears]        
+            blips_sigs.append(sigs)
+            if will_plot("blips_sigs"):
+                fwd.plot_convo(sig, smears, sigs,
+                               dunits['ionized'], dunits['diffusion'], dunits['drifted'],
+                               flimiter = fwd.range_limiter(0, Fmax / 2))
+                out.savefig()
+                plt.clf()
+
+        blips_meas_quiet = list() # collect
+        for sigs, nblips in zip(blips_sigs, blip_counts):
+            meas = [fwd.Convolution(f'{nblips} blips', sig, dr) for sig in sigs]
+            blips_meas_quiet.append(meas)
+            if will_plot("blips_measures_quiet"):
+                fwd.plot_convo(sigs, dr, meas,
+                               dunits['drifted'], dunits['det'], dunits['quiet'],
+                               flimiter = fwd.range_limiter(0, Fmax / 2))
+                out.savefig()
+                plt.clf()
+                
+
+        for sigs in blips_meas_quiet:
+            if will_plot("blips_measures_noise"):
+                sig = sigs[-1]
+                tot = sig + noi
+                tot.name = sig.name + " + noise"
+                fwd.plot_signal_noise(sig, noi, tot,
+                                      dunits['noise'],
+                                      flimiter = fwd.range_limiter(0, Fmax / 2))
+                out.savefig()
+                plt.clf()
+                
+        
+# next
+# - [x] factor gauss smear to function and out of plot_signal_demo
+# - [x] factor out demo and plotting from plot_signal_demo
+# - [x] convolve signal with response and plot wave/spec
+# - [x] understand noise mode/mean/energy
+# - [x] understand noise normalization
+# - [x] implement noise sim
+# - [x] add simple signal sim (track and blip)
+# - [x] plot signal spectrum as function of track length 
+# - [ ] understand signal normalization
+# - [ ] signal spec + noise spec + FoRD
+# - [ ] plot (normalized) signal/noise spectra with shrinkage coefficients overlayed
+                
 
 def main():
     cli(obj=dict())
