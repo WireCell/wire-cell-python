@@ -856,6 +856,45 @@ def ls(filename):
     for key, val in fp:
         log.info(f'{key} {type(val)}')
     
+@cli.command('tdm2hdf')
+@click.argument('tdmfile')
+@click.argument('hdffile')
+def tdm2hdf(tdmfile, hdffile):
+    from . import ario, tdm
+    try:
+        import h5py
+    except ImportError:
+        click.echo("no suport for h5py\ntry 'apt install python3-h5py'\nor 'pip install h5py'\ndepending on your context")
+        return 1
+
+    tens = tdm.load(ario.load(tdmfile))
+    tdm.tohdf(tens, h5py.File(hdffile, 'w'))
+
+
+@cli.command("dump-tdm")
+@click.option("-i", "--index", default=0, help="Index of tensorset (def=0)")
+@click.argument("filename")
+def dump_tdm(index, filename):
+    '''
+    Dump file in WCT tensor-data-model form.
+    '''
+    from . import ario, tdm
+    fp = ario.load(filename)
+    if not tdm.looks_like(fp):
+        click.echo("file does not appear to hold a tensor set")
+        return 1
+
+    def v(n,c):
+        pre = '\t'*len(c)
+        loc = '/'.join(c)
+        keys = str(list(n.md.keys()))
+        return f'{loc}\n{pre}md:{keys}'
+
+    for one in tdm.load(fp):
+        got = one.visit(v, with_context=True)
+        print('\n'.join(got))
+        
+
 
 @cli.command("npz-to-wct")
 @click.option("-T", "--transpose", default=False, is_flag=True,
