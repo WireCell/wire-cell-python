@@ -2,8 +2,10 @@
 '''
 Code to work with WCT tensor data model files.
 '''
-
+import numpy
 from collections import namedtuple, defaultdict
+import logging
+log = logging.getLogger("wirecell.util")
 
 def looks_like(fp):
     for key in fp.keys():
@@ -128,6 +130,20 @@ class Tree(dict):
             return
         self.metadata[key] = val
 
+    def visit_by_metadata(self, **md):
+        '''Visit the tree returning nodes that match the given metadata.
+
+        A match requires keys and values to match
+        '''
+        def v(n):
+            for k,v in md.items():
+                if k not in n.md:
+                    return 
+                if v != n.md[k]:
+                    return
+            return n
+        return [g for g in self.visit(v) if g is not None]
+
 
 def dumps(fp):
     '''
@@ -151,10 +167,21 @@ def dumps(fp):
     return '\n'.join(lines)
 
 
-def load(af, ident=0):
+def load(af, prefix="", ident=None):
     '''Load an ario-like file in tensor-data-model to a list of Tree.
 
-    Each Tree in the list represents one tensorset with its tensors.
+    - af :: an ario like file object open for reading
+
+    - prefix :: a string to prefix keys in the ario file
+
+    - ident :: the ident number of a specific tensor set load and
+      return as scalar.  If ident=None then a list of all tensor sets
+      are returned.
+
+    Returns None on error, scalar tdm.Tree if ident is not None else
+    list of tdm.Tree.
+
+    Each Tree represents one tensorset with its tensors.
 
     If a tensorset provides a "datapath" metadata item the Tree (node)
     representing the tensorset will be found in the Tree at that path.
@@ -165,36 +192,49 @@ def load(af, ident=0):
     (required) "datapath" metadata item.
 
     '''
+    if ident is not None:
+        # idents are latger parsed only to string.
+        ident = str(ident)  
+
     # ordered list of dataset idents
     idents = list()
     # top tree for each dataset keyed by str(ident)
     tops = defaultdict(Tree)
 
-    def get_top(ident):
-        if ident not in idents:
-            idents.append(ident)
-        return tops[ident]
+    def get_top(idstr):
+        if idstr not in idents:
+            idents.append(idstr)
+        return tops[idstr]
 
     # tree for each tensor keyed by (str(ident),str(index)) tuple
     tens = defaultdict(lambda: defaultdict(Tree))
-    def get_ten(ident, index):
-        return tens[ident][index]
+    def get_ten(idstr, index):
+        return tens[idstr][index]
 
     for key in af:
 
-        if key.startswith('tensorset_'):
+        if prefix and not key.startswith(prefix):
+            log.debug(f'skip {key=}, does not start with {prefix=}')
+            continue
+
+        parts = key.split("_")
+        idstr = parts[1]
+        if ident is not None and idstr != ident:
+            log.debug(f'skip {key=}, does not match {ident=}')
+            continue
+
+        if key.startswith(f'{prefix}tensorset_'):
             md = af[key]
-            _,ident,_ = key.split("_")
-            top = get_top(ident)
+            top = get_top(idstr)
             if 'datapath' in md:
                 top(md['datapath']).metadata = md
             else:
                 top.metadata = md
             continue
 
-        if key.startswith('tensor_'):
-            _,ident,index,kind = key.split("_")
-            ten = get_ten(ident,index)
+        if key.startswith(f'{prefix}tensor_'):
+            index,kind = parts[2:4]
+            ten = get_ten(idstr,index)
             if kind == 'metadata':
                 ten.metadata = af[key]
                 continue
@@ -203,22 +243,24 @@ def load(af, ident=0):
                 continue
         
     ret = list()
-    for ident in idents:
-        top = get_top(ident)
-        for index, ten in sorted(tens[ident].items()):
+    for idstr in idents:
+        top = get_top(idstr)
+        for index, ten in sorted(tens[idstr].items()):
             dpath = ten.md['datapath']
             top.insert(dpath, ten)
         ret.append(top)
+    if not ret:
+        return
+    if ident is not None:
+        return ret[0]
     return ret
 
-def tohdf(trees, hd):
+
+def tohdf(hd, *trees):
     '''
     Fill HDF5 file like object hd with Trees.
     '''
     import h5py
-
-    if isinstance(trees, Tree):
-        trees = [trees]
 
     def construct(node, path):
         dpath = '/'.join(path)
@@ -252,58 +294,25 @@ def tohdf(trees, hd):
         tree.visit(construct, with_context=True)
         tree.visit(softlink, with_context=True)
         
+def pc2vtk(pd, *pts, **attrs):
+    '''
+    Fill VTK PolyData "pd" with point cloud in tree.
+    
+    '''
+    npts = len(pts[0])
+    indices = list(range(npts))
 
+    pd.points = numpy.vstack(pts).T
 
-    # mds = dict()
-    # arrs = dict()
+    verts = numpy.arange(0, npts, 1)
+    verts.shape = (npts,1)
+    pd.verts = verts
 
-    # for key in af:
-    #     thing,ident = key.split('_',1)
+    pd.point_data.scalars = indices
+    pd.point_data.scalars.name = 'indices'
 
-    #     if thing == 'tensorset':
-    #         md = af[key]
-    #         dpath = md.pop('datapath', None)
-    #         if dpath is None:
-    #             continue
-    #         grp = hd.create_group(dpath)
-    #         for k,v in md.items():
-    #             grp.attrs[k] = v
-    #         continue
+    for count, name in enumerate(sorted(attrs)):
+        pd.point_data.add_array( attrs[name] )
+        pd.point_data.get_array(count+1).name = name
 
-    #     thing,ident,index,kind = key.split('_')
-    #     ii = (int(ident), int(index))
-
-    #     if kind == 'metadata':
-    #         mds[ii] = af[key]
-    #         continue
-
-    #     if kind == 'array':
-    #         arrs[ii] = af[key]
-    #         continue
-
-    # for ii,arr in arrs.items():
-    #     md = mds.pop(ii, {})
-    #     dpath = md.pop('datapath')
-    #     ds = hd.create_dataset(dpath, data=af[key])
-    #     for k,v in md.items():
-    #         ds.attrs[k] = v
-
-    # for md in mds.values():
-    #     dpath = md.pop('datapath')
-
-    #     try:
-    #         grp = hd.create_group(dpath)
-    #     except ValueError:
-    #         grp = hd[dpath]
-
-    #     dtype = md['datatype']
-    #     if dtype == 'pcdataset':
-    #         arrays = md.pop('arrays')
-    #         for aname, apath in arrays.items():
-    #             grp[aname] = h5py.SoftLink(apath)
-
-    #     # whatever is left
-    #     for k,v in md.items():
-    #         grp.attrs[k] = v
-            
-        
+    

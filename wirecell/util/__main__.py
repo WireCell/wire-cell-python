@@ -856,19 +856,117 @@ def ls(filename):
     for key, val in fp:
         log.info(f'{key} {type(val)}')
     
+@cli.command('pc2pd')
+@click.option("--ident", default=None, type=int,
+              help="Limit loading to a specific tensorset of given ident (default converts all)")
+@click.option("--prefix", default="",
+              help='Limit loading to tdm entries starting with a prefix prefix (default="")')
+@click.option("--points", default=None, required=True,
+              help='Comma-separated list of datapath to arrays to use as Cartesian points')
+@click.option("--attrs", default=None, 
+              help='Comma-sparated list of datapath to arrays to limit as atributes, default is all')
+@click.argument('pcfile')
+@click.argument('pdfile')
+def pc2pd(ident, prefix, points, attrs, pcfile, pdfile):
+    '''
+    Convert pointcloud in WCT TDM file format to VTK PolyData file.
+
+    '''
+    if not pdfile.endswith(".vtp"):
+        log.warning(f'output file name does not end in .vtp, paraview may complain')        
+
+    from . import ario, tdm
+    try:
+        from tvtk.api import tvtk, write_data
+    except ImportError:
+        raise click.ClickException('''no suport for tvtk
+        try:  apt install mayavi2
+        or:   pip install mayavi
+        depending on your context''')
+
+    tens = tdm.load(ario.load(pcfile), prefix, ident)
+    if tens is None:
+        raise click.ClickException(f'failed to load tensors at {prefix=}, {ident=} from {pcfile}')
+    if isinstance(tens, tdm.Tree):
+        tens = [tens]
+
+    points = points.split(',')
+    attrs = attrs.split(',') if attrs else []
+
+    def get_tensorset(top):
+        pcds = top.visit_by_metadata(datatype='pcdataset')
+        if not pcds:
+            return
+        ret = dict()
+        for key, path in pcds[0].md['arrays'].items():
+            ret[key] = top(path)
+        return ret
+
+    ptens = defaultdict(list)
+    atens = defaultdict(list)
+
+    # collect arrays
+    for count, ten in enumerate(tens):
+        ts = get_tensorset(ten)
+        if not ts:
+            log.warning(f'tree {count} has no tensor set')
+            continue
+
+        if not attrs:
+            attrs = [n for n in ts if n not in points]
+
+        okay = True
+        for name in points + attrs:
+            if name not in ts:
+                log.warning(f'tensor set {count} lacks tensor {name}, skipping.\nUsing --prefix/--ident may avoid this message.')
+                okay = False
+            if ts[name].array is None:
+                log.warning(f'tensor set {count} tensor {name} lacks array, skipping.\nUsing --prefix/--ident may avoid this message.')
+                okay = False
+        if not okay:
+            continue
+            
+        for name in points:
+            ptens[name].append(ts[name].array)
+        for name in attrs:
+            atens[name].append(ts[name].array)
+
+    log.info(f'{points=} {attrs=}')
+
+    point_arrays = [numpy.hstack(ptens[name]) for name in points]
+    attrs_arrays = dict()
+    for name in atens:
+        attrs_arrays[name] = numpy.hstack(atens[name])
+
+    pd = tvtk.PolyData()
+    tdm.pc2vtk(pd, *point_arrays, **attrs_arrays)
+    write_data(pd, pdfile)
+
 @cli.command('tdm2hdf')
+@click.option("--ident", default=None, type=int,
+              help="Convert a specific tensorset of given ident (default converts all)")
+@click.option("--prefix", default="",
+              help='The tdm entry prefix (default="")')
 @click.argument('tdmfile')
 @click.argument('hdffile')
-def tdm2hdf(tdmfile, hdffile):
+def tdm2hdf(ident, prefix, tdmfile, hdffile):
+    '''
+    Convert WCT TDM file to HDF equivalent.
+    '''
     from . import ario, tdm
     try:
         import h5py
     except ImportError:
-        click.echo("no suport for h5py\ntry 'apt install python3-h5py'\nor 'pip install h5py'\ndepending on your context")
-        return 1
+        raise click.ClickException('''no suport for h5py
+        try:  apt install python3-h5py
+        or:   pip install h5py
+        depending on your context''')
 
-    tens = tdm.load(ario.load(tdmfile))
-    tdm.tohdf(tens, h5py.File(hdffile, 'w'))
+    tens = tdm.load(ario.load(tdmfile), prefix, ident)
+    if tens is None:
+        raise click.ClickException(f'failed to load tensors at {prefix=}, {ident=} from {tdmfile}')
+    log.debug(f'loaded {len(tens)} tensors')
+    tdm.tohdf(h5py.File(hdffile, 'w'), tens)
 
 
 @cli.command("dump-tdm")
