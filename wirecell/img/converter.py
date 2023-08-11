@@ -102,7 +102,7 @@ def orderpoints(pointset):
     for p in pointset:
         ang = math.atan2(p[2]-c[2], p[1]-c[1]);
         byang.append((ang, p))
-    byang.sort()
+    byang = sorted(byang, key=lambda x: x[0])
     return [p for a,p in byang]
 
 
