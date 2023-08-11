@@ -11,6 +11,7 @@ setup(
     packages = find_packages(),
     install_requires = [
         'Click',
+        'pytest',
         'numpy',
         'matplotlib',
         'networkx',
