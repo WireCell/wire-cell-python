@@ -467,10 +467,12 @@ def paraview_depos(ctx, index, deposets, paraview_file):
               help="Drift speed (with units)")
 @click.option("--t0", default="0*ns",
               help="Absolute time of first tick (with units)")
+@click.option("--x0", default="0*cm",
+              help="APA x location (with units)")
 @click.option('-d', '--density', type=float, default=9.0,
               help="For samplings which care, specify target points per cc")
 @click.argument("cluster-files", nargs=-1)
-def bee_blobs(output, geom, rse, sampling, speed, t0, density, cluster_files):
+def bee_blobs(output, geom, rse, sampling, speed, t0, x0, density, cluster_files):
     '''
     Produce a Bee JSON file from a cluster file.
     '''
@@ -481,6 +483,7 @@ def bee_blobs(output, geom, rse, sampling, speed, t0, density, cluster_files):
 
     speed = unitify(speed)
     t0 = unitify(t0)
+    x0 = unitify(x0)
 
     dat = dict(runNo=rse[0], subRunNo=rse[1], eventNo=rse[2], geom=geom, type="cluster",
                x=list(), y=list(), z=list(), q=list(), cluster_id=list())
@@ -501,7 +504,7 @@ def bee_blobs(output, geom, rse, sampling, speed, t0, density, cluster_files):
 
     for ctf in cluster_files:
         gr = list(tap.load(ctf))[0] # fixme: for now ignore subsequent graphs
-        gr = converter.undrift_blobs(gr, speed, t0)
+        gr = converter.undrift_blobs(gr, speed, t0, x0)
         log.debug ("got %d" % gr.number_of_nodes())
         if 0 == gr.number_of_nodes():
             log.warning("skipping empty graph %s" % ctf)

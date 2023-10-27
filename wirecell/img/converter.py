@@ -32,7 +32,7 @@ def undrift_depos(depos, speed=1.6*units.mm/units.us, time=0, drift_index=0):
     depos['q'] = numpy.abs(depos['q'])
     return depos
 
-def undrift_blobs(cgraph, speed=1.6*units.mm/units.us, time=0, drift_index=0):
+def undrift_blobs(cgraph, speed=1.6*units.mm/units.us, time=0, x0=0, drift_index=0):
     '''Transform the blobs in the cluster graph.
 
     The cgraph may be a list of cluster graphs.
@@ -52,7 +52,7 @@ def undrift_blobs(cgraph, speed=1.6*units.mm/units.us, time=0, drift_index=0):
 
             pts = numpy.array(ndata['corners'])
             dt = pts[:,0] - time
-            pts[:,0] = speed*dt;
+            pts[:,0] = x0 - speed*dt;
             ndata['corners'] = pts
             ndata['span'] *= speed
 
