@@ -41,6 +41,7 @@ setup(
             'wirecell-pytorch = wirecell.pytorch.__main__:main',
             'wirecell-aux = wirecell.aux.__main__:main',
             'wirecell-test = wirecell.test.__main__:main',
+            'wirecell-ls4gan = wirecell.ls4gan.__main__:main',
         ]
     )
 )
