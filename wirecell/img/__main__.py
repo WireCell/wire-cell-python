@@ -528,6 +528,9 @@ def bee_blobs(output, geom, rse, sampling, speed, t0, x0, density, cluster_files
     # monkey patch
     from json import encoder
     encoder.FLOAT_REPR = lambda o: format(o, '.3f')
+    out_dir = os.path.dirname(output)
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
     json.dump(dat, open(output,'w', encoding="utf8"))
 
 

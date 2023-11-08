@@ -52,7 +52,7 @@ def undrift_blobs(cgraph, speed=1.6*units.mm/units.us, time=0, x0=0, drift_index
 
             pts = numpy.array(ndata['corners'])
             dt = pts[:,0] - time
-            pts[:,0] = x0 - speed*dt;
+            pts[:,0] = x0 - speed*dt
             ndata['corners'] = pts
             ndata['span'] *= abs(speed)
 
@@ -310,7 +310,6 @@ def blob_uniform_sample(bdat, density):
     npts = len(corners);
     pgon = Polygon(corners)
     nwant = max(1, int(pgon.area * thickness * density))
-    print(f"nwant: {nwant} = {pgon.area} * {thickness} * {density}")
     pts = list()
     min_x, min_y, max_x, max_y = pgon.bounds
 

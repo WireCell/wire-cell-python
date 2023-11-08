@@ -29,6 +29,9 @@ def cli(ctx):
 @click.option("-f", "--format", default="frame",
               type=click.Choice(["frame",]), # "tensor"
               help="Set the output file format")
+@click.option("-r", "--ranges", nargs=6, type=click.Tuple([int, int, int, int, int, int]), 
+              default=[0, 800, 0, 800, 0, 960],
+              help="ubeg uend vbeg vend wbeg wend, end is not included")
 @click.option("-t", "--tinfo", type=str,
               default="0,0.5*us,0",
               help="The tick info list: time,tick,tbin")
@@ -46,8 +49,9 @@ def cli(ctx):
 @click.option("-z", "--compress", default=True, is_flag=True,
               help="Whether to compress if output file is .npz")
 @click.argument("npzfile")
-def npz_to_wct(transpose, output, name, format, tinfo, baseline, scale, dtype, channels, event, compress, npzfile):
-    """Convert a npz file holding 2D frame array(s) to a file for input to WCT.
+def npz_to_wct(transpose, output, name, format, ranges, tinfo, baseline, scale, dtype, channels, event, compress, npzfile):
+    """Convert a npz file holding 3D frame array(s) to a file for input to WCT.
+    assumes channel, tick, plane(3)
 
     A linear transform and type cast is be applied to the input
     samples prior to output:
@@ -81,7 +85,8 @@ def npz_to_wct(transpose, output, name, format, tinfo, baseline, scale, dtype, c
             arr = arr.T
         if len(arr.shape) != 3:
             raise click.BadParameter(f'input array {aname} wrong shape: {arr.shape}')
-        arr = numpy.vstack((arr[0:800,:,0],arr[0:800,:,1],arr[0:960,:,2]))
+        # assume input is (channel, tick, plane(3))
+        arr = numpy.vstack((arr[ranges[0]:ranges[1],:,0],arr[ranges[2]:ranges[3],:,1],arr[ranges[4]:ranges[5],:,2]))
 
         nchans = arr.shape[0]
 
