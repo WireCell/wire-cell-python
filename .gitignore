@@ -5,6 +5,7 @@ cut.*
 *.pdf
 *.bz2
 venv
+wcpy
 *.gz
 .cache
 venv*
