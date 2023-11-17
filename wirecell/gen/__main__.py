@@ -301,7 +301,7 @@ def depo_lines(electron_density, step_size, time, tracks, sets,
 
     arrays = lines(tracks, sets, p0, p1, time, eperstep, step_size, track_speed)
 
-    log.info("saving:", list(arrays.keys()))
+    log.info("saving: %s" % str(list(arrays.keys())))
     numpy.savez(output, **arrays) 
 
 @cli.command("depo-point")

@@ -853,8 +853,11 @@ def ls(filename):
     if cdm.looks_like(fp):
         log.info(cdm.dumps(fp))
         return
-    for key, val in fp:
-        log.info(f'{key} {type(val)}')
+    for key, val in fp.items():
+        if isinstance(val, numpy.ndarray):
+            log.info(f'{key} {val.shape} {val.dtype}')
+        else:
+            log.info(f'{key} {type(val)}')
     
 @cli.command('pc2pd')
 @click.option("--ident", default=None, type=int,
