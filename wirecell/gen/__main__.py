@@ -272,11 +272,13 @@ def plot_sim(ctx, input_file, output_file, ticks, plot, tag, time_range, number,
               help="Speed of track")
 @click.option("--seed", default="0,1,2,3,4", type=str,
               help="A single integer or comma-list of integers to use as random seed")
+@click.option("--track-info", default="array", 
+              help="How to store meta data about the tracks: string 'array', 'omit' or a JSON file name")
 @click.option("-o", "--output",
               type=click.Path(dir_okay=False, file_okay=True),
               help="Numpy file (.npz) in which to save the results")
 def depo_lines(electron_density, step_size, time, tracks, sets,
-               corner, diagonal, track_speed, seed, output):
+               corner, diagonal, track_speed, seed, track_info, output):
     '''
     Generate ideal line-source "tracks" of depos
     '''
@@ -300,6 +302,17 @@ def depo_lines(electron_density, step_size, time, tracks, sets,
     from .depogen import lines
 
     arrays = lines(tracks, sets, p0, p1, time, eperstep, step_size, track_speed)
+
+    if track_info != "array":
+        ti = list()
+        for key in list(arrays.keys()):
+            if key.startswith("track_info_"):
+                arr = arrays.pop(key)
+                dat = {name:arr[name].tolist() for name in arr.dtype.names}
+                dat["ident"] = key[11:]
+                ti.append(dat)
+        if track_info != "omit":
+            open(track_info, "w").write(json.dumps(ti))
 
     log.info("saving: %s" % str(list(arrays.keys())))
     numpy.savez(output, **arrays) 

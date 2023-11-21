@@ -29,8 +29,6 @@ def lines(tracks, sets, p0, p1, time, eperstep, step_size, track_speed):
     bb = list(zip(p0, p1))
     pmid = 0.5 * (p0 + p1)
 
-    print(f"depo time: {time}")
-
     collect = dict()
     for iset in range(sets):
         last_id = 0
