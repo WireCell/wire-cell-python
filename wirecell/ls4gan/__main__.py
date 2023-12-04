@@ -138,23 +138,60 @@ def npz_to_wct(transpose, output, name, format, ranges, tinfo, baseline, scale, 
 @click.option("-m", "--metric", type=str,
               help="L1 or L2")
 @click.option("-r", "--ranges", nargs=6, type=click.Tuple([int, int, int, int, int, int]), 
-              default=[0, 800, 0, 800, 0, 960],
+              default=[0, 800, 800, 1600, 1600, 2560],
               help="ubeg uend vbeg vend wbeg wend, end is not included")
 @click.option("-b", "--baseline", type=bool, default=False,
               help="Do baseline subtraction or not")
-@click.option("-s", "--scale", default=1.0,
-              help="A multiplicative scaling")
+@click.option("-t", "--tag", default="orig",
+              help="The frame tag")
+@click.option("-u", "--unit", default="ADC",
+              help="The color units")
 @click.argument("npzfile1")
 @click.argument("npzfile2")
-def comp_metric(output, metric, ranges, baseline, scale, npzfile1, npzfile2):
+def comp_metric(output, metric, ranges, baseline, tag, unit, npzfile1, npzfile2):
     """
     input: channel, tick, plane(3)
     output: metrics for 3 planes (m_u, m_v, m_w)
     """
     # print(f'processing {npzfile1} {npzfile2}')
     
-    baseline = float(baseline)
-    scale = float(scale)
+    def get_dense_array(npzfile, tag=tag, unit=unit):
+        from wirecell.util import ario
+        dat = ario.load(npzfile)
+        frame_keys = [f for f in dat.keys() if f.startswith('frame_')]
+        frames = sorted([f for f in frame_keys if f.startswith(f'frame_{tag}')])
+        if not frames:
+            found = ', '.join(frame_keys)
+            msg = f'No frames of tier "{tag}": found: {found}'
+            raise IOError(msg)
+
+        if unit == 'ADC':
+            uscale = 1
+            dtype = 'int16'
+        else:
+            uscale = getattr(units, unit)
+            dtype = float
+
+        for fname in frames:
+            _,tag,num = fname.split("_")
+            # print(f'frame "{tag}" #{num}')
+            ticks = dat[f'tickinfo_{tag}_{num}']
+            chans = dat[f'channels_{tag}_{num}']
+            chmin = numpy.min(chans)
+            chmax = numpy.max(chans)
+            nchan = chmax-chmin+1;
+
+            waves = dat[fname]      # (nch x ntick)
+            if baseline:
+                waves = numpy.array((waves.T - numpy.median(waves, axis=1)).T, dtype=dtype)
+            else:
+                waves = numpy.array(waves, dtype=dtype)
+            if dtype == float:
+                waves /= 1.0*uscale
+            chwaves = numpy.zeros((nchan, waves.shape[1]), dtype=dtype)
+            for ind,ch in enumerate(chans):
+                chwaves[ch-chmin] = waves[ind]
+        return chwaves
 
     def L1(a, b):
         if a.shape != b.shape:
@@ -172,19 +209,16 @@ def comp_metric(output, metric, ranges, baseline, scale, npzfile1, npzfile2):
     metric_func = {"L1": L1, "L2": L2}[metric]
 
     output = []
-    fp1 = numpy.load(npzfile1)
-    fp2 = numpy.load(npzfile2)
-    for aname in fp1:
-        arr1 = fp1[aname]
-        arr2 = fp2[aname]
-        if arr1.shape != arr2.shape:
-            raise ValueError("Input arrays have different shapes")
-        if len(arr1.shape) != 3:
-            raise click.BadParameter(f'input array {aname} wrong shape: {arr1.shape}')
-        # assume input is (channel, tick, plane(3))
-        output.append(metric_func(arr1[ranges[0]:ranges[1],:,0],arr2[ranges[0]:ranges[1],:,0]))
-        output.append(metric_func(arr1[ranges[2]:ranges[3],:,1],arr2[ranges[2]:ranges[3],:,1]))
-        output.append(metric_func(arr1[ranges[4]:ranges[5],:,2],arr2[ranges[4]:ranges[5],:,2]))
+    arr1 = get_dense_array(npzfile1)
+    arr2 = get_dense_array(npzfile2)
+    if arr1.shape != arr2.shape:
+        raise ValueError("Input arrays have different shapes")
+    if len(arr1.shape) != 2:
+        raise click.BadParameter(f'input array wrong shape: {arr1.shape}')
+    # assume input is (channel, tick, plane(3))
+    output.append(metric_func(arr1[ranges[0]:ranges[1],:],arr2[ranges[0]:ranges[1],:]))
+    output.append(metric_func(arr1[ranges[2]:ranges[3],:],arr2[ranges[2]:ranges[3],:]))
+    output.append(metric_func(arr1[ranges[4]:ranges[5],:],arr2[ranges[4]:ranges[5],:]))
 
     print(','.join(map(str, output)))
     return output
