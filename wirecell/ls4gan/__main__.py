@@ -131,6 +131,64 @@ def npz_to_wct(transpose, output, name, format, ranges, tinfo, baseline, scale, 
     else:
         raise click.BadParameter(f'unsupported output file type: {output}')
 
+
+@cli.command("comp-metric")
+@click.option("-o", "--output", type=str,
+              help="Output image file")
+@click.option("-m", "--metric", type=str,
+              help="L1 or L2")
+@click.option("-r", "--ranges", nargs=6, type=click.Tuple([int, int, int, int, int, int]), 
+              default=[0, 800, 0, 800, 0, 960],
+              help="ubeg uend vbeg vend wbeg wend, end is not included")
+@click.option("-b", "--baseline", type=bool, default=False,
+              help="Do baseline subtraction or not")
+@click.option("-s", "--scale", default=1.0,
+              help="A multiplicative scaling")
+@click.argument("npzfile1")
+@click.argument("npzfile2")
+def comp_metric(output, metric, ranges, baseline, scale, npzfile1, npzfile2):
+    """
+    input: channel, tick, plane(3)
+    output: metrics for 3 planes (m_u, m_v, m_w)
+    """
+    # print(f'processing {npzfile1} {npzfile2}')
+    
+    baseline = float(baseline)
+    scale = float(scale)
+
+    def L1(a, b):
+        if a.shape != b.shape:
+            raise ValueError("Input arrays have different shapes")
+        if a.size == 0:
+            raise ValueError("input arrays have zero elements")
+        # print(a.shape, a.size)
+        return numpy.sum(numpy.abs(a-b)) / a.size
+    def L2(a, b):
+        if a.shape != b.shape:
+            raise ValueError("Input arrays have different shapes")
+        if a.size == 0:
+            raise ValueError("input arrays have zero elements")
+        return numpy.linalg.norm(a-b) / numpy.sqrt(a.size)
+    metric_func = {"L1": L1, "L2": L2}[metric]
+
+    output = []
+    fp1 = numpy.load(npzfile1)
+    fp2 = numpy.load(npzfile2)
+    for aname in fp1:
+        arr1 = fp1[aname]
+        arr2 = fp2[aname]
+        if arr1.shape != arr2.shape:
+            raise ValueError("Input arrays have different shapes")
+        if len(arr1.shape) != 3:
+            raise click.BadParameter(f'input array {aname} wrong shape: {arr1.shape}')
+        # assume input is (channel, tick, plane(3))
+        output.append(metric_func(arr1[ranges[0]:ranges[1],:,0],arr2[ranges[0]:ranges[1],:,0]))
+        output.append(metric_func(arr1[ranges[2]:ranges[3],:,1],arr2[ranges[2]:ranges[3],:,1]))
+        output.append(metric_func(arr1[ranges[4]:ranges[5],:,2],arr2[ranges[4]:ranges[5],:,2]))
+
+    print(','.join(map(str, output)))
+    return output
+
 def main():
     cli(obj=dict())
 
