@@ -48,7 +48,7 @@ def resolve(filename, paths=()):
         raise RuntimeError("no file name provided")
     if isinstance(filename, str):
         filename = Path(filename)
-    if filename.is_absolute():
+    if filename.exists() and filename.is_absolute():
         return filename
 
     for maybe in clean_paths(paths):
@@ -58,31 +58,31 @@ def resolve(filename, paths=()):
     raise RuntimeError(f"file name {filename} not resolved in paths {paths}")
 
 
-def try_path(path, rel):
+def try_path(here, rel):
     '''
     Try to open a path
     '''
-    path = Path(path)
+    here = Path(here)
     rel = Path(rel)
 
     if rel.is_absolute():
         full_path = rel
     else:
-        fulll_path = path / rel
+        full_path = here / rel
 
     if full_path.is_dir():
         raise RuntimeError('Attempted to import a directory')
+    if not full_path.exists():
+        raise RuntimeError(f'No such path: {full_path}')
 
-    if full_path.exists():
-        return full_path, None
     # https://github.com/google/jsonnet/releases/tag/v0.19.1
     jsmod = jsonnet_module()
     import semver
     import_returns_bytes = semver.compare(getattr(jsmod, 'version', 'v0.18.0')[1:], '0.18.0') > 0
-    flags = 'r'
     if import_returns_bytes:
-        flags = 'rb'
-    return full_path, full_path.read()
+        return full_path, full_path.read_bytes()
+    else:
+        return full_path, full_path.read_text()
 
 
 class ImportCallback(object):
@@ -99,6 +99,7 @@ class ImportCallback(object):
             except RuntimeError:
                 continue
             if content:
+                full_path = str(full_path.absolute())
                 self.found.add(full_path)
                 return full_path, content
         raise RuntimeError('file not found for import')
@@ -137,7 +138,6 @@ def load(fname, paths=(), **kwds):
     See https://jsonnet.org/ref/bindings.html for list of kwds known
     to the Jsonnet loader.
     '''
-
     paths = clean_paths(paths)
     fname = resolve(fname, paths)
 
@@ -201,7 +201,7 @@ def scalar_typify(val):
     try:
         junk = float(val)
         return (val, True)
-    except RuntimeError:
+    except ValueError:
         pass
     if val.lower() in ("true", "yes", "on"):
         return ("true", True)
