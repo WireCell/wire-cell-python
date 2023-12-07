@@ -38,38 +38,42 @@ def clean_paths(paths, add_cwd=True):
 
 
 def resolve(filename, paths=()):
-    '''Resolve filename against moo built-in directories and any
+    '''Resolve filename against built-in directories and any
     user-provided list in "paths".
 
     Raise ValueError if fail.
 
     '''
     if not filename:
-        raise ValueError("no file name provided")
-    if filename.startswith('/'):
+        raise RuntimeError("no file name provided")
+    if isinstance(filename, str):
+        filename = Path(filename)
+    if filename.is_absolute():
         return filename
 
     for maybe in clean_paths(paths):
-        fp = os.path.join(maybe, filename)
-        if os.path.exists(fp):
-            return fp
-    raise ValueError(f"file not found: {filename}")
+        maybe = Path(maybe) / filename
+        if maybe.exists():
+            return maybe
+    raise RuntimeError(f"file name {filename} not resolved in paths {paths}")
 
 
 def try_path(path, rel):
     '''
     Try to open a path
     '''
-    if not rel:
-        raise RuntimeError('Got invalid filename (empty string).')
-    if rel[0] == '/':
+    path = Path(path)
+    rel = Path(rel)
+
+    if rel.is_absolute():
         full_path = rel
     else:
-        full_path = os.path.join(path, rel)
-    if full_path[-1] == '/':
+        fulll_path = path / rel
+
+    if full_path.is_dir():
         raise RuntimeError('Attempted to import a directory')
 
-    if not os.path.isfile(full_path):
+    if full_path.exists():
         return full_path, None
     # https://github.com/google/jsonnet/releases/tag/v0.19.1
     jsmod = jsonnet_module()
@@ -78,8 +82,7 @@ def try_path(path, rel):
     flags = 'r'
     if import_returns_bytes:
         flags = 'rb'
-    with open(full_path, flags) as f:
-        return full_path, f.read()
+    return full_path, full_path.read()
 
 
 class ImportCallback(object):
@@ -98,7 +101,7 @@ class ImportCallback(object):
             if content:
                 self.found.add(full_path)
                 return full_path, content
-        raise RuntimeError('File not found')
+        raise RuntimeError('file not found for import')
 
 def file_object(fname, opt='r'):
     '''
@@ -107,11 +110,20 @@ def file_object(fname, opt='r'):
     A decompressing file object is returned if so indicated by the
     file name extension.
     '''
-    if fname.endswith(".gz"):
+    fname = Path(fname)
+    
+    if fname.suffix == ".gz":
         return gzip.open(fname, opt)
-    if fname.endswith(".bz2"):
+    if fname.suffix == ".bz2":
         return bz2.open(fname, opt)
     return open(fname, opt)
+
+
+def loads(text):
+    '''
+    Load object from JSON text.
+    '''
+    return fromdict(json.loads(text))
 
 
 def load(fname, paths=(), **kwds):
@@ -132,18 +144,48 @@ def load(fname, paths=(), **kwds):
     fp = file_object(fname, 'rb')
     text = fp.read().decode()
 
-    if fname.endswith(('.jsonnet', '.jsonnet.gz', '.jsonnet.bz2')):
+    if fname.name.endswith(('.jsonnet', '.jsonnet.gz', '.jsonnet.bz2')):
         ic = ImportCallback(paths)
         jsmod = jsonnet_module()
         try:
-            text = jsmod.evaluate_snippet(fname, text, import_callback=ic, **kwds)
+            text = jsmod.evaluate_snippet(str(fname.absolute()), text, import_callback=ic, **kwds)
         except RuntimeError as err:
             raise RuntimeError(f"in file: {fname}") from err
-    elif fname.endswith(('.json', '.json.bz2', '.json.gz')):
+    elif fname.name.endswith(('.json', '.json.bz2', '.json.gz')):
         pass
     else:
         raise RuntimeError(f'unsupported file extension {fname}')
     return json.loads(text)
+
+
+def dumps(obj, indent=2):
+    '''
+    Dump object to JSON text.
+    '''
+    return json.dumps(todict(obj), indent=indent)
+
+
+def dump(f, obj, index=2):
+    '''
+    Save object obj to file name or file object of f.
+    '''
+    btext = dumps(obj, indent=indent).encode()
+    f = Path(f)
+
+    if isinstance(f, str):
+        if f.name.endswith(".json"):
+            open(f, 'wb').write(btext)
+            return
+        if f.name.endswith(".json.bz2"):
+            import bz2
+            bz2.BZ2File(f, 'w').write(btext)
+            return
+        if f.name.endswith(".json.gz"):
+            import gzip
+            gzip.open(f, "wb").write(btext)
+            return
+        raise RuntimeError("unknown file format: %s" % filename)
+    f.write(btext);
 
 
 def scalar_typify(val):
@@ -159,7 +201,7 @@ def scalar_typify(val):
     try:
         junk = float(val)
         return (val, True)
-    except ValueError:
+    except RuntimeError:
         pass
     if val.lower() in ("true", "yes", "on"):
         return ("true", True)
@@ -220,17 +262,14 @@ def wash_path(path):
     '''
     if isinstance(path, str):
         path = [path]
-    parts = list()
+
+    # Path'ify with possible split-on-:
+    paths = list()
     for one in path:
-        parts += one.split(":")
-    ret = list()
-    for one in parts:
-        p = Path(one)
-        if not p.exists():
-            print(f'skipping missing directory: {one}')
-            continue
-        if not p.is_dir():
-            print(f'skipping non-directory: {one}')
-            continue
-        ret.append(str(p.absolute()))
-    return ret
+        if isinstance(one, Path):
+            paths.append(one)
+        else:
+            paths += [Path(p) for p in one.split(":")]
+
+    return [p for p in paths if
+            p.is_dir() and p.exists()]
