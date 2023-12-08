@@ -22,12 +22,19 @@ jobs:
             - name: Check out the commit that triggered this job
               uses: actions/checkout@v4
 
+            - name: Check out wire-cell-data
+              uses: actions/checkout@v4
+              with:
+                repository: WireCell/wire-cell-data
+                path: wire-cell-data
+
             - name: Install wire-cell-python & run the tests
               run: |
+                  export WIRECELL_PATH=$GITHUB_WORKSPACE/wire-cell-data/
                   python -m venv venv/
                   source venv/bin/activate
                   python -m pip install pip==22.0.4
                   python -m pip install -e .
-                  python -c "import wirecell"
                   ./test/gen-test-empty-commands.sh
                   bats test/test-empty-commands.bats
+                  pytest wirecell/
