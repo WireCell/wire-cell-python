@@ -123,7 +123,7 @@ def wave(dat, out, tier='orig', unit='ADC', interactive=False, **kwds):
     for fname in frames:
         _,tag,num = fname.split("_")
         print(f'frame "{tag}" #{num}')
-        ticks = dat[f'tickinfo_{tag}_{num}']
+        reftime, tick, tbin0 = dat[f'tickinfo_{tag}_{num}']
         chans = dat[f'channels_{tag}_{num}']
         chmin = numpy.min(chans)
         chmax = numpy.max(chans)
@@ -136,14 +136,16 @@ def wave(dat, out, tier='orig', unit='ADC', interactive=False, **kwds):
         chwaves = numpy.zeros((nchan, waves.shape[1]), dtype=dtype)
         for ind,ch in enumerate(chans):
             chwaves[ch-chmin] = waves[ind]
-        maxtime = ticks[1]*waves.shape[1]
+
+        time_begin = reftime + tick*tbin0
+        time_end = time_begin + tick*waves.shape[1]
 
         fig,(ax,ax2) = plt.subplots(1,2, figsize=(10,6), sharey=True,
                                     gridspec_kw={'width_ratios': [5, 1]})
         ax.set_title(f"Waveforms ({unit}) \"{tier}\"")
         im = ax.imshow(chwaves,
                        aspect='auto', interpolation='none',
-                       extent=(0,maxtime/units.ms, chmax, chmin),
+                       extent=(time_begin/units.ms,time_end/units.ms, chmax, chmin),
                        cmap=cmap, vmin=vmin, vmax=vmax)
 
         ax.set_xlabel("time [ms]")

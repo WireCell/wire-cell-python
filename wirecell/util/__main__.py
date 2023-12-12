@@ -345,11 +345,11 @@ def wires_channels(ctx, output, json_file):
     
 
 @cli.command("wires-volumes")
-@click.option('-a', '--anode', default=1.0,
+@click.option('-a', '--anode', default=1.0*units.cm,
               help='Distance from collection plane to "anode" (cutoff) plane (cm)')
-@click.option('-r', '--response', default=10.0,
+@click.option('-r', '--response', default=10.0*units.cm,
               help='Distance from collection plane to "respones" plane, should probably match Garfield (cm)')
-@click.option('-c', '--cathode', default=1.0,
+@click.option('-c', '--cathode', default=1.0*units.m,
               help='Distance from colleciton plane to "cathode" plane (cm)')
 @click.argument("json-file")
 @click.pass_context
