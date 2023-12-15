@@ -253,6 +253,63 @@ def plot_sim(ctx, input_file, output_file, ticks, plot, tag, time_range, number,
                 out.savefig(fig, dpi=dpi)
                 plt.close()
 
+@cli.command("depo-line")
+@click.option("-S", "--step-size", default="1.0*mm",
+              help="Distance between deposition of ionization electron groups")
+@click.option("-T", "--time", default="0*ns",
+              help="Time or uniform time range if two numbers over which the 't0' time for tracks are selected")
+@click.option("-e", "--electron-density", default="5000/mm",
+              help="Linear electron density on track (number of electrons per unit track length)")
+@click.option("-f", "--first", type=str, default="0,0,0",
+              help="The first track endpoint as 'x*unit,y*unit,z*unit' ")
+@click.option("-l", "--last", type=str, default="0,0,0",
+              help="The last track endpoint 'x*unit,y*unit,z*unit' ")
+@click.option("-s", "--sigma", type=str, default="0,0",
+              help="The longitudinal and transverse extent 'L,T'")
+@click.option("--track-speed", default="clight",
+              help="Speed of track")
+@click.option("-o", "--output",
+              type=click.Path(dir_okay=False, file_okay=True),
+              help="Depo file which to save the results")
+def depo_line(step_size, time, electron_density, first, last, sigma, track_speed, output):
+    '''
+    Generate a single line of depos between endpoints given in global coordinates.
+    '''
+    from .depogen import lines
+    import numpy
+
+    if output is None:
+        raise click.BadParameter("no output file provided")
+
+    step_size = unitify(step_size)
+    time = unitify_parse(time)
+    electron_density = unitify(electron_density)
+    p0 = numpy.array(unitify_parse(first))
+    p1 = numpy.array(unitify_parse(last))
+    sigma = unitify_parse(sigma)
+    track_speed = unitify(track_speed)
+
+    eperstep = electron_density * step_size
+
+    delt = p1 - p0
+    dist = numpy.linalg.norm(delt)
+    npts = 1 + int(round(dist/step_size))
+
+    times = numpy.expand_dims(
+        time + numpy.linspace(0, dist/track_speed, npts, endpoint=True), 1)
+    charges = numpy.expand_dims(numpy.array((eperstep,)*npts), 1)
+    points = numpy.linspace(p0, p1, npts, endpoint=True)
+    sigmas = numpy.array(sigma * npts).reshape((-1,2))
+
+    ids = numpy.expand_dims(numpy.arange(npts), 1)
+    rest = numpy.array((0,0,0)*npts).reshape((-1,3))
+
+    data = numpy.hstack((times,charges,points,sigmas), dtype='float32')
+    info = numpy.hstack((ids,rest), dtype='int32')
+
+    numpy.savez(output, depo_data_0=data, depo_info_0=info)
+
+
 @cli.command("depo-lines")
 @click.option("-e", "--electron-density", default="5000/mm",
               help="Linear electron density on track (number of electrons per unit track length)")
