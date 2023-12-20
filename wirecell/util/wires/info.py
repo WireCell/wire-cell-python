@@ -3,6 +3,7 @@
 Functions to provide information about wires
 '''
 from wirecell import units
+from .common import Ray
 import numpy
 import math
 
@@ -74,7 +75,11 @@ class BoundingBox(object):
     def center(self):
         return {c:0.5*(self.minp[c]+self.maxp[c]) for c in "xyz"}
 
+
 class Ray(object):
+    '''
+    A ray is wrongly named but represents a line segment connecting two endpoints.
+    '''
     def __init__(self, wire):
         self.head = numpy.asarray([wire['head'][c] for c in "xyz"])
         self.tail = numpy.asarray([wire['tail'][c] for c in "xyz"])
@@ -84,7 +89,6 @@ class Ray(object):
     @property
     def center(self):
         return 0.5* (self.head + self.tail)
-
 
 
 def pitch_summary(wires):
@@ -136,6 +140,7 @@ def format_pitch(p):
 def wire_pitch_rays(wires):
     '''
     Return a rays for wire and pitch.
+
     '''
     wtot = numpy.sum(numpy.vstack([Ray(w).vector for w in wires]), axis=0)
     wmag = numpy.linalg.norm(wtot)
@@ -160,9 +165,10 @@ def wire_pitch_rays(wires):
 
     return dict(tail = {a:c0[i] for i,a in enumerate("xyz")},
                 head = {a:c1[i] for i,a in enumerate("xyz")})
-                
+
 
 def summary_dict(store):
+
     '''
     Summarize the wires in store returning a dict
 
@@ -214,7 +220,7 @@ def summary_dict(store):
                     wires = plane['wires']
                     pdict['nwires'] = len(wires)
                     pdict['pitch'], pdict['prms'], pdict['pmin'], pdict['pmax'], pdict['p0'] = pitch_summary(wires)
-                    pdict['pray'] = wire_pitch_rays(wires);
+                    pdict['prays'] = wire_pitch_rays(wires);
                     pbb = BoundingBox()
                     for wire in wires:
                         pbb(wire['head']);

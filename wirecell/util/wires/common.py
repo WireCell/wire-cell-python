@@ -27,3 +27,6 @@ def bounding_box(wires):
         mins.append(min(pts))
         maxs.append(max(pts))
     return Ray(Point3D(*mins), Point3D(*maxs))
+
+
+

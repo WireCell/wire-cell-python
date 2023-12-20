@@ -100,7 +100,23 @@ def context(group_name, log_name="wirecell"):
 # @jsonnet_loader("myfilenamearg")
 # def mycmd(myfilenamearg):
 #     ### use myfilenamearg directly as object
-def jsonnet_loader(jfilekey):
+#
+# Or, to make use of registry indirection
+# @click.command()
+# @jsonnet_loader("myfilenamearg", "wires")
+# def mycmd(myfilenamearg):
+#     ### use myfilenamearg directly as object
+#
+# Note for CLI user, -A/-V values are interpreted as string, code or a filename.
+#
+# -A foo=string
+# -A bar='["list","of","string","code"]'
+# -A file=more.jsonnet
+# -A label='"string as code"'
+# -A slurp="$(cat somedata.txt | convert-to-json)"
+#
+# When hacking at this TLA/EXT interface, be wary of shell quoting rules!
+def jsonnet_loader(jfilekey, regkey=None):
     def decorator(func):
         @click.option("-J", "--jpath", multiple=True,
                       envvar='WIRECELL_PATH', 
@@ -122,7 +138,10 @@ def jsonnet_loader(jfilekey):
             # print(jkwds)
             ext = kwds.pop("ext")
             jkwds.update(jsio.tla_pack(ext, jpath, 'ext_'))
-            kwds[jfkey] = jsio.load(jfile, jpath, **jkwds)
+            if '.json' in jfile or regkey is None:
+                kwds[jfkey] = jsio.load(jfile, paths=jpath, **jkwds)
+            else:
+                kwds[jfkey] = jsio.load_registry(jfile, regkey=regkey, paths=jpath, **jkwds)
             return func(*args, **kwds)
         return wrapper
     return decorator

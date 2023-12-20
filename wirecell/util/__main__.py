@@ -9,7 +9,7 @@ import numpy
 from collections import defaultdict
 from wirecell import units
 from wirecell.util.functions import unitify, unitify_parse
-from wirecell.util.cli import context, log
+from wirecell.util.cli import context, log, jsonnet_loader
 
 @context("util")
 def cli(ctx):
@@ -345,11 +345,11 @@ def wires_channels(ctx, output, json_file):
     
 
 @cli.command("wires-volumes")
-@click.option('-a', '--anode', default=1.0,
+@click.option('-a', '--anode', default=1.0*units.cm,
               help='Distance from collection plane to "anode" (cutoff) plane (cm)')
-@click.option('-r', '--response', default=10.0,
+@click.option('-r', '--response', default=10.0*units.cm,
               help='Distance from collection plane to "respones" plane, should probably match Garfield (cm)')
-@click.option('-c', '--cathode', default=1.0,
+@click.option('-c', '--cathode', default=1.0*units.m,
               help='Distance from colleciton plane to "cathode" plane (cm)')
 @click.argument("json-file")
 @click.pass_context
@@ -657,17 +657,19 @@ def wire_channel_map(ctx, input_file):
             click.echo("%s\t%s" %(c,wires))
 
 @cli.command("wire-summary")
+@jsonnet_loader("wires", "wires")
 @click.option("-o", "--output", default="/dev/stdout",
               help="Output file")
-@click.argument("wires")
 def wire_summary(output, wires):
     '''
     Produce a summary of detector response and wires.
     '''
-    import wirecell.util.wires.persist as wpersist
-    wstore = wpersist.load(wires)
     import wirecell.util.wires.info as winfo
-    wdict = winfo.summary_dict(wstore)
+    import wirecell.util.wires.persist as wper
+
+    # wash initial dict through schema to assure it is valid
+    store = wper.fromdict(wires)
+    wdict = winfo.summary_dict(store)
     with open(output, "w") as fp:
         fp.write(json.dumps(wdict, indent=4))
 

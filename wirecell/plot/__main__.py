@@ -107,7 +107,7 @@ def ntier_frames(cmap, output, files):
 @click.argument("datafile")
 def frame(name, unit, tag, interactive, datafile, output, **kwds):
     '''
-    Make frame plots of given type.
+    Visualize a WCT frame with a plotter of a given name.
     '''
     from . import frames
     mod = getattr(frames, name)
