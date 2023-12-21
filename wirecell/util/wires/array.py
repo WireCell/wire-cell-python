@@ -97,7 +97,7 @@ def mean_wire_pitch(warr):
     c2c = wc2 - wc1
     pmean = numpy.dot(pdir, c2c) / (ind2-ind1-1);
 
-    print(f'{wmean=} {pmean=} {pdir=}')
+    #print(f'{wmean=} {pmean=} {pdir=}')
     return (wdir*wmean, pdir*pmean)
 
 
