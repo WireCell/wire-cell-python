@@ -42,6 +42,9 @@ def cli(ctx):
 @click.option("-d", "--dtype", default="i2",
               type=click.Choice(["i2","f4"]),
               help="The data type of output samples in Numpy dtype form")
+@click.option("-rd", "--rounding", default="floor",
+              type=click.Choice(["floor","round"]),
+              help="How to round if dtype is integer")
 @click.option("-c", "--channels", default=None,
               help="Channel specification")
 @click.option("-e", "--event", default=0,
@@ -49,7 +52,7 @@ def cli(ctx):
 @click.option("-z", "--compress", default=True, is_flag=True,
               help="Whether to compress if output file is .npz")
 @click.argument("npzfile")
-def npz_to_wct(transpose, output, name, format, ranges, tinfo, baseline, scale, dtype, channels, event, compress, npzfile):
+def npz_to_wct(transpose, output, name, format, ranges, tinfo, baseline, scale, dtype, rounding, channels, event, compress, npzfile):
     """Convert a npz file holding 3D frame array(s) to a file for input to WCT.
     assumes channel, tick, plane(3)
 
@@ -115,8 +118,12 @@ def npz_to_wct(transpose, output, name, format, ranges, tinfo, baseline, scale, 
 
         label = f'{name}_{event}'
         event += 1
-
-        out_arrays[f'frame_{label}'] = numpy.array((arr + baseline) * scale, dtype=dtype)
+        if rounding == "floor":
+            out_arrays[f'frame_{label}'] = numpy.array((arr + baseline) * scale, dtype=dtype)
+        elif rounding == "round":
+            out_arrays[f'frame_{label}'] = numpy.array(numpy.round((arr + baseline) * scale), dtype=dtype)
+        else:
+            raise click.BadParameter(f'unsupported rounding: {rounding}')
         out_arrays[f'channels_{label}'] = channels
         out_arrays[f'tickinfo_{label}'] = tinfo
 
@@ -137,6 +144,8 @@ def npz_to_wct(transpose, output, name, format, ranges, tinfo, baseline, scale, 
               help="Output image file")
 @click.option("-m", "--metric", type=str,
               help="L1 or L2")
+@click.option("-f", "--format", type=str, default="2D",
+              help="2D (WCT) or 3D (LS4GAN)")
 @click.option("-r", "--ranges", nargs=6, type=click.Tuple([int, int, int, int, int, int]), 
               default=[0, 800, 800, 1600, 1600, 2560],
               help="ubeg uend vbeg vend wbeg wend, end is not included")
@@ -144,18 +153,18 @@ def npz_to_wct(transpose, output, name, format, ranges, tinfo, baseline, scale, 
               help="Do baseline subtraction or not")
 @click.option("-t", "--tag", default="orig",
               help="The frame tag")
-@click.option("-u", "--unit", default="ADC",
-              help="The color units")
+@click.option("-d", "--dtype", default="int16",
+              help="int16,float")
 @click.argument("npzfile1")
 @click.argument("npzfile2")
-def comp_metric(output, metric, ranges, baseline, tag, unit, npzfile1, npzfile2):
+def comp_metric(output, metric, format, ranges, baseline, tag, dtype, npzfile1, npzfile2):
     """
     input: channel, tick, plane(3)
     output: metrics for 3 planes (m_u, m_v, m_w)
     """
     # print(f'processing {npzfile1} {npzfile2}')
     
-    def get_dense_array(npzfile, tag=tag, unit=unit):
+    def get_dense_array(npzfile, tag=tag, dtype=dtype):
         from wirecell.util import ario
         dat = ario.load(npzfile)
         frame_keys = [f for f in dat.keys() if f.startswith('frame_')]
@@ -165,12 +174,9 @@ def comp_metric(output, metric, ranges, baseline, tag, unit, npzfile1, npzfile2)
             msg = f'No frames of tier "{tag}": found: {found}'
             raise IOError(msg)
 
-        if unit == 'ADC':
-            uscale = 1
-            dtype = 'int16'
-        else:
-            uscale = getattr(units, unit)
-            dtype = float
+        # TODO: implement uscale
+        uscale = 1.
+        # print(f'dtype: {dtype}')
 
         for fname in frames:
             _,tag,num = fname.split("_")
@@ -208,17 +214,32 @@ def comp_metric(output, metric, ranges, baseline, tag, unit, npzfile1, npzfile2)
         return numpy.linalg.norm(a-b) / numpy.sqrt(a.size)
     metric_func = {"L1": L1, "L2": L2}[metric]
 
-    output = []
-    arr1 = get_dense_array(npzfile1)
-    arr2 = get_dense_array(npzfile2)
+    if format == "2D":
+        arr1 = get_dense_array(npzfile1)
+        arr2 = get_dense_array(npzfile2)
+    elif format == "3D":
+        fp1 = numpy.load(npzfile1)
+        fp2 = numpy.load(npzfile2)
+        for aname in fp1:
+            arr1 = fp1[aname]
+            arr2 = fp2[aname]
+    else:
+        raise ValueError(f'format {format} not supported')
+
     if arr1.shape != arr2.shape:
         raise ValueError("Input arrays have different shapes")
-    if len(arr1.shape) != 2:
-        raise click.BadParameter(f'input array wrong shape: {arr1.shape}')
-    # assume input is (channel, tick, plane(3))
-    output.append(metric_func(arr1[ranges[0]:ranges[1],:],arr2[ranges[0]:ranges[1],:]))
-    output.append(metric_func(arr1[ranges[2]:ranges[3],:],arr2[ranges[2]:ranges[3],:]))
-    output.append(metric_func(arr1[ranges[4]:ranges[5],:],arr2[ranges[4]:ranges[5],:]))
+
+    output = []
+    if format == "2D":
+        # (channel, tick)
+        output.append(metric_func(arr1[ranges[0]:ranges[1],:],arr2[ranges[0]:ranges[1],:]))
+        output.append(metric_func(arr1[ranges[2]:ranges[3],:],arr2[ranges[2]:ranges[3],:]))
+        output.append(metric_func(arr1[ranges[4]:ranges[5],:],arr2[ranges[4]:ranges[5],:]))
+    elif format == "3D":
+        # (channel, tick, plane(3))
+        output.append(metric_func(arr1[ranges[0]:ranges[1],:,0],arr2[ranges[0]:ranges[1],:,0]))
+        output.append(metric_func(arr1[ranges[2]:ranges[3],:,1],arr2[ranges[2]:ranges[3],:,1]))
+        output.append(metric_func(arr1[ranges[4]:ranges[5],:,2],arr2[ranges[4]:ranges[5],:,2]))
 
     print(','.join(map(str, output)))
     return output

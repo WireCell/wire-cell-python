@@ -665,6 +665,221 @@ def frame_stats(array, plane_channels, ariofile, output, **kwds):
     with open(output, "w") as fp:
         fp.write(json.dumps(dat, indent=4) + "\n")
 
+@cli.command("linegen")
+@click.option(
+    "-e", "--electron-density",
+    default = "5000/mm",
+    help    = (
+        "Linear electron density on track"
+       " (number of electrons per unit track length)"
+    ),
+    type    = str,
+)
+@click.option(
+    "-S", "--step-size",
+    default = "1.0*mm",
+    help    = "Distance between deposition of ionization electron groups",
+    type    = str,
+)
+@click.option(
+    "-T", "--time",
+    default = "0*ns",
+    help    = "Start time of the track",
+    type    = str,
+)
+@click.option(
+    "-c", "--center",
+    default = "0*m,0*m,0*m",
+    help    = "Track center",
+    type    = str,
+)
+@click.option(
+    "--theta_y",
+    default = "90*deg",
+    help    = "Track angle with y axis of the coordinate system",
+    type    = str,
+)
+@click.option(
+    "--theta_xz",
+    default = "45*deg",
+    help    = "Track angle in the xz plane of the coordinate system",
+    type    = str,
+)
+@click.option(
+    "--phi",
+    default = "60*deg",
+    help    = "Wire plane rotation",
+    type    = str,
+)
+@click.option(
+    "-l", "--length",
+    default = "1*m",
+    help    = "Track length",
+    type    = str,
+)
+@click.option(
+    "--track-speed", default = "clight", help = "Speed of track"
+)
+@click.option(
+    "--angle-coords",
+    default = "global",
+    help    = (
+        "Coordinate system in which angles theta_y and theta_xz are given"
+    ),
+    type    = click.Choice(['wire-plane', 'global'], case_sensitive = True),
+)
+@click.option(
+    "-o", "--output_depos",
+    type = click.Path(dir_okay = False, file_okay = True),
+    help = "Path to save depo sets to",
+    required = True,
+)
+@click.option(
+    "-m", "--output_meta",
+    type = click.Path(dir_okay = False, file_okay = True),
+    help = "Path to save track metadata to",
+)
+def linegen(
+    electron_density, step_size, time, center, theta_y, theta_xz,
+    phi, length, track_speed, angle_coords, output_depos, output_meta
+):
+    # pylint: disable=too-many-arguments
+    from .linegen import generate_and_save_line_track, TrackConfig
+
+    electron_density = unitify(electron_density)
+    step_size        = unitify(step_size)
+    center           = unitify(center)
+    phi              = unitify(phi)
+
+    track_config = TrackConfig(
+        length        = unitify(length),
+        t0            = unitify(time),
+        eperstep      = electron_density * step_size,
+        step_size     = step_size,
+        theta_y       = unitify(theta_y),
+        theta_xz      = unitify(theta_xz),
+        track_speed   = unitify(track_speed),
+        global_angles = (angle_coords == 'global')
+    )
+
+    generate_and_save_line_track(
+        center, track_config, phi, output_depos, output_meta
+    )
+
+@cli.command("detlinegen")
+@click.option(
+    "-d", "--detector",
+    help = "Name of the detector",
+    type = str,
+    required = True,
+)
+@click.option(
+    "--apa",
+    default  = 0,
+    help     = "APA index",
+    type     = int,
+    required = True,
+)
+@click.option(
+    "--plane",
+    default  = 0,
+    help     = "Wire plane index",
+    type     = int,
+    required = True,
+)
+@click.option(
+    "-e", "--electron-density",
+    default = "5000/mm",
+    help    = (
+        "Linear electron density on track"
+       " (number of electrons per unit track length)"
+    ),
+    type    = str,
+)
+@click.option(
+    "-S", "--step-size",
+    default = "1.0*mm",
+    help    = "Distance between deposition of ionization electron groups",
+    type    = str,
+)
+@click.option(
+    "-T", "--time",
+    default = "0*ns",
+    help    = "Start time of the track",
+    type    = str,
+)
+@click.option(
+    "--offset",
+    default = "-1*m,0*m,0*m",
+    help    = "Track Offset from wire-plane center",
+    type    = str,
+)
+@click.option(
+    "--theta_y",
+    default = "90*deg",
+    help    = "Track angle with y axis of the coordinate system",
+    type    = str,
+)
+@click.option(
+    "--theta_xz",
+    default = "45*deg",
+    help    = "Track angle in the xz plane of the coordinate system",
+    type    = str,
+)
+@click.option(
+    "-l", "--length",
+    default = "1*m",
+    help    = "Track length",
+    type    = str,
+)
+@click.option(
+    "--track-speed", default = "clight", help = "Speed of track"
+)
+@click.option(
+    "--angle-coords",
+    default = "global",
+    help    = (
+        "Coordinate system in which angles theta_y and theta_xz are given"
+    ),
+    type    = click.Choice(['wire-plane', 'global'], case_sensitive = True),
+)
+@click.option(
+    "-o", "--output_depos",
+    type = click.Path(dir_okay = False, file_okay = True),
+    help = "Path to save depo sets to",
+    required = True,
+)
+@click.option(
+    "-m", "--output_meta",
+    type = click.Path(dir_okay = False, file_okay = True),
+    help = "Path to save track metadata to",
+)
+def detlinegen(
+    detector, apa, plane, electron_density, step_size, time, offset, theta_y,
+    theta_xz, length, track_speed, angle_coords, output_depos, output_meta
+):
+    # pylint: disable=too-many-arguments
+    # pylint: disable=too-many-locals
+    from .linegen import generate_and_save_line_track_in_detector, TrackConfig
+
+    electron_density = unitify(electron_density)
+    step_size        = unitify(step_size)
+    offset           = unitify(offset)
+
+    track_config = TrackConfig(
+        length        = unitify(length),
+        t0            = unitify(time),
+        eperstep      = electron_density * step_size,
+        step_size     = step_size,
+        theta_y       = unitify(theta_y),
+        theta_xz      = unitify(theta_xz),
+        track_speed   = unitify(track_speed),
+        global_angles = (angle_coords == 'global')
+    )
+
+    generate_and_save_line_track_in_detector(
+        detector, apa, plane, offset, track_config, output_depos, output_meta
+    )
 
 def main():
     cli(obj=dict())
