@@ -361,11 +361,6 @@ def morse_splat(output, summary):
     '''
     Spit out configuration for DepoFluxSplat given a morse summary
     '''
-    if ".json" in output:
-        fmt = "json"
-    else:
-        fmt = "text"
-
     from .morse import load_frame_peaks
     summary = load_frame_peaks(summary)
 
@@ -386,14 +381,24 @@ def morse_splat(output, summary):
         res.append(dict(tick_sigma=tsigma, pitch_sigma=psigma))
 
     with open(output, "w") as out:
-        if fmt == "text":
-            for one in res:
-                out.write('sigmas: tick={tick_sigma} pitch={pitch_sigma}\n'.format(**one))
-        else:                   # json
+        if '.json' in output:
             # match schema for DepoFluxSplat
             dfs = dict(smear_long = [r['tick_sigma'] for r in res],
                        smear_tran = [r['pitch_sigma'] for r in res])
             out.write(json.dumps(dfs, indent=4))
+        if '.org' in output:
+            lines=[
+                '|plane|tick|pitch|',
+                '|-----|----|-----|'
+            ]
+            for l,r in zip("UVZ",res):
+                line = f'|{l}|{r["tick_sigma"]:.3f}|{r["pitch_sigma"]:.3f}|'
+                lines.append(line)
+            print('\n'.join(lines))
+            
+        else:
+            for one in res:
+                out.write('sigmas: tick={tick_sigma} pitch={pitch_sigma}\n'.format(**one))
 
 
 @cli.command("morse-plots")
