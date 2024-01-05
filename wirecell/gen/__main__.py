@@ -4,6 +4,7 @@ import math
 import json
 import click
 import numpy
+import functools
 
 from wirecell import units
 from wirecell.util.functions import unitify, unitify_parse
@@ -80,18 +81,20 @@ def move_depos(ctx, json_path, center, offset,
               help="The depo generation index. [default=0]")
 @click.option("-i", "--index", default=0,
               help="The depos set index in the file. [default=0]")
-@click.option("-p", "--plot", default='qxz',
+@click.option("-p", "--plot", default=['qxz'], multiple=True,
               type=click.Choice("qxz qxy qzy qxt qzt t x xzqscat xyqscat tzqscat tyqscat".split(' ')),
-              help="The plot to make. [default=qxz]")
+              help="The plot(s) to make. [default=qxz, multiple okay]")
 @click.option("-s", "--speed", default=None,
               help="Drift speed, with units eg '1.6*mm/us'. [default=None]")
 @click.option("--t0", default="0*ns",
               help="Arbitrary additive time used in drift speed assignment, use units. [default=0*ns]")
+@click.option("--title", default=None, type=str,
+              help="Give plot title")
 @click.argument("input-file")
 #@click.argument("output-file")
 @image_output
 def plot_depos(generation, index, plot, speed, t0,
-               input_file, output, **kwds):
+               title, input_file, output, **kwds):
     '''
     Make a plot from a WCT depo file.
 
@@ -106,8 +109,8 @@ def plot_depos(generation, index, plot, speed, t0,
     See also "wirecell-img paraview-depos".
     '''
     import wirecell.gen.depos as deposmod
+    import matplotlib.pyplot as plt
 
-    plotter = getattr(deposmod, "plot_"+plot)
     depos = deposmod.load(input_file, index, generation)
     if 't' not in depos or len(depos['t']) == 0:
         raise click.BadParameter(f'No depos for index={index} and generation={generation} in {input_file}')
@@ -121,8 +124,12 @@ def plot_depos(generation, index, plot, speed, t0,
         depos['t'] += t0
 
     with output as out:
-        plotter(depos, **kwds) # may throw
-        out.savefig()
+        for plot_type in plot:
+            plotter = getattr(deposmod, "plot_"+plot_type)
+            plotter(depos, **kwds) # may throw
+            if title:
+                plt.suptitle(title)
+            out.savefig()
 
 @cli.command("plot-test-boundaries")
 @click.option("-t", "--times", default=[100.0,105.0], type=float, nargs=2,
@@ -412,6 +419,9 @@ def morse_splat(output, summary):
               help='A morse summary JSON file.  Optional.  Will generate summary if omitted')
 @click.argument("signal")
 def morse_plots(channel_ranges, tick, output, summary, signal):
+    '''
+    Produce plots for analysis of "morse" track pattern.
+    '''
     from wirecell.gen.morse import load_frame, frame_peaks, load_frame_peaks
     from wirecell.gen.plots.morse import width_plots
 
@@ -670,27 +680,100 @@ def frame_stats(array, plane_channels, ariofile, output, **kwds):
     with open(output, "w") as fp:
         fp.write(json.dumps(dat, indent=4) + "\n")
 
+# a decorator for common *linegen args
+def linegen_args(func):
+
+    @click.option(
+        "-e", "--electron-density",
+        default = "5000/mm",
+        help    = (
+            "Linear electron density on track"
+            " (number of electrons per unit track length)"
+        ),
+        type    = str,
+    )
+    @click.option(
+        "-S", "--step-size",
+        default = "1.0*mm",
+        help    = "Distance between deposition of ionization electron groups",
+        type    = str,
+    )
+    @click.option(
+        "-T", "--time",
+        default = "0*ns",
+        help    = "Start time of the track",
+        type    = str,
+    )
+    @click.option(
+        "--theta_y",
+        default = "90*deg",
+        help    = "Track angle with y axis of the coordinate system",
+        type    = str,
+    )
+    @click.option(
+        "--theta_xz",
+        default = "45*deg",
+        help    = "Track angle in the xz plane of the coordinate system",
+        type    = str,
+    )
+    @click.option(
+        "-l", "--length",
+        default = "1*m",
+        help    = "Track length",
+        type    = str,
+    )
+    @click.option(
+        "--track-speed", default = "clight", help = "Speed of track"
+    )
+    @click.option(
+        "--angle-coords",
+        default = "global",
+        help    = (
+            "Coordinate system in which angles theta_y and theta_xz are given"
+        ),
+        type    = click.Choice(['wire-plane', 'global'], case_sensitive = True),
+    )
+    @click.option(
+        "-o", "--output_depos",
+        type = click.Path(dir_okay = False, file_okay = True),
+        help = "Path to save depo sets to",
+        required = True,
+    )
+    @click.option(
+        "-m", "--output_meta",
+        type = click.Path(dir_okay = False, file_okay = True),
+        help = "Path to save track metadata to",
+    )
+    @functools.wraps(func)
+    def wrapper(*args, **kwds):
+    
+        # pylint: disable=too-many-arguments
+        from .linegen import TrackConfig
+
+        electron_density = unitify(kwds.pop("electron_density"))
+        step_size        = unitify(kwds.pop("step_size"))
+
+        kwds["track_config"] = TrackConfig(
+            length        = unitify(kwds.pop("length")),
+            t0            = unitify(kwds.pop("time")),
+            eperstep      = electron_density * step_size,
+            step_size     = step_size,
+            theta_y       = unitify(kwds.pop("theta_y")),
+            theta_xz      = unitify(kwds.pop("theta_xz")),
+            track_speed   = unitify(kwds.pop("track_speed")),
+            global_angles = (kwds.pop("angle_coords") == 'global')
+        )
+        return func(*args, **kwds)
+    return wrapper
+
+
 @cli.command("linegen")
 @click.option(
-    "-e", "--electron-density",
-    default = "5000/mm",
-    help    = (
-        "Linear electron density on track"
-       " (number of electrons per unit track length)"
-    ),
+    "--phi",
+    default = ["60*deg"],
+    help    = "Wire plane rotation, def=60*deg, multiple okay",
     type    = str,
-)
-@click.option(
-    "-S", "--step-size",
-    default = "1.0*mm",
-    help    = "Distance between deposition of ionization electron groups",
-    type    = str,
-)
-@click.option(
-    "-T", "--time",
-    default = "0*ns",
-    help    = "Start time of the track",
-    type    = str,
+    multiple = True
 )
 @click.option(
     "-c", "--center",
@@ -698,74 +781,20 @@ def frame_stats(array, plane_channels, ariofile, output, **kwds):
     help    = "Track center",
     type    = str,
 )
-@click.option(
-    "--theta_y",
-    default = "90*deg",
-    help    = "Track angle with y axis of the coordinate system",
-    type    = str,
-)
-@click.option(
-    "--theta_xz",
-    default = "45*deg",
-    help    = "Track angle in the xz plane of the coordinate system",
-    type    = str,
-)
-@click.option(
-    "--phi",
-    default = "60*deg",
-    help    = "Wire plane rotation",
-    type    = str,
-)
-@click.option(
-    "-l", "--length",
-    default = "1*m",
-    help    = "Track length",
-    type    = str,
-)
-@click.option(
-    "--track-speed", default = "clight", help = "Speed of track"
-)
-@click.option(
-    "--angle-coords",
-    default = "global",
-    help    = (
-        "Coordinate system in which angles theta_y and theta_xz are given"
-    ),
-    type    = click.Choice(['wire-plane', 'global'], case_sensitive = True),
-)
-@click.option(
-    "-o", "--output_depos",
-    type = click.Path(dir_okay = False, file_okay = True),
-    help = "Path to save depo sets to",
-    required = True,
-)
-@click.option(
-    "-m", "--output_meta",
-    type = click.Path(dir_okay = False, file_okay = True),
-    help = "Path to save track metadata to",
-)
-def linegen(
-    electron_density, step_size, time, center, theta_y, theta_xz,
-    phi, length, track_speed, angle_coords, output_depos, output_meta
-):
+@linegen_args
+def linegen(center, phi, track_config, output_depos, output_meta):
+    '''
+    Generate a line of depos given angles of wire direction.
+    '''
     # pylint: disable=too-many-arguments
-    from .linegen import generate_and_save_line_track, TrackConfig
+    from .linegen import generate_and_save_line_track
 
-    electron_density = unitify(electron_density)
-    step_size        = unitify(step_size)
     center           = unitify(center)
-    phi              = unitify(phi)
-
-    track_config = TrackConfig(
-        length        = unitify(length),
-        t0            = unitify(time),
-        eperstep      = electron_density * step_size,
-        step_size     = step_size,
-        theta_y       = unitify(theta_y),
-        theta_xz      = unitify(theta_xz),
-        track_speed   = unitify(track_speed),
-        global_angles = (angle_coords == 'global')
-    )
+    if len(phi) == 1:           # guess MB-like symmetry.
+        phi.append("-1*"+phi[0])
+    if len(phi) == 2:           # assume "usual" collection wire angle.
+        phi.append("0")
+    phi              = np.array([unitify(p) for p in phi])
 
     generate_and_save_line_track(
         center, track_config, phi, output_depos, output_meta
@@ -793,98 +822,26 @@ def linegen(
     required = True,
 )
 @click.option(
-    "-e", "--electron-density",
-    default = "5000/mm",
-    help    = (
-        "Linear electron density on track"
-       " (number of electrons per unit track length)"
-    ),
-    type    = str,
-)
-@click.option(
-    "-S", "--step-size",
-    default = "1.0*mm",
-    help    = "Distance between deposition of ionization electron groups",
-    type    = str,
-)
-@click.option(
-    "-T", "--time",
-    default = "0*ns",
-    help    = "Start time of the track",
-    type    = str,
-)
-@click.option(
     "--offset",
     default = "-1*m,0*m,0*m",
     help    = "Track Offset from wire-plane center",
     type    = str,
 )
-@click.option(
-    "--theta_y",
-    default = "90*deg",
-    help    = "Track angle with y axis of the coordinate system",
-    type    = str,
-)
-@click.option(
-    "--theta_xz",
-    default = "45*deg",
-    help    = "Track angle in the xz plane of the coordinate system",
-    type    = str,
-)
-@click.option(
-    "-l", "--length",
-    default = "1*m",
-    help    = "Track length",
-    type    = str,
-)
-@click.option(
-    "--track-speed", default = "clight", help = "Speed of track"
-)
-@click.option(
-    "--angle-coords",
-    default = "global",
-    help    = (
-        "Coordinate system in which angles theta_y and theta_xz are given"
-    ),
-    type    = click.Choice(['wire-plane', 'global'], case_sensitive = True),
-)
-@click.option(
-    "-o", "--output_depos",
-    type = click.Path(dir_okay = False, file_okay = True),
-    help = "Path to save depo sets to",
-    required = True,
-)
-@click.option(
-    "-m", "--output_meta",
-    type = click.Path(dir_okay = False, file_okay = True),
-    help = "Path to save track metadata to",
-)
-def detlinegen(
-    detector, apa, plane, electron_density, step_size, time, offset, theta_y,
-    theta_xz, length, track_speed, angle_coords, output_depos, output_meta
-):
+@linegen_args
+def detlinegen(detector, apa, plane, offset, track_config, output_depos, output_meta):
+    '''
+    Generate a line of depos given angles of direction for a specific detector.
+    ''' 
     # pylint: disable=too-many-arguments
     # pylint: disable=too-many-locals
-    from .linegen import generate_and_save_line_track_in_detector, TrackConfig
+    from .linegen import generate_and_save_line_track_in_detector
 
-    electron_density = unitify(electron_density)
-    step_size        = unitify(step_size)
     offset           = unitify(offset)
-
-    track_config = TrackConfig(
-        length        = unitify(length),
-        t0            = unitify(time),
-        eperstep      = electron_density * step_size,
-        step_size     = step_size,
-        theta_y       = unitify(theta_y),
-        theta_xz      = unitify(theta_xz),
-        track_speed   = unitify(track_speed),
-        global_angles = (angle_coords == 'global')
-    )
 
     generate_and_save_line_track_in_detector(
         detector, apa, plane, offset, track_config, output_depos, output_meta
     )
+
 
 def main():
     cli(obj=dict())
