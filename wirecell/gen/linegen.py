@@ -1,23 +1,38 @@
-from collections import namedtuple
 import json
 import math
 import numpy as np
-
+import dataclasses
+from typing import Type
 from wirecell.util.wires import array as warray
 from wirecell.util.wires import persist as wpersist
+from wirecell import units
+from wirecell.util.functions import unitify
 
 ENCODING = 'utf-8'
 
-TrackConfig = namedtuple('TrackConfig', [
-    'length',
-    't0',
-    'eperstep',
-    'step_size',
-    'track_speed',
-    'theta_y',
-    'theta_xz',
-    'global_angles'
-])
+@dataclasses.dataclass
+class TrackConfig:
+    '''
+    Collect the configuration parameters for the track.
+    '''
+
+    length: float = 0.0
+    t0: float = 0.0
+    eperstep: float = 5000.0/units.mm
+    step_size: float = 1.0*units.mm
+    track_speed: float = unitify("clight")
+    theta_y: float = unitify("90*deg")
+    theta_xz: float = unitify("45*deg")
+    global_angles: bool = True
+
+    @classmethod
+    def from_dict(cls: Type["TrackConfig"], obj: dict = {}):
+        dat = {f.name:obj.get(f.name, f.default)
+               for f in dataclasses.fields(cls)}
+        return cls(**dat)
+
+    def to_dict(self):
+        return dataclasses.asdict(self)
 
 def generate_line_track_depos(p0, p1, t0, eperstep, step_size, track_speed):
     """Generate a linear track between points p0 and p1 starting at time t0.
@@ -108,7 +123,7 @@ def plane_yy_to_rotation_matrix(plane_yy):
     ])
 
 def wp_direction_to_global_direction(R, dir_wp):
-    return R.T() @ dir_wp
+    return R.T @ dir_wp
 
 def global_direction_to_wp_direction(R, dir_glb):
     return R @ dir_glb
@@ -143,40 +158,113 @@ def generate_line_track_depo_set(p0, p1, t0, eperstep, step_size, track_speed):
 
     return depo_sets, times, points, charges
 
+
+ArrayLike = np.ndarray[int, np.dtype[float]]
+
+@dataclasses.dataclass
+class TrackMetadata:
+    '''
+    The metadta about one track.
+    '''
+
+    p0: ArrayLike = np.zeros((3,))
+    'The starting 3-point of the track.'
+
+    p1: ArrayLike = np.zeros((3,))
+    'The ending 3-point of the track.'
+
+    t0: float = 0.0
+    'The the time at p0.'
+    
+    t1: float = 0.0
+    'The the time at p1.'
+
+    R_wps: ArrayLike = np.zeros((3,3,3))
+    'The plane coordinate rotation matrices as 3(nplanes)x3x3 array.'
+
+    dir_glb: ArrayLike = np.zeros((3,))
+    'The 3-vector of the track direction in global coordinates.'
+
+    theta_y_glb: float = 0
+    'The angle between global Y-axis and direction vector.'
+
+    theta_xz_glb: float = 0
+    'The angle between global Z-axis and the projection of the direction vector into the X-Z plane.'
+
+    dir_wps: ArrayLike = np.zeros((3,3))
+    'Three 3-vectors giving the track direction expressed in each wire-plane coordinate system.'
+
+    theta_y_wps: ArrayLike = np.zeros((3,))
+    'The angles between each of three wire-plane Y-axes and the direction vector.'
+
+    theta_xz_wps: ArrayLike = np.array((3,))
+    'There angles, one for each wire plane coordinate system between their Z-axis and projection of the direction vector into their X-Z plane.'
+
+    eperstep: float = 0
+    'The number of electrons per unit track step.'
+
+    track_speed: float = 0
+    'The speed of the track.'
+
+    detector: str = ""
+    'The canonical name of the detector'
+
+    apa: int = -1
+    'The APA number'
+
+    plane_idx: int = -1
+    'The plane index'
+    
+    @classmethod
+    def from_dict(cls: Type["TrackMetadata"], obj: dict = {}):
+        dat = {f.name:obj.get(f.name, f.default)
+               for f in dataclasses.fields(cls)}
+        return cls(**dat)
+
+    def to_dict(self):
+        dat = dict()
+        for f in dataclasses.fields(TrackMetadata):
+            mem = getattr(self, f.name)
+            if isinstance(mem, np.ndarray):
+                mem = mem.tolist()
+            dat[f.name] = mem
+        return dat
+
 def pack_track_metadata(
-    points, times, dir_wp, dir_glb, tconf, R_wp
+    points, times, dir_wps, dir_glb, tconf, R_wps
 ):
     # pylint: disable=too-many-arguments
     theta_y_glb, theta_xz_glb = direction_to_tpc_angles(dir_glb)
-    theta_y_wp, theta_xz_wp   = direction_to_tpc_angles(dir_wp)
 
-    metadata = {
-        'p0'   : tuple(points[0]),
-        'p1'   : tuple(points[-1]),
-        't0'   : times[0],
-        't1'   : times[-1],
-        'R_wp' : R_wp.tolist(),
-        'dir_glb'      : tuple(dir_glb),
-        'theta_y_glb'  : math.degrees(theta_y_glb),
-        'theta_xz_glb' : math.degrees(theta_xz_glb),
-        'dir_wp'       : tuple(dir_wp),
-        'theta_y_wp'   : math.degrees(theta_y_wp),
-        'theta_xz_wp'  : math.degrees(theta_xz_wp),
-        'eperstep'     : tconf.eperstep,
-        'track_speed'  : tconf.track_speed,
-    }
+    # 3x2: [(y, xz), ...]
+    thetas_wp = np.array([direction_to_tpc_angles(dir_wp) for dir_wp in dir_wps])
+
+    metadata = TrackMetadata(
+        p0   = tuple(points[0]),
+        p1   = tuple(points[-1]),
+        t0   = times[0],
+        t1   = times[-1],
+        R_wps = R_wps.tolist(),
+        dir_glb      = tuple(dir_glb),
+        theta_y_glb  = theta_y_glb,
+        theta_xz_glb = theta_xz_glb,
+        dir_wps      = dir_wps.tolist(),
+        theta_y_wps  = thetas_wp[:,0].tolist(),
+        theta_xz_wps = thetas_wp[:,1].tolist(),
+        eperstep     = tconf.eperstep,
+        track_speed  = tconf.track_speed,
+    )
 
     return metadata
 
-def generate_line_track(center, tconf, R_wp):
+def generate_line_track(center, tconf, R_wps, plane_idx):
     # pylint: disable=too-many-locals
 
     if tconf.global_angles:
         dir_glb = tpc_angles_to_direction(tconf.theta_y, tconf.theta_xz)
-        dir_wp  = global_direction_to_wp_direction(R_wp, dir_glb)
     else:
         dir_wp  = tpc_angles_to_direction(tconf.theta_y, tconf.theta_xz)
-        dir_glb = wp_direction_to_global_direction(R_wp, dir_wp)
+        dir_glb = wp_direction_to_global_direction(R_wps[plane_idx], dir_wp)
 
     p0, p1 \
         = midpoint_length_direction_to_endpoints(center, tconf.length, dir_glb)
@@ -185,17 +273,19 @@ def generate_line_track(center, tconf, R_wp):
         p0, p1, tconf.t0, tconf.eperstep, tconf.step_size, tconf.track_speed
     )
 
-    metadata = pack_track_metadata(points, times, dir_wp, dir_glb, tconf, R_wp)
+    dir_wps = np.array([global_direction_to_wp_direction(R_wp, dir_glb) for R_wp in R_wps])
+
+    metadata = pack_track_metadata(points, times, dir_wps, dir_glb, tconf, R_wps)
 
     return (depo_sets, metadata)
 
 def generate_and_save_line_track(
-    center, track_config, phi, path_depo, path_meta
+    center, track_config, phi, path_depo, path_meta, plane_idx=0
 ):
     # pylint: disable=too-many-locals
-    R_wp = plane_yy_to_rotation_matrix(phi)
+    R_wps = np.array([plane_yy_to_rotation_matrix(p) for p in phi])
 
-    (depo_sets, metadata) = generate_line_track(center, track_config, R_wp)
+    (depo_sets, metadata) = generate_line_track(center, track_config, R_wps, plane_idx)
 
     np.savez(path_depo, **depo_sets)
 
@@ -203,47 +293,57 @@ def generate_and_save_line_track(
         return
 
     with open(path_meta, "wt", encoding = ENCODING) as f:
-        json.dump(metadata, f, indent = 4)
+        json.dump(dataclasses.asdict(metadata), f, indent = 4)
 
-def load_wp_spec(detector, apa_idx, plane_idx):
-    """Load wire plane center and rotation matrix for a given `detector`"""
+def load_wp_spec(detector, apa_idx):
+    """
+    Load wire plane centers and rotation matrices for a given `detector`.
+
+    First axis of each returned array spans the three planes.
+    """
     store = wpersist.load(detector)
+
+    wp_centers = list()
+    wp_rots = list()
 
     # warr : (N, 2, 3)
     #        (wire_idx, [start, end], coord_idx)
-    warr = warray.endpoints_from_schema(
-        store, plane = plane_idx, anode = apa_idx
-    )
-    warr = warray.correct_endpoint_array(warr)
+    for plane_idx in range(3):
+        warr = warray.endpoints_from_schema(
+            store, plane = plane_idx, anode = apa_idx
+        )
+        warr = warray.correct_endpoint_array(warr)
 
-    mean_wire, mean_pitch = warray.mean_wire_pitch(warr)
+        mean_wire, mean_pitch = warray.mean_wire_pitch(warr)
 
-    wp_rot = warray.rotation(mean_wire, mean_pitch)
+        wp_rot = warray.rotation(mean_wire, mean_pitch)
 
-    mid_idx   = warr.shape[0] // 2
-    wp_center = 0.5 * (warr[mid_idx, 0, ...] + warr[mid_idx, 1, ...])
+        mid_idx   = warr.shape[0] // 2
+        wp_center = 0.5 * (warr[mid_idx, 0, ...] + warr[mid_idx, 1, ...])
+        wp_centers.append(wp_center)
+        wp_rots.append(wp_rot)
 
-    return (wp_center, wp_rot)
+    return (np.array(wp_centers), np.array(wp_rots))
 
 def generate_and_save_line_track_in_detector(
     detector, apa_idx, plane_idx, offset, track_config, path_depo, path_meta
 ):
     # pylint: disable=too-many-arguments
     # pylint: disable=too-many-locals
-    wp_center, R_wp = load_wp_spec(detector, apa_idx, plane_idx)
-    center = wp_center + offset
+    wp_centers, R_wps = load_wp_spec(detector, apa_idx)
+    center = wp_centers[plane_idx] + offset
 
-    (depo_sets, metadata) = generate_line_track(center, track_config, R_wp)
+    (depo_sets, metadata) = generate_line_track(center, track_config, R_wps, plane_idx)
 
     np.savez(path_depo, **depo_sets)
 
     if path_meta is None:
         return
 
-    metadata['detector']  = detector
-    metadata['apa']       = apa_idx
-    metadata['plane_idx'] = plane_idx
+    metadata.detector  = detector
+    metadata.apa       = apa_idx
+    metadata.plane_idx = plane_idx
 
     with open(path_meta, "wt", encoding = ENCODING) as f:
-        json.dump(metadata, f, indent = 4)
+        json.dump(dataclasses.asdict(metadata), f, indent = 4)
 
