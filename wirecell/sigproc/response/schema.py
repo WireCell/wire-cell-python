@@ -29,7 +29,7 @@ enough to describe various sets of field responses including:
       calculations, eg with LARF.  Simulation and deconvolution using
       these type of responses are not yet developed.
 
-The schema is defined through a number of `namedtuple` collections.
+The schema is defined through a number of `dataclass` types.
 
 Units Notice: any attributes of these classes which are quantities
 with units must be in Wire Cell system of units.
@@ -46,47 +46,15 @@ measured.
 
 '''
 
-from collections import namedtuple
+import dataclasses
+from typing import List
 
-class FieldResponse(namedtuple("FieldResponse","planes axis origin tstart period speed")):
-    '''
-    :param list planes: List of PlaneResponse objects.
-    :param list axis: A normalized 3-vector giving direction of axis
-        (anti)parallel to nominal drift direction.
-    :param float origin: location along the X-axis where drift paths
-        begin (see PlaneResponse.location).
-    :param float tstart: the time at which drift paths are considered
-        to begin.
-    :param float period: the sampling period of the field response.
-    :param float speed: the nominal drift speed used in the
-        calculation.
-    '''
-    __slots__ = ()
+@dataclasses.dataclass
+class PathResponse:
+    '''A path response.
 
-
-
-
-class PlaneResponse(namedtuple("PlaneResponse","paths planeid location pitch")):
-    '''
-    :param list paths: List of PathResponse objects.  These MUST be sorted by pitchpos!
-    :param int planeid: A numerical identifier for the plane,
-        typically [0,1,2].
-    :param float location: Location in drift direction of this plane
-        (see FieldResponse.origin).
-    :param float pitch: The uniform wire pitch used for the path
-        responses of this plane.
-    '''
-    __slots__ = ()
-    
-
-class PathResponse(namedtuple("PathResponse", "current pitchpos wirepos")):
-    '''
-    :param array current: A numpy array holding the induced current
-        for the path on the wire-of-interest.
-    :param float pitchpos: The position in the pitch direction to the
-        starting point of the path.
-    :param float wirepos: The position along the wire direction to the
-        starting point of the path.
+    This holds the instantaneous induced current along a drift path and the
+    position of the start point of this path in wire plane coordinates.
 
         Note: the path is in wire region: 
 
@@ -97,6 +65,86 @@ class PathResponse(namedtuple("PathResponse", "current pitchpos wirepos")):
 
         impact = pitchpos-region*pitch.
     '''
-    __slots__ = ()
 
+    current: numpy.ndarray
+    '''
+    The instantaneous current at steps in time along the path.
+    '''
+    
+    pitchpos: float
+    ''' The location of the starting point of the path in pitch (wire plane
+    coordinate Z).  '''
+
+    wirepos: float
+    ''' The location of the starting point of the path along the wire (wire plane
+    coordinate Y, usually 0 for 2D models).  '''
+    
+
+@dataclasses.dataclass
+class PlaneResponse:
+    '''A plane response.
+
+    THis holds information about a plane and a set of impulse response waveforms
+    at a number of paths.
+
+    '''
+
+    paths: List[PathResponse]
+    '''
+    A list of per drift path responses.
+    '''
+
+    planeid: int
+    '''
+    A numerical identifier for the plane.
+    '''
+    
+    location: float
+    '''
+    Location in the drift direction for this plane.  See FieldResponse.origin.
+    '''
+
+    pitch: float
+    '''
+    The uniform wire pitch used for the path responses of this plane
+    '''
+
+@dataclasses.dataclass
+class FieldResponse:
+    '''
+    A field response.
+
+    This holds overall scalar info and a set of per plane responses.
+    '''
+
+
+    planes: List[PlaneResponse]
+    '''
+    A list of plane responses
+    '''
+
+    axis: numpy.ndarray
+    '''
+    A 3-array giving the normal, anti-parallel to nominal drift
+    '''
+
+    origin: float
+    '''
+    Distance along axis where drift paths begin.  See PlaneResponse.location.
+    '''
+
+    tstart: float
+    '''
+    Time at which drift paths are considered to begin.
+    '''
+
+    period: float
+    '''
+    The sampling period of the field response.
+    '''
+
+    spedd: float
+    '''
+    The average, constant drift speed from origin to collection.
+    '''
 

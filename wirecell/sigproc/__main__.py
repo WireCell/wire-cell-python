@@ -79,7 +79,11 @@ def fr2npz(gain, shaping, json_file, npz_file):
     import wirecell.sigproc.response.arrays as arrs
 
     fr = per.load(json_file)
-    gain *= units.mV/units.fC
+    # when json_file really names a detector, that detector may have more than
+    # one field response file - as in uboone.  Here, we only support the first.
+    if isinstance(fr, list):
+        fr = fr[0]              
+    gain = units.mV/units.fC
     shaping *= units.us
     dat = arrs.fr2arrays(fr, gain, shaping)
     numpy.savez(npz_file, **dat)

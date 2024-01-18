@@ -124,7 +124,7 @@ def loads(text):
     '''
     Load object from JSON text.
     '''
-    return fromdict(json.loads(text))
+    return json.loads(text)
 
 
 def load(fname, paths=(), **kwds):
@@ -160,9 +160,9 @@ def load(fname, paths=(), **kwds):
 
 def dumps(obj, indent=2):
     '''
-    Dump object to JSON text.
+    Dump POD object to JSON text.
     '''
-    return json.dumps(todict(obj), indent=indent)
+    return json.dumps(obj, indent=indent)
 
 
 def dump(f, obj, index=2):
