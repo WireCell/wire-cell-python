@@ -51,4 +51,4 @@ def resolve(path, *pathlist):
         maybe = Path(maybe) / path
         if maybe.exists():
             return maybe
-    raise FileNotFoundError(f'failed to resolve {path.name}')
+    raise FileNotFoundError(f'failed to resolve {path.name}.  Check WIRECELL_PATH?')
