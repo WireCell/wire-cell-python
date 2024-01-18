@@ -24,6 +24,12 @@ def dict_factory(kv):
     '''
     return {k:to_pod(v) for k,v in kv}
 
+def dict_factory_shallow(kv):
+    '''
+    Do not recurse.
+    '''
+    return {k:v for k,v in kv}
+
 @classmethod
 def from_dict(cls, obj = {}):
     '''
@@ -33,10 +39,12 @@ def from_dict(cls, obj = {}):
            for f in dataclasses.fields(cls)}
     return cls(**dat)
 
-def to_dict(self):
+def to_dict(self, shallow=False):
     '''
     Try hard to return a dataclass as a dict of POD.
     '''
+    if shallow:
+        return dataclasses.asdict(self, dict_factory=dict_factory_shallow)
     return dataclasses.asdict(self, dict_factory=dict_factory)
 
 def dataclass_dictify(cls):

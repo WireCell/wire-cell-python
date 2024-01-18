@@ -47,9 +47,12 @@ measured.
 '''
 
 import dataclasses
+from wirecell.util.codec import dataclass_dictify
 from typing import List
+import numpy
 
 @dataclasses.dataclass
+# @dataclass_dictify
 class PathResponse:
     '''A path response.
 
@@ -66,21 +69,22 @@ class PathResponse:
         impact = pitchpos-region*pitch.
     '''
 
-    current: numpy.ndarray
+    current: numpy.ndarray | None = None
     '''
     The instantaneous current at steps in time along the path.
     '''
     
-    pitchpos: float
+    pitchpos: float = 0
     ''' The location of the starting point of the path in pitch (wire plane
     coordinate Z).  '''
 
-    wirepos: float
+    wirepos: float = 0
     ''' The location of the starting point of the path along the wire (wire plane
     coordinate Y, usually 0 for 2D models).  '''
     
 
 @dataclasses.dataclass
+# @dataclass_dictify
 class PlaneResponse:
     '''A plane response.
 
@@ -89,27 +93,28 @@ class PlaneResponse:
 
     '''
 
-    paths: List[PathResponse]
+    paths: List[PathResponse] | None = None
     '''
     A list of per drift path responses.
     '''
 
-    planeid: int
+    planeid: int = -1
     '''
     A numerical identifier for the plane.
     '''
     
-    location: float
+    location: float = 0
     '''
     Location in the drift direction for this plane.  See FieldResponse.origin.
     '''
 
-    pitch: float
+    pitch: float = 0
     '''
     The uniform wire pitch used for the path responses of this plane
     '''
 
 @dataclasses.dataclass
+# @dataclass_dictify
 class FieldResponse:
     '''
     A field response.
@@ -118,33 +123,39 @@ class FieldResponse:
     '''
 
 
-    planes: List[PlaneResponse]
+    planes: List[PlaneResponse] | None = None
     '''
     A list of plane responses
     '''
 
-    axis: numpy.ndarray
+    axis: numpy.ndarray | None = None
     '''
     A 3-array giving the normal, anti-parallel to nominal drift
     '''
 
-    origin: float
+    origin: float = 0
     '''
     Distance along axis where drift paths begin.  See PlaneResponse.location.
+    Typically 10cm for wires and 20cm for strips+holes.
     '''
 
-    tstart: float
+    tstart: float = 0
     '''
     Time at which drift paths are considered to begin.
     '''
 
-    period: float
+    period: float = 0
     '''
-    The sampling period of the field response.
-    '''
-
-    spedd: float
-    '''
-    The average, constant drift speed from origin to collection.
+    The sampling period of the field response.  Typically 100ns for 500ns ADCs.
     '''
 
+    speed: float = 0
+    '''
+    The average, constant drift speed from origin to collection.  Typically close to 1.6mm/us.
+    '''
+
+def asdict(s):
+    return {f.name:getattr(s,f.name) for f in dataclasses.fields(s)}
+        
+
+    return dataclasses.asdict(s)

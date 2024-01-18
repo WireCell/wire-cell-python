@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+ #!/usr/bin/env python
 '''
 Functions to handle serializing of field response data.
 
@@ -12,7 +12,10 @@ There are four transient respresentations of FR:
 
 - list :: a list of elements of one of the above types.
 
-The "schema" representation may be converted to/from the other two. 
+Converting between pod and schema is lossless.  Converting from "schema" to
+"array" will is lossy as the array's row represents the pitch bin centered
+average over two neighboring paths.  The array is also inflated to fill in the
+gaps left empty due to symmetry in the "schema" rep.
 
 There are three persistent representations
 
@@ -28,8 +31,7 @@ The persistent representations may be compressed.
 
 from pathlib import Path
 import numpy
-
-from .schema import FieldResponse, PlaneResponse, PathResponse
+from .schema import FieldResponse, PlaneResponse, PathResponse, asdict as schema_asdict
 from . import arrays as frarrs
 from wirecell.util import detectors, jsio
 
@@ -64,10 +66,12 @@ def schema2pod(obj):
     '''
     Convert FR from schema to pod representations or lists thereof.
     '''
-    for typename in ['FieldResponse', 'PlaneResponse', 'PathResponse']:
-        if typename == type(obj).__name__:
-            cname = obj.__class__.__name__
-            return {cname: {k: schema2pod(v) for k, v in obj._asdict().items()}}
+
+    if isinstance(obj, (FieldResponse, PlaneResponse, PathResponse)):
+        tname = type(obj).__name__
+        #dat = {k: schema2pod(v) for k, v in obj.to_dict(shallow=True).items()}
+        dat = {k: schema2pod(v) for k, v in schema_asdict(obj).items()}
+        return {tname: dat}
 
     if isinstance(obj, numpy.ndarray):
         shape = list(obj.shape)
@@ -99,23 +103,18 @@ def pod2schema(obj):
             tname = typ.__name__
             if tname in obj:
                 tobj = obj[tname]
-                return typ(**{k: pod2schema(v) for k, v in tobj.items() if k not in ["pitchdir","wiredir"]})
+                dat = {k: pod2schema(v) for k, v in tobj.items() if k not in ["pitchdir","wiredir"]}
+                ret = typ(**dat)
+                assert not isinstance(ret, dict)
+                return ret
 
     return obj
-
-
-def dump_fr(obj, msg=""):
-    if isinstance(obj, dict):
-        print(f'DUMP FR: {type(obj)} {obj.keys()} {msg}')
-    else:
-        print(f'DUMP FR: {type(obj)} {msg}')
 
 
 def schema2array(obj):
     '''
     Convert FR from schema to array representations, or lists thereof.
     '''
-    dump_fr(obj, "schema2array")
 
     if is_schema(obj):
         return frarrs.toarray(obj)
@@ -129,7 +128,6 @@ def schema2array(obj):
 def array2schema(obj):
     if is_array(obj):
         got = frarrs.toschema(obj)
-        print(f'array2schema: {type(obj)} -> {type(got)}')
         return got
     if is_list(obj):
         return [frarrs.toschema(one) for one in obj]
@@ -141,7 +139,6 @@ def topod(obj):
     '''
     Return a pod representation of an FR object.
     '''
-    dump_fr(obj, "topod")
 
     if is_pod(obj):
         return obj
@@ -205,13 +202,13 @@ def dump(path, obj, ext=""):
       of considering the actual file name extension.  An extension of "npz"
       implies compression.  To force a .npz file with no compression pass
       ext="npy".
+
+    The FR will may converted to match the format.  This can be lossy.
+
     '''
-    dump_fr(obj, "dump")
 
     if isinstance(path, str):
         path = Path(path)
-
-    print(f'dumping: {path=} {ext=}')
 
     if ext.endswith("npy"):
         dat = toarray(obj)
@@ -250,18 +247,15 @@ def load(path, ext=""):
 
     - ext :: an extension by which to judge file format instead of using that from path.
 
+    If json file or canonical detector name is loaded, the schema form is
+    returned.  If a numpy file is loaded the array form is returned.
+
     '''
     if isinstance(path, str):
         path = Path(path)
 
-    print(f'loading: {path=} {ext=}')
-
     if ext.endswith(("npz", "npy")) or path.suffix == ".npz":
-        got = dict(numpy.load(path))
-        print(f'load {path} -> {type(got)}')
-        got = array2schema(got)
-        print(f'load {path} -> {type(got)}')
-        return got
+        return dict(numpy.load(path))
 
     if ext.endswith("json") or path.suffix == ".json":
         return loads(open(path, 'r').read())

@@ -8,9 +8,20 @@ from wirecell import units
 from .schema import FieldResponse, PlaneResponse, PathResponse
 
 
+def toscalar(a):
+    '''
+    Convert a "scalar array" to a scalar value.
+    '''
+    if hasattr(a, "item") and not a.shape:
+        return a.item()
+    return a
+
+
 def pr2array(pr, nimperwire = 6, nbinsperwire = 10):
     '''
     Convert a schema.PlaneResponse to a numpy array
+
+    This returns a filled in array with bin-center values.
     '''
     nwires = len(pr.paths) // nimperwire
     midwire = nwires//2
@@ -44,9 +55,11 @@ def pr2array(pr, nimperwire = 6, nbinsperwire = 10):
     return res,pitches
 
 
-def toarray(fr):
+def toarray(fr, nimperwire = 6, nbinsperwire = 10):
     '''
     Return FR array representation from FR schema representation.
+
+    Note, this fills in the redundant/symmetric impact positions.
     '''
     nplanes = len(fr.planes)
     planeid = numpy.zeros(nplanes)
@@ -63,7 +76,7 @@ def toarray(fr):
 
     responses = list();
     for iplane, pr in enumerate(fr.planes):
-        r,p = pr2array(pr)
+        r,p = pr2array(pr, nimperwire, nbinsperwire)
         # last_r = r
 
         #dat['resp%d' % pr.planeid] = r
@@ -79,33 +92,37 @@ def toarray(fr):
 
 
 def toschema(fra):
+    '''Return FR schema representation from FR array representation
+
+    Warning: there is no attempt to correct for the lossy conversion from schema
+    to array.  The returned schema object will have "too many" PathResponses and
+    each will represent a pitch bin center average of two original PathResponses.
     '''
-    Return FR schema representation from FR array representation
-    '''
+
     planes = []
-    for key, val in fra.items():
+    for key, curs in fra.items():
         if not key.startswith("resp"):
             continue
         plane = int(key[4:])
-        bc  = fra[f'bincenters{plane}']
-        loc = fra['locations'][plane]
-        pit = fra['pitches'][plane]
+        location = fra['locations'][plane]
+        pitch = fra['pitches'][plane]
         
-        resp = val
+        imps  = fra[f'bincenters{plane}'] # pitch loc of impact position
+
         paths = []
-        for row in resp:
-            path = PathResponse(row, bc, 0)
+        for cur, imp in zip( curs, imps ):
+            path = PathResponse(cur, imp, 0)
             paths.append(path)
 
-        pr = PlaneResponse(paths, plane, loc, pit)
+        pr = PlaneResponse(paths, plane, location, pitch)
         planes.append(pr)
 
     return FieldResponse(planes, 
-                         axis=fra['axis'],
-                         origin=fra['origin'],
-                         tstart=fra['tstart'],
-                         period=fra['period'],
-                         speed=fra['speed']),
+                         axis=toscalar(fra['axis']),
+                         origin=toscalar(fra['origin']),
+                         tstart=toscalar(fra['tstart']),
+                         period=toscalar(fra['period']),
+                         speed=toscalar(fra['speed']))
 
 def coldelec(fra, gain, shaping):
     '''Return an FR array representation that replaces the response in the given
