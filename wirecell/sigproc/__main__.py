@@ -125,12 +125,15 @@ def response_info(ctx, json_file):
     Show some info about a field response file (.json or .json.bz2).
     '''
     import wirecell.sigproc.response.persist as per
-    fr = per.load(json_file)
-    log.info ("origin:%.2f cm, period:%.2f us, tstart:%.2f us, speed:%.2f mm/us, axis:(%.2f,%.2f,%.2f)" % \
-           (fr.origin/units.cm, fr.period/units.us, fr.tstart/units.us, fr.speed/(units.mm/units.us), fr.axis[0],fr.axis[1],fr.axis[2]))
-    for pr in fr.planes:
-        log.info ("\tplane:%d, location:%.4fmm, pitch:%.4fmm" % \
-               (pr.planeid, pr.location/units.mm, pr.pitch/units.mm))
+    frs = per.load(json_file)
+    if not isinstance(frs, list):
+        frs = [frs]
+    for fr in frs:
+        log.info ("origin:%.2f cm, period:%.2f us, tstart:%.2f us, speed:%.2f mm/us, axis:(%.2f,%.2f,%.2f)" % \
+               (fr.origin/units.cm, fr.period/units.us, fr.tstart/units.us, fr.speed/(units.mm/units.us), fr.axis[0],fr.axis[1],fr.axis[2]))
+        for pr in fr.planes:
+            log.info ("\tplane:%d, location:%.4fmm, pitch:%.4fmm" % \
+                   (pr.planeid, pr.location/units.mm, pr.pitch/units.mm))
 
 @cli.command("convert-garfield")
 @click.option("-o", "--origin", default="10.0*cm",
