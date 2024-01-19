@@ -6,6 +6,7 @@ Main CLI to wirecell.resp.
 import click
 from wirecell.util.fileio import load as source_loader
 from wirecell import units
+from wirecell.util.functions import unitify
 import numpy
 
 cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
@@ -58,55 +59,42 @@ def gf_info(dataset):
     dsdict_dump(ds)
 
 
-@cli.command("field-response-transform")
-@click.option("-g", "--gain", default=None, type=str,
-                  help="Set gain with units, eg '14*mV/fC'")
-@click.option("-s", "--shaping", default=None, type=str,
-                  help="Set shaping time with units, eg '2*us'")
-@click.option("-n", "--number", default=None, type=int,
-              help="Resample the field response to have this number of ticks")
+@cli.command("resample")
 @click.option("-t", "--tick", default=None, type=str,
               help="Resample the field response to have this sample period with units, eg '64*ns'")
+@click.option("-P", "--period", default=None, type=str,
+              help="Override the sampling period given in the frfile, eg '100*ns'")
 @click.option("-o", "--output", default="/dev/stdout",
               help="File in which to write the result")
-@click.option("-s", "--schema", default="json.gz", 
-              help="The format to assume given as an extension")
-@click.option("-z", "--compression", default=True,
-              help="Apply compression to the output")
+@click.option("-e", "--error", default=1e-6,
+              help="Precision by which integer and rationality conditions are judged")
 @click.argument("frfile")
-def field_response_transform(gain, shaping, number, tick, output, schema, frfile):
-    '''Apply a transformation to a field response (FR) file.
+def resample(tick, period, output, error, frfile):
+    '''Resample the FR.
 
-    This may be used to transform FR file format or apply a resampling in time.
+    The initial sampling period Ts (fr.period or --period if given) and the
+    resampled period Tr (--tick) must satisfy the LMN rationality condition.
 
-    If both gain and shaping are given then convolve with Cold Electronics
-    response.
+    The total duration of the resampled responses may change.
 
-    If number or tick but not both are given then the duration of the input FR
-    signals is held fixed in the resampling.  If both are given, the duration
-    will made "number*tick".  Resampling must be "lmn-rational".
+    See also:
 
-    See also: wirecell-sigproc fr2npz
+    - wirecell-util lmn 
+    - wirecell-sigproc fr2npz 
 
     '''
+
     import wirecell.sigproc.response.persist as per
-    import wirecell.sigproc.response.arrays as arrs
+    import wirecell.resp.resample as res
+
+    tick = unitify(tick)
+    period = unitify(period)
 
     fr = per.load(frfile)
-    if gain and shaping:
-        gain = unitify(gain)
-        shaping = unitify(shaping)
-        dat = arrs.fr2arrays(fr, gain, shaping)
-    else:
-        dat = arrs.fr2arrays(fr)
+    fr = res.resample(fr, tick, period)
 
-    if number or tick:
-        tick = unitify(tick) if tick else None
-        dat = arrs.resample(dat, tick, number)
+    per.dump(output, fr)
 
-    per.dump(output, dat, 
-
-    numpy.savez(npz_file, **dat)
 
 def main():
     cli(obj=dict())
