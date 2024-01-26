@@ -309,6 +309,26 @@ def fr_sig(fr, name=None, impact=66, plane=0):
         raise
     return lmn.Signal(lmn.Sampling(T=fr.period, N=wave.size), wave=wave, name=name)
 
+def fr_arr(fr, plane=0):
+    '''
+    Return FR as 2D (nimp,ntick) array.
+
+    If plane is given, return only that plane
+    '''
+    prs = fr.planes
+    if plane is not None:
+        prs = [prs[plane]]
+    nchan = sum([len(pr.paths) for pr in prs])
+    nimps = prs[0].paths[0].current.size
+    ret = numpy.zeros((nchan, nimps))
+    imp = 0
+    for pr in prs:
+        for path in pr.paths:
+            ret[imp] = path.current
+            imp += 1
+    return ret
+
+
 from wirecell.sigproc.response import electronics
 def eresp(ss, name="coldelec", gain=14*units.mV/units.fC, shaping=2*units.us):
     '''
@@ -326,7 +346,7 @@ def label(sig):
     return f'${sig.name},\ N={ss.N},\ T={ss.T/units.ns:.0f}\ ns$'
 
 def plot_signals(sigs, tlim=None, flim=None, tunits="us", funits="MHz",
-                 iunits="femtoampere",
+                 iunits="femtoampere", ilim=None,
                  *args, **kwds):
     '''
     Plot signals in time and frequency domain.
@@ -364,6 +384,8 @@ def plot_signals(sigs, tlim=None, flim=None, tunits="us", funits="MHz",
         axes[0].set_ylabel(f'signal [{iunits}]')
         axes[1].set_xlabel(f'frequency [{funits}]')
 
+    if ilim:
+        axes[0].set_ylim(ilim[0]/iunits_v, ilim[1]/iunits_v)
     if tlim:
         axes[0].set_xlim(tlim[0]/tunits_v, tlim[1]/tunits_v)
     if flim:
@@ -372,6 +394,28 @@ def plot_signals(sigs, tlim=None, flim=None, tunits="us", funits="MHz",
     axes[1].set_title("spectrum")
     axes[1].legend()
     return fig, axes
+
+def plot_ends(arrays, names, iunits='femtoampere'):
+    fig,ax = plt.subplots(nrows=1, ncols=1)
+
+    iunits_v = unitify(iunits)
+
+    for ind, arr in enumerate(arrays):
+        arr = arr / iunits_v
+        col = ['black','red'][ind]
+        name = names[ind]
+        f = arr[:,0]
+        l = arr[:,-1]
+        d = l - f
+        ax.plot(f, color=col, linestyle='dashed', drawstyle='steps', label=f'${name}$ first')
+        ax.plot(l, color=col, linestyle='dotted', drawstyle='steps', label=f'${name}$ last')
+        ax.plot(d, color=col, linestyle='solid', drawstyle='steps', label=f'${name}$ diff')
+
+    ax.set_xlabel('impact positions')
+    ax.set_ylabel(f'[{iunits}]')
+    ax.legend()
+    return fig, ax
+    
 
 def multiply_period(current, name=None):
     '''
@@ -394,7 +438,7 @@ def load_fr(detector):
     return got
 
 @cli.command("lmn-fr-plots")
-@click.option("-i", "--impact", default=6*11+5, # on top of wire of interest
+@click.option("-i", "--impact", default=6*10+5, # on top of central wire of interest
               help="The impact position index in the FR.")
 @click.option("-p", "--plane", default=2,
               help="The electrode plane.")
@@ -406,8 +450,8 @@ def load_fr(detector):
               help="The time window over which to 'zoom'")
 @click.option("-d", "--detector-name", default='uboone',
               help="The canonical detector name")
-@click.option("-r", "--response-file", default=None,
-              help="Explicit detector response file instead of nominal one based on detector name.")
+@click.option("-r", "--field-file", default=None,
+              help="Explicit field response file instead of nominal one based on detector name.")
 @click.option("-t", "--tick", default='64*ns',
               help="Resample the field response to have this sample period with units, eg '64*ns'")
 @click.option("-O", "--org-output", default=None,
@@ -415,7 +459,7 @@ def load_fr(detector):
 @click.option("-o","--output",default="lmn-fr-plots.pdf")
 def lmn_fr_plots(impact, plane, period,
                  zoom_start, zoom_window,
-                 detector_name, response_file,
+                 detector_name, field_file,
                  tick, org_output, output):
     '''
     Make plots for LMN FR presentation.
@@ -425,13 +469,15 @@ def lmn_fr_plots(impact, plane, period,
     import wirecell.resp.resample as res
     from wirecell.util.plottools import pages
 
-    FRs = load_fr(response_file or detector_name)
+    FRs = load_fr(field_file or detector_name)
     if period:
         FRs.period = unitify(period)
     sigs = fr_sig(FRs, "I_{og}", impact, plane)
+    arrs = fr_arr(FRs)
 
     FRr = res.resample(FRs, Tr)
     sigr = fr_sig(FRr, "I_{rs}", impact, plane)
+    arrr = fr_arr(FRr)
 
     ers = eresp(sigs.sampling, "E_{og}")
     err = eresp(sigr.sampling, "E_{rs}")
@@ -451,6 +497,12 @@ def lmn_fr_plots(impact, plane, period,
 
     full_range = dict(tlim=(0, sigs.sampling.T*sigs.sampling.N),
                       flim=(0*units.MHz, 10*units.MHz))
+
+    sigs_dur = sigs.sampling.T*sigs.sampling.N
+    front_range = dict(tlim=(0, 0.1*sigs_dur),
+                      flim=(0*units.MHz, 0.03*units.MHz))
+    back_range = dict(tlim=(0.9*sigs_dur, 1.0*sigs_dur),
+                      flim=(0*units.MHz, 0.03*units.MHz))
 
     zoom_start = unitify(zoom_start)
     zoom_window = unitify(zoom_window)
@@ -479,20 +531,23 @@ def lmn_fr_plots(impact, plane, period,
 
         frtit = f'current field response: $FR$ ({detector_name} plane {plane} impact {impact})'
 
-        fig,_ = plot_signals((sigs, sigr),
-                             iunits='femtoampere',
-                             **full_range)
+        fig,_ = plot_signals((sigs, sigr), iunits='femtoampere', **full_range)
         newpage(fig, 'fig-fr', frtit)
 
-        fig,_ = plot_signals((sigs, sigr),
-                             iunits='femtoampere',
-                             **zoom_range)
+        fig,_ = plot_signals((sigs, sigr), iunits='femtoampere', **zoom_range)
         newpage(fig, 'fig-fr-zoom', frtit + ' zoom')
+
+        ilim = 0.05*units.femtoampere
+        fig,_ = plot_signals((sigs, sigr), iunits='femtoampere', ilim=(-ilim,ilim), **front_range)
+        newpage(fig, 'fig-fr-front', frtit)
+
+        fig,_ = plot_ends((arrs, arrr), (sigs.name, sigr.name), iunits='femtoampere')
+        newpage(fig, 'fig-ends', 'current response ends')
 
         fig,_ = plot_signals((ers, err),
                              iunits='mV/fC',
                              tlim=(0*units.us, 20*units.us),
-                             flim=(-1*units.MHz, 1*units.MHz))
+                             flim=(0*units.MHz, 1*units.MHz))
         newpage(fig, 'fig-cer', 'cold electronics response: $ER$')
         
         fig,_ = plot_signals((dsigs, dsigr, dsigr2),
@@ -512,10 +567,16 @@ def lmn_fr_plots(impact, plane, period,
                              **zoom_range)
         newpage(fig, 'fig-q', f'charge field response $Q = T\cdot FR$ ({detector_name} plane {plane} impact {impact})')
 
-        fig,_ = plot_signals((qdsigs, qdsigr),
-                             iunits='mV',
-                             **conv_range)
+        fig,_ = plot_signals((qdsigs, qdsigr), iunits='mV', **conv_range)
         newpage(fig, 'fig-v', f'voltage response ({detector_name} plane {plane} impact {impact})')
+
+        fig,_ = plot_signals((qdsigs, qdsigr), iunits='mV', **front_range)
+        newpage(fig, 'fig-v-front', f'voltage response ({detector_name} plane {plane} impact {impact})')
+
+        fig,_ = plot_signals((qdsigs, qdsigr), iunits='mV', **back_range)
+        newpage(fig, 'fig-v-back', f'voltage response ({detector_name} plane {plane} impact {impact})')
+        print('q=', 100*numpy.sum(qdsigs.wave) / numpy.sum(numpy.abs(qdsigs.wave)), '%')
+
     if org_output:
         with open(org_output, "w") as oo:
             oo.write('\n'.join(orglines))
