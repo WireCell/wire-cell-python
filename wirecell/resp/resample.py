@@ -13,28 +13,13 @@ def resample_one(pr, Ts, Tr, eps=1e-6):
     Resample the path response pr period Ts to Tr.
     '''
     sig = lmn.Signal(lmn.Sampling(Ts, pr.current.size), wave = numpy.array(pr.current))
-    
-    rat = lmn.rational(sig, Tr, eps)
-
-    Nr = rat.sampling.duration / Tr
-    if abs(Nr - round(Nr)) > eps:
-        raise LogicError('rational resize is not rational')
-    Nr = round(Nr)
-
-    res = lmn.resample(rat, Nr)
-
-    rez = lmn.resize(res, sig.sampling.duration)
-
-    pr = PathResponse(rez.wave, pr.pitchpos, pr.wirepos)
+    fin = lmn.interpolate(sig, Tr)
+    pr = PathResponse(fin.wave, pr.pitchpos, pr.wirepos)
     return pr
 
 
-def resample(fr, Tr=None, Ts=None, eps=1e-6):
+def resample(fr, Tr, Ts=None, eps=1e-6):
     '''Return a resampled version of the fr in schema form.
-
-    Either of both of resampled period Tr or size Nr must not be None.  If one
-    is None it will be set so that the total signal duration is retained.  If
-    both are given the resampled signal will have different duration.
 
     If Ts is given, it overrides the period given in the FR.
 
@@ -45,8 +30,47 @@ def resample(fr, Tr=None, Ts=None, eps=1e-6):
     planes = []
     for plane in fr.planes:
         paths = []
+        #print(f'{len(plane.paths)=}')
         for pr in plane.paths:
             pr = resample_one(pr, Ts, Tr, eps=eps)
             paths.append(pr)
         planes.append(PlaneResponse(paths, plane.planeid, plane.location, plane.pitch))
     return FieldResponse(planes, fr.axis, fr.origin, fr.tstart, Tr, fr.speed)
+
+def rolloff(fr, fstart=0.9):
+    '''
+    Return an FR with a linear roll-off applied.
+
+    The fstart gives frequency to start the roll-off in units of the Nyquist frequency.
+    '''
+    T = fr.period
+    Fn = 1/(2*T)
+
+    planes = []
+    for plane in fr.planes:
+        paths = []
+        #print(f'{len(plane.paths)=}')
+        for pr in plane.paths:
+            spec = numpy.fft.fft(pr.current)
+            N = spec.size
+            if N%2:             # odd
+                H = (N-1)//2
+                E = 0
+            else:
+                H = N//2 - 1
+                E = 1
+            Nrfbeg = round(H * fstart) # number to start the roll off
+
+            if not Nrfbeg:
+                paths.append(pr)
+                continue
+
+            Nrf = H-Nrfbeg             # number to roll off
+            rf = numpy.hstack([ numpy.linspace(1,0,Nrf), [0]*E, numpy.linspace(0,1,Nrf) ])
+            Nrftot = 2*Nrf + E
+            spec[1+Nrfbeg : 1+Nrfbeg + Nrftot] *= rf
+            wave = numpy.real(numpy.fft.ifft(spec))
+            paths.append(PathResponse(wave, pr.pitchpos, pr.wirepos))
+        planes.append(PlaneResponse(paths, plane.planeid, plane.location, plane.pitch))
+    return FieldResponse(planes, fr.axis, fr.origin, fr.tstart, fr.period, fr.speed)
+            

@@ -10,6 +10,8 @@ from collections import defaultdict
 from wirecell import units
 from wirecell.util.functions import unitify, unitify_parse
 from wirecell.util.cli import context, log, jsonnet_loader
+from wirecell.util.fileio import wirecell_path
+from wirecell.util import jsio, detectors
 
 @context("util")
 def cli(ctx):
@@ -1230,7 +1232,65 @@ def ario_cmp(filenames, ario1, ario2):
     sys.exit(ndiffs)
 
 
+@cli.command("detectors")
+@click.option("-p","--path", default=(), multiple=True,
+              help="Add a search path")
+def cmd_detectors(path):
+    '''
+    Known canonical detectors. 
+    '''
+    path = list(path) + list(wirecell_path())
+    dets = jsio.resolve("detectors.jsonnet", path)
+    print(f'detectors file: {dets}')
+    dets = jsio.load(dets)
+    print (' '.join(dets.keys()))
+        
 
+
+@cli.command("resolve")
+@click.option("-p","--path", default=(), multiple=True,
+              help="Add a search path")
+@click.option("-k","--kind", default=None,
+              help="If name gives a detector then kind must give what kind of file")
+@click.argument("name")
+def resolve(path, kind, name):
+    '''Resolve name to a WCT file '''
+    path = list(path) + list(wirecell_path())
+    
+    def emit(got):
+        if not isinstance(got, list):
+            got = [got]
+        for one in got:
+            if isinstance(one, str):
+                print(one)
+            else:
+                print(one.absolute())
+
+    # fixme: these functions should be in a more generic module!
+    path = jsio.clean_paths(path)
+    try:
+        got = jsio.resolve(name, path)
+    except RuntimeError:
+        pass
+    else:
+        emit(got)
+        return
+
+    if kind:
+        try:
+            got = detectors.resolve(name, kind)
+        except KeyError:
+            pass
+        else:
+            emit(got)
+            return
+
+    sys.stderr.write(f'failed to find {name}, considered paths:\n')
+    sys.stderr.write('\n\t'.join(path))
+    sys.stderr.write('\n')
+    if kind:
+        sys.stderr.write(f'and {kind=}\n')
+    raise ValueError('bad fields')
 
 def main():
     cli(obj=dict())

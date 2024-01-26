@@ -2,10 +2,17 @@
 '''
 Some utility functions for dealing with file I/O
 '''
-
+import os
 import zipfile
 import tarfile
 from pathlib import Path
+
+# fixme: more generic path functions are in jsio which should move here
+def wirecell_path():
+    '''
+    Return list of paths from WIRECELL_PATH.
+    '''
+    return tuple(os.environ.get("WIRECELL_PATH","").split(":"))
 
 def source_type(name):
     '''

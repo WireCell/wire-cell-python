@@ -121,7 +121,7 @@ class Signal:
             self.spec = numpy.fft.fft(self.wave)
 
     def __str__(self):
-        return f'{self.name} {sampling}'
+        return f'{self.name} {self.sampling}'
 
     @property
     def time_energy(self):
@@ -311,13 +311,51 @@ def resample(signal, Nr, name=None):
 
     #print(f'{R.shape=} {Nr_half=} {S.shape=} {Ns_half=} {n_half=}')
 
-    # Deal with Nyquist bins
-    if Nr > Ns and not Ns%2: # upsampling from spectrum with Nyquist bin
-        val = S[Ns//2]
-        R[1+n_half+1] = 0.5*val
-        R[-n_half-1]  = 0.5*val
-    if Nr < Ns and not Nr%2: # downsampling to spectrum with Nyquist bin
-        R[1+n_half+1] = abs(S[1+n_half+1])
+    deal_with_nyquist_bin = False
+    if deal_with_nyquist_bin:
+        if Nr > Ns and not Ns%2: # upsampling from spectrum with Nyquist bin
+            val = S[Ns//2]
+            R[1+n_half+1] = 0.5*val
+            R[-n_half-1]  = 0.5*val
+        if Nr < Ns and not Nr%2: # downsampling to spectrum with Nyquist bin
+            R[1+n_half+1] = abs(S[1+n_half+1])
 
     return Signal(resampling, spec = R, name=name)
 
+def interpolate(sig, Tr, eps=1e-6, name=None):
+    '''
+    Interpolation resampling.
+
+    This meets the rational contraint.
+    '''
+
+    rat = rational(sig, Tr, eps)
+
+    Nr = rat.sampling.duration / Tr
+    if abs(Nr - round(Nr)) > eps:
+        raise LogicError('rational resize is not rational')
+    Nr = round(Nr)
+
+    res = resample(rat, Nr)
+
+    # rez = resize(res, sig.sampling.duration)
+    rez = res
+
+    # The response is instantaneous current and thus we use interpolation
+    # normalization.
+    norm = res.sampling.N / sig.sampling.N
+
+    fin = norm * rez.wave
+    return Signal(Sampling(T=Tr, N=fin.size), wave=fin, name=name)
+
+
+def convolve(s1, s2, mode='full', name=None):
+    '''
+    Return new signal that is the convolution of the two.
+
+    Mode is as taken by numpy.convolve which provides the kernel.
+    '''
+    if s1.sampling.T != s2.sampling.T:
+        raise ValueError("can not convolve signals if differing sample period")
+    wave = numpy.convolve(s1.wave, s2.wave, mode)
+    return Signal(Sampling(T=s1.sampling.T, N=wave.size), wave=wave, name=name)

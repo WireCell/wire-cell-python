@@ -10,6 +10,18 @@ import matplotlib.pyplot as plt
 import numpy
 from pathlib import Path
 
+def rescaley(ax, x, y, rx, extra=0.1):
+    '''
+    Set ylim of ax so that the range rx of x is scaled to the view.
+
+    The extra is an amount relative to the nominally resulting ylim to pad.
+    '''
+    inview = numpy.where( (x > rx[0]) & (x < rx[1]) )[0]
+    ymin = y[inview].min()
+    ymax = y[inview].max()
+    dy = ymax-ymin
+    ax.set_ylim( ymin-extra*dy, ymax+extra*dy)
+
 
 class NameSequence(object):
     def __init__(self, name, first=0, **kwds):

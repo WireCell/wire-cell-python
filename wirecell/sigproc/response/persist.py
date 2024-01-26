@@ -240,41 +240,52 @@ def dump(path, obj, ext=""):
     raise ValueError(f'unknown file format from path "{path}" and ext "{ext}"')
 
 
-def load(path, ext=""):
-    '''Return response.schema object or a list of them.
-
-    - path :: a file name or pathlib.Path object or canonical detector name.
-
-    - ext :: an extension by which to judge file format instead of using that from path.
-
-    If json file or canonical detector name is loaded, the schema form is
-    returned.  If a numpy file is loaded the array form is returned.
-
+def load_detector(name):
     '''
-    if isinstance(path, str):
-        path = Path(path)
+    Load response(s) given a canonical detector name.
+    '''
 
-    if ext.endswith(("npz", "npy")) or path.suffix == ".npz":
-        return dict(numpy.load(path))
-
-    if ext.endswith("json") or path.suffix == ".json":
-        return loads(open(path, 'r').read())
-
-    if ext.endswith("json.bz2") or path.suffix == ".json.bz2":
-        import bz2
-        return loads(bz2.BZ2File(path, 'r').read())
-
-    if ext.endswith("json.gz") or path.suffix == ".json.gz":
-        import gzip
-        return loads(gzip.open(path, "rb").read())
-
-    # path may be a detector name
-    fields = detectors.load(path.name, "fields")
+    fields = detectors.load(name, "fields")
     if not fields:
-        raise IOError(f'failed to load responses for detector "{path.name}"')
+        raise IOError(f'failed to load responses for detector "{name}"')
 
     if isinstance(fields, list):
         return [pod2schema(f) for f in fields]
     return pod2schema(fields)
 
 
+
+def load(path, ext="", paths=()):
+    '''Return response.schema object or a list of them.
+
+    - path :: a file name or pathlib.Path object or canonical detector name.
+
+    - ext :: an extension by which to judge file format instead of using that from path.
+
+    - paths :: sequence of directory paths in which to resolve relative file name
+
+    If json file or canonical detector name is loaded, the schema form is
+    returned.  If a numpy file is loaded the array form is returned.
+
+    '''
+
+    try:
+        path = jsio.resolve(path, paths)
+    except RuntimeError:
+        return load_detector(path)
+
+    if ext.endswith(("npz", "npy")) or path.suffix == ".npz":
+        return dict(numpy.load(path.absolute()))
+
+    if ext.endswith("json") or path.name.endswith(".json"):
+        return loads(open(path.absolute(), 'r').read())
+
+    if ext.endswith("json.bz2") or path.name.endswith(".json.bz2"):
+        import bz2
+        return loads(bz2.BZ2File(path.absolute(), 'r').read())
+
+    if ext.endswith("json.gz") or path.name.endswith(".json.gz"):
+        import gzip
+        return loads(gzip.open(path.absolute(), "rb").read())
+
+    raise RuntimeError(f'unsupported file: {path}')

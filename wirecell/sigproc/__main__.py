@@ -306,7 +306,7 @@ def plot_garfield_track_response(ctx, gain, shaping, tick, tick_padding, electro
 @click.pass_context
 def plot_response_compare_waveforms(ctx, plane, irange, trange, responsefile1, responsefile2, outfile):
     '''
-    Plot common response waveforms from two sets
+    Plot common response waveforms from two sets.
     '''
     import wirecell.sigproc.response.persist as per
     import wirecell.sigproc.response.plots as plots
@@ -338,7 +338,6 @@ def plot_response_compare_waveforms(ctx, plane, irange, trange, responsefile1, r
     plot_paths(responsefile1,0)
     plot_paths(responsefile2,1)
     plt.savefig(outfile)
-
 
 
 
