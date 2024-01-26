@@ -62,6 +62,7 @@ def try_path(here, rel):
     '''
     Try to open a path
     '''
+
     here = Path(here)
     rel = Path(rel)
 
@@ -150,7 +151,7 @@ def load(fname, paths=(), **kwds):
         try:
             text = jsmod.evaluate_snippet(str(fname.absolute()), text, import_callback=ic, **kwds)
         except RuntimeError as err:
-            raise RuntimeError(f"in file: {fname}") from err
+            raise RuntimeError(f"in file: {fname}:\n{err}") from err
     elif fname.name.endswith(('.json', '.json.bz2', '.json.gz')):
         pass
     else:

@@ -215,23 +215,23 @@ def dump(path, obj, ext=""):
         numpy.savez(path, **dat)
         return
 
-    if ext.endswith("npz") or path.suffix == ".npz":
+    if ext.endswith("npz") or path.name.endswith(".npz"):
         dat = toarray(obj)
         numpy.savez_compressed(path, **dat) # fixme: 
         return
 
-    if ext.endswith("json") or path.suffix == ".json":
+    if ext.endswith("json") or path.name.endswith(".json"):
         text = dumps(obj)
         open(path, 'w').write(text)
         return
 
-    if ext.endswith("json.bz2") or path.suffix == ".json.bz2":
+    if ext.endswith("json.bz2") or path.name.endswith(".json.bz2"):
         import bz2
         text = dumps(obj)
         bz2.BZ2File(path, 'wb').write(text.encode())
         return
 
-    if ext.endswith("json.gz") or path.suffix == ".json.gz":
+    if ext.endswith("json.gz") or path.name.endswith(".json.gz"):
         import gzip
         text = dumps(obj)
         gzip.open(path, "wb").write(text.encode())

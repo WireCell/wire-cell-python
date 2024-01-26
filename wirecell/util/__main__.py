@@ -1239,10 +1239,12 @@ def cmd_detectors(path):
     '''
     Known canonical detectors. 
     '''
+    import sys
     path = list(path) + list(wirecell_path())
+    sys.stderr.write(f'searching: {path}\n')
     dets = jsio.resolve("detectors.jsonnet", path)
-    print(f'detectors file: {dets}')
-    dets = jsio.load(dets)
+    sys.stderr.write(f'detectors file: {dets}\n')
+    dets = jsio.load(dets, path)
     print (' '.join(dets.keys()))
         
 
