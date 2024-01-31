@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 '''
 The LMN resampling method from the paper <TBD>.
+
+fixme: this currently only supports signals in the form of 1D arrays.
 '''
 
 import numpy
@@ -8,6 +10,7 @@ import math
 from numpy import pi
 import dataclasses
 import matplotlib.pyplot as plt
+from wirecell.util.cli import debug
 
 @dataclasses.dataclass
 class Sampling:
@@ -222,9 +225,9 @@ def rational(sig, Tr, eps=1e-6):
     if not nrag:
         return sig
 
-    cur = sig.wave.copy()
     npad = nrat - nrag
     Ns += npad
+    cur = sig.wave.copy()
     cur.resize(Ns)
 
     ss = Sampling(Ts, cur.size)
@@ -330,6 +333,7 @@ def interpolate(sig, Tr, eps=1e-6, name=None):
     '''
 
     rat = rational(sig, Tr, eps)
+    # debug(f'interpolate: rationalize {sig.sampling} -> {rat.sampling}')
 
     Nr = rat.sampling.duration / Tr
     if abs(Nr - round(Nr)) > eps:
@@ -337,13 +341,15 @@ def interpolate(sig, Tr, eps=1e-6, name=None):
     Nr = round(Nr)
 
     res = resample(rat, Nr)
+    # debug(f'interpolate: resample {rat.sampling} -> {res.sampling}')
 
     # rez = resize(res, sig.sampling.duration)
     rez = res
 
     # The response is instantaneous current and thus we use interpolation
     # normalization.
-    norm = res.sampling.N / sig.sampling.N
+    # norm = res.sampling.N / sig.sampling.N
+    norm = res.sampling.N / rat.sampling.N
 
     fin = norm * rez.wave
     return Signal(Sampling(T=Tr, N=fin.size), wave=fin, name=name)

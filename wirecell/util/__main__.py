@@ -1249,6 +1249,63 @@ def cmd_detectors(path):
         
 
 
+@cli.command("resample")
+@click.option("-t", "--tick", default='500*ns',
+              help="Resample the frame to have this sample period with units, eg '500*ns'")
+@click.option("-o","--output", type=str, required=True,
+              help="Output filename")
+@click.argument("framefile")
+def resample(tick, output, framefile):
+    '''
+    Resample a frame file
+    '''
+    from . import ario, lmn
+
+    Tr = unitify(tick)
+    print(f'resample to {Tr/units.ns}ns to {output}')
+
+
+    fp = ario.load(framefile)
+    f_names = [k for k in fp.keys() if k.startswith("frame_")]
+    c_names = [k for k in fp.keys() if k.startswith("channels_")]
+    t_names = [k for k in fp.keys() if k.startswith("tickinfo_")]
+
+    out = dict()
+
+    for fnum, frame_name in enumerate(f_names):
+        _, suffix = frame_name.split('_',1)
+        ti = fp[f'tickinfo_{suffix}']
+        Ts = ti[1]
+
+        if Tr == Ts:
+            print(f'frame {fnum} "{frame_name}" already sampled at {Tr}')
+            continue
+
+        frame = fp[frame_name]
+        Ns = frame.shape[1]
+        ss = lmn.Sampling(T=Ts, N=Ns)
+
+        Nr = round(Ns * Tr / Ts)
+        sr = lmn.Sampling(T=Tr, N=Nr)
+
+        print(f'{fnum} {frame_name} {ss=} -> {sr=}')
+
+        resampled = numpy.zeros((frame.shape[0], Nr), dtype=frame.dtype)
+        for irow, row in enumerate(frame):
+            sig = lmn.Signal(ss, wave=row)
+            resig = lmn.interpolate(sig, Tr)
+            wave = resig.wave
+            # if Nr != wave.size:
+            #     print(f'resizing to min({Nr=},{wave.size=})')
+            Nend = min(Nr, wave.size)
+            resampled[irow,:Nend] = wave[:Nend]
+        
+        out[f'frame_{suffix}'] = resampled
+        out[f'tickinfo_{suffix}'] = numpy.array([ti[0], Tr, ti[2]])
+        out[f'channels_{suffix}'] = fp[f'channels_{suffix}']
+
+    numpy.savez_compressed(output, **out)
+
 @cli.command("resolve")
 @click.option("-p","--path", default=(), multiple=True,
               help="Add a search path")

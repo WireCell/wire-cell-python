@@ -24,6 +24,7 @@ def rescaley(ax, x, y, rx, extra=0.1):
 
 
 class NameSequence(object):
+
     def __init__(self, name, first=0, **kwds):
         '''
         Every time called, emit a new name with an index.
@@ -80,6 +81,7 @@ class NameSequence(object):
         
         
 class NameSingleton(object):
+
     def __init__(self, path, **kwds):
         '''
         Like a NameSequence but force a singleton.

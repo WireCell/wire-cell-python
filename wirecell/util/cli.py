@@ -263,9 +263,12 @@ def image_output(func):
 
         single = kwds.pop("single", None)
         if single:
-            kwds["output"] = plottools.NameSingleton(output, format=fmt)
+            out = plottools.NameSingleton(output, format=fmt)
+            out.single = True
         else:
-            kwds["output"] = plottools.pages(output, format=fmt)
+            out = plottools.pages(output, format=fmt)
+            out.single = False
+        kwds["output"] = out
 
         kwds["cmap"] = colormaps[kwds["cmap"]]
 

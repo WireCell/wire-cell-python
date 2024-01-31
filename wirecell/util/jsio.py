@@ -8,6 +8,7 @@ import bz2
 import json
 import gzip
 from pathlib import Path
+from wirecell.util.fileio import wirecell_path
 
 def jsonnet_module():
     try:
@@ -37,13 +38,25 @@ def clean_paths(paths, add_cwd=True):
     return paths
 
 
-def resolve(filename, paths=()):
+def resolve(filename, paths=(), env=True):
     '''Resolve filename against built-in directories and any
     user-provided list in "paths".
 
+    Elements of paths may be string or pathlib.Path.
+
     Raise ValueError if fail.
 
+    If env is a dictionary use it as environment to find more paths.  If env is
+    True use os.environ.  Else, environment not considered.
+
     '''
+    paths = list(paths)
+    
+    if env is True:
+        paths += wirecell_path()
+    elif isinstance(env, dict):
+        paths += wirecell_path(env)
+
     if not filename:
         raise RuntimeError("no file name provided")
     if isinstance(filename, str):
@@ -51,10 +64,11 @@ def resolve(filename, paths=()):
     if filename.exists() and filename.is_absolute():
         return filename
 
+
     for maybe in clean_paths(paths):
-        maybe = Path(maybe) / filename
-        if maybe.exists():
-            return maybe
+        path = Path(maybe) / filename
+        if path.exists():
+            return path
     raise RuntimeError(f"file name {filename} not resolved in paths {paths}")
 
 

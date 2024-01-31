@@ -244,10 +244,13 @@ def load_detector(name):
     '''
     Load response(s) given a canonical detector name.
     '''
+    if ".json" in name:
+        raise ValueError(f'detector name looks like a file name: {name}')
 
-    fields = detectors.load(name, "fields")
-    if not fields:
-        raise IOError(f'failed to load responses for detector "{name}"')
+    try:
+        fields = detectors.load(name, "fields")
+    except KeyError:
+        raise IOError(f'failed to load fields for detector "{name}"')
 
     if isinstance(fields, list):
         return [pod2schema(f) for f in fields]

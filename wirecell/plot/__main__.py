@@ -7,7 +7,9 @@ import click
 from wirecell.util import ario, plottools
 from wirecell.util.cli import log, context, jsonnet_loader, frame_input, image_output
 from wirecell.util import jsio
-
+from wirecell.util.functions import unitify, unitify_parse
+from wirecell import units
+from pathlib import Path
 import numpy
 import matplotlib.pyplot as plt
 
@@ -96,7 +98,7 @@ def ntier_frames(cmap, output, files):
 @cli.command("frame")
 @click.option("-n", "--name", default="wave",
               type=click.Choice(["wave","spectra"]),
-              help="The frame plot type name [default=waf]")
+              help="The frame plot type name [default=wave]")
 @click.option("-t", "--tag", default="orig",
               help="The frame tag")
 @click.option("-u", "--unit", default="ADC",
@@ -332,6 +334,82 @@ def digitzer(output, jsiofile, **kwds):
 
         plt.tight_layout()
         out.savefig()
+
+
+@cli.command("channels")
+@click.option("-c", "--channel", multiple=True, default=(), required=True,
+              help="Specify channels, eg '1,2:4,5' are 1-5 but not 4")
+@click.option("-t", "--trange", default=None, type=str,
+              help="limit time range, eg '0,3*us'")
+@click.option("-f", "--frange", default=None, type=str,
+              help="limit frequency range, eg '0,100*kHz'")
+@image_output
+@click.argument("frame_files", nargs=-1)
+def channels(output, channel, trange, frange, frame_files, **kwds):
+    '''
+    Plot channels from multiple frame files.
+
+    Frames need not have same sample period (tick).
+
+    If --single put all on one plot, else per-channel plots are made
+    '''
+
+    from wirecell.util.frames import load as load_frames
+
+    if trange:
+        trange = unitify_parse(trange)
+    if frange:
+        frange = unitify_parse(frange)
+
+    channels = list()
+    for chan in channel:
+        for one in chan.split(","):
+            if ":" in one:
+                f,l = one.split(":")
+                channels += range(int(f), int(l))
+            else:
+                channels.append(int(one))
+
+    # fixme: move this mess out of here
+
+    frames = {ff: list(load_frames(ff)) for ff in frame_files}
+
+    with output as out:
+
+        for chan in channels:
+
+            fig,axes = plt.subplots(nrows=1, ncols=2)
+            fig.suptitle(f'channel {chan}')
+
+            for fname, frs in frames.items():
+                stem = Path(fname).stem
+                for fr in frs:
+                    wave = fr.waves(chan)
+                    axes[0].set_title("waveforms")
+                    axes[0].plot(fr.times/units.us, wave, drawstyle='steps')
+                    if trange:
+                        axes[0].set_xlim(trange[0]/units.us, trange[1]/units.us)
+                    axes[0].set_xlabel("time [us]")
+
+                    axes[1].set_title("spectra")
+                    axes[1].plot(fr.freqs_MHz, numpy.abs(numpy.fft.fft(wave)),
+                                 label=f'{fr.nticks}x{fr.period/units.ns:.0f}ns\n{stem}')
+                    axes[1].set_yscale('log')
+                    if frange:
+                        axes[1].set_xlim(frange[0]/units.MHz, frange[1]/units.MHz)
+                    else:
+                        axes[1].set_xlim(0, fr.freqs_MHz[fr.nticks//2])
+                    axes[1].set_xlabel("frequency [MHz]")
+                    axes[1].legend()
+                    print(fr.nticks, fr.period/units.ns, fr.duration/units.us)
+
+
+            if not out.single:
+                out.savefig()
+                plt.clf()
+        if out.single:
+            out.savefig()
+
 
 
 def main():

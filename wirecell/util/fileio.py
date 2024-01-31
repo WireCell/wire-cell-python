@@ -8,11 +8,13 @@ import tarfile
 from pathlib import Path
 
 # fixme: more generic path functions are in jsio which should move here
-def wirecell_path():
+def wirecell_path(env=os.environ):
     '''
-    Return list of paths from WIRECELL_PATH.
+    Return list of paths from WIRECELL_PATH environment variable.
+
+    - env :: A specific environment dictionary else os.environ is used.
     '''
-    return tuple(os.environ.get("WIRECELL_PATH","").split(":"))
+    return tuple(env.get("WIRECELL_PATH","").split(":"))
 
 def source_type(name):
     '''
