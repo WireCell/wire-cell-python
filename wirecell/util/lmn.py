@@ -141,10 +141,12 @@ class Signal:
         return numpy.sum( numpy.abs( self.spec * numpy.conj(self.spec) ) ) / self.sampling.N
 
 
-def egcd(a, b, eps=1e-6):
-    '''Greated common divisor of floating point values a and b.
+def bezout(a, b, eps=1e-6):
+    '''Greated common divisor and Bezout coefficients.
 
-    Uses the extended Euclidean algorithm.
+    A tuple (g,x,y) is returned for floating point values a and b such that
+
+    g = a*x + b*y
 
     A non-zero error is required if values that are not integer valued.
 
@@ -153,11 +155,19 @@ def egcd(a, b, eps=1e-6):
         if a < eps:
             return (b, 0, 1)
         else:
+            print(f'{a=} {b=}')
             g, x, y = step(b % a, a)
+            print(f'{g=} {a=} {b=} {x=} {y=}')
             return (g, y - (b // a) * x, x)
-    return step(a,b)[0]
+    return step(a,b)
 
-
+def egcd(a, b, eps=1e-6):
+    '''
+    Greated common divisor of floating point values a and b.
+    '''
+    if a < eps:
+        return b
+    return egcd(b % a, a)
 
 def resize_duration(sam, duration, eps=1e-6):
     '''
