@@ -224,21 +224,49 @@ def rational_size(Ts, Tr, eps=1e-6):
     return rNs
 
 
-def rational(sig, Tr, eps=1e-6):
+def rational(sig, Tr, time_padding="linear", eps=1e-6):
     '''
     Return a new signal like sig but maybe extended to have rational size.
+
+    The time_padding controls how to pad larger output waveform:
+
+    - zero :: pad with zeros
+    - last :: pad with last value
+    - median :: pad with median value
+    - linear :: pad with line from last sample value to first sample value
+    - cosine :: like linear but with half-cosine curve
     '''
     Ts = sig.sampling.T
     nrat = rational_size(Ts, Tr, eps)
-    Ns = sig.sampling.N
-    nrag = Ns % nrat
+    Ns_orig = sig.sampling.N
+    nrag = Ns_orig % nrat
     if not nrag:
         return sig
 
     npad = nrat - nrag
-    Ns += npad
+    Ns = Ns_orig + npad
     cur = sig.wave.copy()
     cur.resize(Ns)
+    if Ns > Ns_orig:
+        if time_padding == "zero":
+            cur[Ns_orig:] = 0
+        elif time_padding =="last":
+            cur[Ns_orig:] = cur[Ns_orig-1]
+        elif time_padding =="median":
+            cur[Ns_orig:] = numpy.median(cur[:Ns])
+        elif time_padding == "linear":
+            npad = Ns-Ns_orig + 1
+            pad = numpy.linspace(cur[Ns_orig-1], cur[0], npad, endpoint=False)
+            cur[Ns_orig-1:] = pad
+        elif time_padding == "cosine":
+            npad = Ns-Ns_orig + 1
+            pad = numpy.cos(numpy.linspace(0, numpy.pi, npad, endpoint=False))
+            A = cur[Ns_orig-1]
+            B = cur[0]
+            pad = 0.5*(pad - 1)*(A-B) + A
+            cur[Ns_orig-1:] = pad            
+        else:
+            raise ValueError(f'unsupported time_padding: "{time_padding}"')
 
     ss = Sampling(Ts, cur.size)
     sig = Signal(ss, wave=cur)
@@ -292,6 +320,7 @@ def condition(signal, Tr, eps=1e-6, name=None):
 def resample(signal, Nr, name=None):
     '''
     Return a new signal of same duration that is resampled to have number of samples Nr.
+
     '''
     Ns = signal.sampling.N
     resampling = signal.sampling.resampling(Nr)
@@ -322,8 +351,6 @@ def resample(signal, Nr, name=None):
     # copy the "negative" aka "high-frequency" half spectrum
     R[-n_half:] = S[-n_half:]
 
-    #print(f'{R.shape=} {Nr_half=} {S.shape=} {Ns_half=} {n_half=}')
-
     deal_with_nyquist_bin = False
     if deal_with_nyquist_bin:
         if Nr > Ns and not Ns%2: # upsampling from spectrum with Nyquist bin
@@ -335,14 +362,14 @@ def resample(signal, Nr, name=None):
 
     return Signal(resampling, spec = R, name=name)
 
-def interpolate(sig, Tr, eps=1e-6, name=None):
+def interpolate(sig, Tr, time_padding="zero", eps=1e-6, name=None):
     '''
     Interpolation resampling.
 
     This meets the rational contraint.
     '''
 
-    rat = rational(sig, Tr, eps)
+    rat = rational(sig, Tr, time_padding=time_padding, eps=eps)
     # debug(f'interpolate: rationalize {sig.sampling} -> {rat.sampling}')
 
     Nr = rat.sampling.duration / Tr
