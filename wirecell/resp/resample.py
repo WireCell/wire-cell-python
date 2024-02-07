@@ -8,21 +8,24 @@ from wirecell.util import lmn
 from wirecell.sigproc.response.schema import FieldResponse, PlaneResponse, PathResponse
 
 
-def resample_one(pr, Ts, Tr, eps=1e-6):
+def resample_one(pr, Ts, Tr, **kwds):
     '''
     Resample the path response pr period Ts to Tr.
+
+    Pass kwds to lmn.interpolate()
     '''
     sig = lmn.Signal(lmn.Sampling(Ts, pr.current.size), wave = numpy.array(pr.current))
-    fin = lmn.interpolate(sig, Tr)
+    fin = lmn.interpolate(sig, Tr, **kwds)
     pr = PathResponse(fin.wave, pr.pitchpos, pr.wirepos)
     return pr
 
 
-def resample(fr, Tr, Ts=None, eps=1e-6):
+def resample(fr, Tr, Ts=None, **kwds):
     '''Return a resampled version of the fr in schema form.
 
     If Ts is given, it overrides the period given in the FR.
 
+    Pass kwds to lmn.interpolate().
     '''
 
     Ts = Ts or fr.period        # beware, fr.period is sometimes imprecise 
@@ -32,7 +35,7 @@ def resample(fr, Tr, Ts=None, eps=1e-6):
         paths = []
         #print(f'{len(plane.paths)=}')
         for pr in plane.paths:
-            pr = resample_one(pr, Ts, Tr, eps=eps)
+            pr = resample_one(pr, Ts, Tr, **kwds)
             paths.append(pr)
         planes.append(PlaneResponse(paths, plane.planeid, plane.location, plane.pitch))
     return FieldResponse(planes, fr.axis, fr.origin, fr.tstart, Tr, fr.speed)

@@ -341,11 +341,13 @@ def digitzer(output, jsiofile, **kwds):
               help="Specify channels, eg '1,2:4,5' are 1-5 but not 4")
 @click.option("-t", "--trange", default=None, type=str,
               help="limit time range, eg '0,3*us'")
+@click.option("-y", "--yrange", default=None, type=str,
+              help="limit y-axis range in raw numbers, default is auto range")
 @click.option("-f", "--frange", default=None, type=str,
               help="limit frequency range, eg '0,100*kHz'")
 @image_output
 @click.argument("frame_files", nargs=-1)
-def channels(output, channel, trange, frange, frame_files, **kwds):
+def channels(output, channel, trange, frange, yrange, frame_files, **kwds):
     '''
     Plot channels from multiple frame files.
 
@@ -360,6 +362,8 @@ def channels(output, channel, trange, frange, frame_files, **kwds):
         trange = unitify_parse(trange)
     if frange:
         frange = unitify_parse(frange)
+    if yrange:
+        yrange = unitify_parse(yrange)
 
     channels = list()
     for chan in channel:
@@ -389,7 +393,14 @@ def channels(output, channel, trange, frange, frame_files, **kwds):
                     axes[0].plot(fr.times/units.us, wave, drawstyle='steps')
                     if trange:
                         axes[0].set_xlim(trange[0]/units.us, trange[1]/units.us)
+                    if yrange:
+                        print(yrange)
+                        axes[0].set_ylim(*yrange)
+                    else:
+                        plottools.rescaley(axes[0], fr.times/units.us, wave,
+                                           (trange[0]/units.us, trange[1]/units.us))
                     axes[0].set_xlabel("time [us]")
+                        
 
                     axes[1].set_title("spectra")
                     axes[1].plot(fr.freqs_MHz, numpy.abs(numpy.fft.fft(wave)),

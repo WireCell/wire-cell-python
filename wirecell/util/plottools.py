@@ -20,7 +20,7 @@ def rescaley(ax, x, y, rx, extra=0.1):
     ymin = y[inview].min()
     ymax = y[inview].max()
     dy = ymax-ymin
-    ax.set_ylim( ymin-extra*dy, ymax+extra*dy)
+    ax.set_ylim( ymin-(extra*dy), ymax+extra*dy)
 
 
 class NameSequence(object):

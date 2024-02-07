@@ -98,10 +98,15 @@ def condition(period, rolloff, output, frfile):
 @cli.command("resample")
 @click.option("-t", "--tick", default=None, type=str,
               help="Resample the field response to have this sample period with units, eg '64*ns'")
+@click.option("-e", "--error", default=1e-6,
+              help="Allowed error in LMN rationality condition.")
+@click.option("-p", "--pad", default="zero",
+              type=click.Choice(["zero","linear","first","last"]),
+              help="The time domain padding strategy")
 @click.option("-o", "--output", default="/dev/stdout",
               help="File in which to write the result")
 @click.argument("frfile")
-def resample(tick, output, frfile):
+def resample(tick, error, pad, output, frfile):
     '''Resample the FR.
 
     The initial sampling period Ts (fr.period)) and the resampled period Tr
@@ -114,6 +119,8 @@ def resample(tick, output, frfile):
     - wirecell-resp condition
     - wirecell-util lmn 
     - wirecell-sigproc fr2npz
+    - wirecell.util.lmn.interpolate()
+    - LMN resampling paper
 
     '''
 
@@ -123,7 +130,7 @@ def resample(tick, output, frfile):
     tick = unitify(tick)
 
     fr = per.load(frfile)
-    fr = res.resample(fr, tick)
+    fr = res.resample(fr, tick, eps=error, time_padding=pad)
 
     per.dump(output, fr)
 
@@ -570,11 +577,14 @@ def lmn_fr_plots(impact, plane, period,
         fig,_ = plot_signals((qdsigs, qdsigr), iunits='mV', **conv_range)
         newpage(fig, 'fig-v', f'voltage response ({detector_name} plane {plane} impact {impact})')
 
-        fig,_ = plot_signals((qdsigs, qdsigr), iunits='mV', **front_range)
-        newpage(fig, 'fig-v-front', f'voltage response ({detector_name} plane {plane} impact {impact})')
+        fig,axes = plot_signals((qdsigs, qdsigr), iunits='mV', **front_range)
+        axes[0].set_ylim(-0.5e-6, 0)
+        newpage(fig, 'fig-v-front', f'voltage response ({detector_name} plane {plane} impact {impact}, zoom front)')
 
-        fig,_ = plot_signals((qdsigs, qdsigr), iunits='mV', **back_range)
-        newpage(fig, 'fig-v-back', f'voltage response ({detector_name} plane {plane} impact {impact})')
+        fig,axes = plot_signals((qdsigs, qdsigr), iunits='mV', **back_range)
+        tiny = 1e-11
+        axes[0].set_ylim(-tiny, tiny)
+        newpage(fig, 'fig-v-back', f'voltage response ({detector_name} plane {plane} impact {impact}, zoom back)')
         print('q=', 100*numpy.sum(qdsigs.wave) / numpy.sum(numpy.abs(qdsigs.wave)), '%')
 
     if org_output:
