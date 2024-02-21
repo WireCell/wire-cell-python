@@ -27,29 +27,59 @@ def gauss(x, A, mu, sigma, *p):
 @dataclasses.dataclass
 class BaselineNoise:
     '''
-    Characterize baseline noise.
+    Characterize baseline (or any) noise.
     '''
 
     A : float
     '''
-    Normalization constant
+    Normalization (fit constant)
     '''
+
     mu : float
     '''
-    Mean
+    Mean (fit mean)
     '''
+
     sigma : float
     '''
-    Width
+    Width (fit standard deviation)
     '''
+
+    C : float
+    '''
+    Normalization (sum)
+    '''
+
+    avg : float
+    '''
+    Average
+    '''
+
+    rms : float
+    '''
+    Width (calculated)
+    '''
+
     med : float
     '''
     Median
     '''
+
+    lo : float
+    '''
+    34% quantile below the median
+    '''
+
+    hi : float
+    '''
+    34% quantile above the median
+    '''
+
     cov : numpy.ndarray | None = None
     '''
     Covariance matrix of fit.  Non implies A,mu,sigma are statistical.
     '''
+
     hist: tuple | None = None
     '''
     The bin content and edges of the histgram that was fit
@@ -64,7 +94,8 @@ def baseline_noise(array, bins=200, vrange=100):
     extent explicitly or if scalar the extent is symmetric, ie median+/-vrange.
 
     '''
-    med = numpy.median(array)
+    lo, med, hi = numpy.quantile(array, [0.5-0.34,0.5,0.5+0.34])
+
     if not isinstance(vrange, tuple):
         vrange=(-vrange, vrange)
     vrange=(med+vrange[0], med+vrange[1])
@@ -72,16 +103,20 @@ def baseline_noise(array, bins=200, vrange=100):
     hist = numpy.histogram(array, bins=bins, range=vrange)
     counts, edges = hist
 
-    A = numpy.sum(counts)
-    mu = med
-    sig = sqrt(numpy.average(edges[:-1]**2, weights=counts))
-    p0 = (A, mu, sig)
+    C = numpy.sum(counts)
+    avg = numpy.average(edges[:-1], weights=counts)
+    rms = sqrt(numpy.average((edges[:-1]-avg)**2, weights=counts))
+
+    p0 = (A,mu,sig) = (C,avg,rms)
 
     try:
         (A,mu,sig),cov = curve_fit(gauss, edges[:-1], counts, p0=p0)
     except RuntimeError:
         cov = None
-    return BaselineNoise(A, mu, sig, med, cov, hist)
+    return BaselineNoise(A=A, mu=mu, sigma=sig,
+                         C=C, avg=avg, rms=rms,
+                         med=med, lo=lo, hi=hi,
+                         cov=cov, hist=hist)
     
 
 @dataclasses.dataclass
