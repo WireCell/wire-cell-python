@@ -22,3 +22,5 @@ ltximg
 .envrc
 *.npz
 *.ipynb*
+latexmk-out
+auto

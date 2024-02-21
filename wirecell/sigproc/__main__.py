@@ -79,7 +79,11 @@ def fr2npz(gain, shaping, json_file, npz_file):
     import wirecell.sigproc.response.arrays as arrs
 
     fr = per.load(json_file)
-    gain *= units.mV/units.fC
+    # when json_file really names a detector, that detector may have more than
+    # one field response file - as in uboone.  Here, we only support the first.
+    if isinstance(fr, list):
+        fr = fr[0]              
+    gain = units.mV/units.fC
     shaping *= units.us
     dat = arrs.fr2arrays(fr, gain, shaping)
     numpy.savez(npz_file, **dat)
@@ -121,12 +125,15 @@ def response_info(ctx, json_file):
     Show some info about a field response file (.json or .json.bz2).
     '''
     import wirecell.sigproc.response.persist as per
-    fr = per.load(json_file)
-    log.info ("origin:%.2f cm, period:%.2f us, tstart:%.2f us, speed:%.2f mm/us, axis:(%.2f,%.2f,%.2f)" % \
-           (fr.origin/units.cm, fr.period/units.us, fr.tstart/units.us, fr.speed/(units.mm/units.us), fr.axis[0],fr.axis[1],fr.axis[2]))
-    for pr in fr.planes:
-        log.info ("\tplane:%d, location:%.4fmm, pitch:%.4fmm" % \
-               (pr.planeid, pr.location/units.mm, pr.pitch/units.mm))
+    frs = per.load(json_file)
+    if not isinstance(frs, list):
+        frs = [frs]
+    for fr in frs:
+        log.info ("origin:%.2f cm, period:%.2f us, tstart:%.2f us, speed:%.2f mm/us, axis:(%.2f,%.2f,%.2f)" % \
+               (fr.origin/units.cm, fr.period/units.us, fr.tstart/units.us, fr.speed/(units.mm/units.us), fr.axis[0],fr.axis[1],fr.axis[2]))
+        for pr in fr.planes:
+            log.info ("\tplane:%d, location:%.4fmm, pitch:%.4fmm" % \
+                   (pr.planeid, pr.location/units.mm, pr.pitch/units.mm))
 
 @cli.command("convert-garfield")
 @click.option("-o", "--origin", default="10.0*cm",
@@ -299,7 +306,7 @@ def plot_garfield_track_response(ctx, gain, shaping, tick, tick_padding, electro
 @click.pass_context
 def plot_response_compare_waveforms(ctx, plane, irange, trange, responsefile1, responsefile2, outfile):
     '''
-    Plot common response waveforms from two sets
+    Plot common response waveforms from two sets.
     '''
     import wirecell.sigproc.response.persist as per
     import wirecell.sigproc.response.plots as plots
@@ -331,7 +338,6 @@ def plot_response_compare_waveforms(ctx, plane, irange, trange, responsefile1, r
     plot_paths(responsefile1,0)
     plot_paths(responsefile2,1)
     plt.savefig(outfile)
-
 
 
 

@@ -13,7 +13,8 @@ def unitify(val, unit=""):
     When val is a list, tuple, or dict of unit values, the same
     structure is returned with strings evaluted.
     '''
-
+    if val is None:
+        return None
     if isinstance(val, list):
         return [unitify(one, unit) for one in val]
     if isinstance(val, tuple):

@@ -10,6 +10,8 @@ from collections import defaultdict
 from wirecell import units
 from wirecell.util.functions import unitify, unitify_parse
 from wirecell.util.cli import context, log, jsonnet_loader
+from wirecell.util.fileio import wirecell_path
+from wirecell.util import jsio, detectors
 
 @context("util")
 def cli(ctx):
@@ -17,6 +19,64 @@ def cli(ctx):
     Wire Cell Toolkit Utility Commands
     '''
     pass
+
+@cli.command("lmn")
+@click.option("-n", "--sampling-number", default=None, type=int,
+              help="Original number of samples.")
+@click.option("-t", "--sampling-period", default=None, type=str,
+              help="Original sample period,eg '100*ns'")
+@click.option("-T", "--resampling-period", default=None, type=str,
+              help="Resampled sample period, eg '64*ns'")
+@click.option("-e", "--error", default=1e-6,
+              help="Precision by which integer and rationality conditions are judged")
+def cmd_lmn(sampling_number, sampling_period, resampling_period, error):
+    '''Print various LMN parameters for a given resampling.
+
+    '''
+    Ns, Ts, Tr = sampling_number, sampling_period, resampling_period
+
+    if not Ts or not Ns or not Tr:
+        raise click.BadParameter('Must provide all of -n, -t and -T')
+
+    Ts = unitify(Ts)
+    Tr = unitify(Tr)
+
+    from wirecell.util import lmn
+    print(f'initial sampling: {Ns=} {Ts=}')
+
+    nrat = lmn.rational_size(Ts, Tr, error)
+    print(f'rationality factor: {nrat}')
+
+    nrag = Ns % nrat
+    if nrag:
+        npad = nrat - nrag
+        Ns_rational = Ns + npad
+        print(f'rationality padding: {Ns=} += {npad=} -> {Ns_rational=}')
+    else:
+        print(f'rationality met: {Ns=}')
+        Ns_rational = Ns
+
+    Nr_target = Ns_rational*Ts/Tr
+    assert abs(Nr_target - round(Nr_target)) < error # assured by rational_size()
+    Nr_target = round(Nr_target)
+    print(f'resampling target: {Nr_target=} {Tr=}')
+
+    ndiff = Nr_target - Ns_rational
+    print(f'final resampling: {Ns_rational=}, {Ts=} -> {Nr_target=}, {Tr=} diff of {ndiff}')
+
+
+    Nr_wanted = Ns*Ts/Tr
+    Nr = math.ceil(Nr_wanted)
+    if abs(Nr_wanted - Nr) > error:
+        print(f'--> warning: noninteger {Nr_wanted=} for {Tr=}.  Duration will change from {Ns*Ts} to {Nr*Tr} due to rounding.')
+    print(f'requested resampling target: {Nr=} {Tr=}')
+
+    ntrunc = Nr - Nr_target
+    if ntrunc < 0:
+        print(f'truncate resampled: {Nr_target} -> {Nr}, remove {-ntrunc}')
+    if ntrunc > 0:
+        print(f'extend resampled: {Nr_target} -> {Nr}, insert {ntrunc}')
+
 
 
 @cli.command("convert-oneside-wires")
@@ -1172,7 +1232,124 @@ def ario_cmp(filenames, ario1, ario2):
     sys.exit(ndiffs)
 
 
+@cli.command("detectors")
+@click.option("-p","--path", default=(), multiple=True,
+              help="Add a search path")
+def cmd_detectors(path):
+    '''
+    Known canonical detectors. 
+    '''
+    import sys
+    path = list(path) + list(wirecell_path())
+    sys.stderr.write(f'searching: {path}\n')
+    dets = jsio.resolve("detectors.jsonnet", path)
+    sys.stderr.write(f'detectors file: {dets}\n')
+    dets = jsio.load(dets, path)
+    print (' '.join(dets.keys()))
+        
 
+
+@cli.command("resample")
+@click.option("-t", "--tick", default='500*ns',
+              help="Resample the frame to have this sample period with units, eg '500*ns'")
+@click.option("-o","--output", type=str, required=True,
+              help="Output filename")
+@click.argument("framefile")
+def resample(tick, output, framefile):
+    '''
+    Resample a frame file
+    '''
+    from . import ario, lmn
+
+    Tr = unitify(tick)
+    print(f'resample to {Tr/units.ns}ns to {output}')
+
+
+    fp = ario.load(framefile)
+    f_names = [k for k in fp.keys() if k.startswith("frame_")]
+    c_names = [k for k in fp.keys() if k.startswith("channels_")]
+    t_names = [k for k in fp.keys() if k.startswith("tickinfo_")]
+
+    out = dict()
+
+    for fnum, frame_name in enumerate(f_names):
+        _, suffix = frame_name.split('_',1)
+        ti = fp[f'tickinfo_{suffix}']
+        Ts = ti[1]
+
+        if Tr == Ts:
+            print(f'frame {fnum} "{frame_name}" already sampled at {Tr}')
+            continue
+
+        frame = fp[frame_name]
+        Ns = frame.shape[1]
+        ss = lmn.Sampling(T=Ts, N=Ns)
+
+        Nr = round(Ns * Tr / Ts)
+        sr = lmn.Sampling(T=Tr, N=Nr)
+
+        print(f'{fnum} {frame_name} {ss=} -> {sr=}')
+
+        resampled = numpy.zeros((frame.shape[0], Nr), dtype=frame.dtype)
+        for irow, row in enumerate(frame):
+            sig = lmn.Signal(ss, wave=row)
+            resig = lmn.interpolate(sig, Tr)
+            wave = resig.wave
+            # if Nr != wave.size:
+            #     print(f'resizing to min({Nr=},{wave.size=})')
+            Nend = min(Nr, wave.size)
+            resampled[irow,:Nend] = wave[:Nend]
+        
+        out[f'frame_{suffix}'] = resampled
+        out[f'tickinfo_{suffix}'] = numpy.array([ti[0], Tr, ti[2]])
+        out[f'channels_{suffix}'] = fp[f'channels_{suffix}']
+
+    numpy.savez_compressed(output, **out)
+
+@cli.command("resolve")
+@click.option("-p","--path", default=(), multiple=True,
+              help="Add a search path")
+@click.option("-k","--kind", default=None,
+              help="If name gives a detector then kind must give what kind of file")
+@click.argument("name")
+def resolve(path, kind, name):
+    '''Resolve name to a WCT file '''
+    path = list(path) + list(wirecell_path())
+    
+    def emit(got):
+        if not isinstance(got, list):
+            got = [got]
+        for one in got:
+            if isinstance(one, str):
+                print(one)
+            else:
+                print(one.absolute())
+
+    # fixme: these functions should be in a more generic module!
+    path = jsio.clean_paths(path)
+    try:
+        got = jsio.resolve(name, path)
+    except RuntimeError:
+        pass
+    else:
+        emit(got)
+        return
+
+    if kind:
+        try:
+            got = detectors.resolve(name, kind)
+        except KeyError:
+            pass
+        else:
+            emit(got)
+            return
+
+    sys.stderr.write(f'failed to find {name}, considered paths:\n')
+    sys.stderr.write('\n\t'.join(path))
+    sys.stderr.write('\n')
+    if kind:
+        sys.stderr.write(f'and {kind=}\n')
+    raise ValueError('bad fields')
 
 def main():
     cli(obj=dict())
