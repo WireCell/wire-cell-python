@@ -110,7 +110,7 @@ def direction_to_tpc_angles(direction):
         tpc_angles_to_direction
     """
     theta_y  = math.acos(direction[1])
-    theta_xz = math.acos(direction[2] / math.sqrt(1 - direction[1]**2))
+    theta_xz = math.acos(np.clip(direction[2] / math.sqrt(1 - direction[1]**2), -1, 1))
 
     return theta_y, theta_xz
 
@@ -198,7 +198,7 @@ class TrackMetadata:
     'The angles between each of three wire-plane Y-axes and the direction vector.'
 
     theta_xz_wps: ArrayLike = np.array((3,))
-    'There angles, one for each wire plane coordinate system between their Z-axis and projection of the direction vector into their X-Z plane.'
+    'The angles, one for each wire plane coordinate system between their Z-axis and projection of the direction vector into their X-Z plane.'
 
     eperstep: float = 0
     'The number of electrons per unit track step.'
@@ -259,7 +259,6 @@ def pack_track_metadata(
 
 def generate_line_track(center, tconf, R_wps, plane_idx):
     # pylint: disable=too-many-locals
-
     if tconf.global_angles:
         dir_glb = tpc_angles_to_direction(tconf.theta_y, tconf.theta_xz)
     else:
