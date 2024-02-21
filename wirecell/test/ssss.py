@@ -198,9 +198,10 @@ class Metrics:
     '''Metrics about a signal vs splat'''
 
     neor: int
-    ''' Number of channels over which the rest are calculated.  This can be less
-    than the number of channels in the original "activity" arrays if any given
-    channel has zero activity in both "signal" and "splat".  '''
+    ''' Number of channels with activity in either the signal or splat (or both)
+    and over which the rest are calculated.  This can be less than the number of
+    channels in the original "activity" arrays if any given channel has zero
+    activity in both "signal" and "splat".  '''
 
     ineff: float
     ''' The relative inefficiency.  This is the fraction of channels with splat
@@ -210,6 +211,7 @@ class Metrics:
     '''
     Gaussian fit to relative difference.  .mu is bias and .sigma is resolution.
     '''
+
 
 def calc_metrics(spl_qch, sig_qch, nbins=50):
     '''Return Metrics instance for splat and signal "channel activity" arrays.
@@ -222,17 +224,17 @@ def calc_metrics(spl_qch, sig_qch, nbins=50):
     eor   = numpy.logical_or (spl_qch  > 0, sig_qch  > 0)
     # both are nonzero
     both  = numpy.logical_and(spl_qch  > 0, sig_qch  > 0)
+    # splat but no signal (under efficient)
     nosig = numpy.logical_and(spl_qch  > 0, sig_qch == 0)
+    wsig  = sig_qch  > 0
+    # signal but not splat (over efficient)
     nospl = numpy.logical_and(spl_qch == 0, sig_qch  > 0)
+    wspl  = spl_qch  > 0
 
     neor = numpy.sum(eor)
     nboth = numpy.sum(both)
     # inefficiency
-    nnosig = numpy.sum(nosig)
-    ineff = nnosig/neor
-    # "over" efficiency
-    nnospl = numpy.sum(nospl)
-    oveff = nnospl/neor
+    ineff = numpy.sum(nosig)/numpy.sum(wspl)
 
     reldiff = (spl_qch[both] - sig_qch[both])/spl_qch[both],
     vrange = 0.01*nbins/2
