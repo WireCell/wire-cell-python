@@ -16,6 +16,9 @@ from math import sqrt, pi
 from wirecell.util.codec import dataclass_dictify
 from wirecell.util.bbox import union as union_bbox
 
+import logging
+log = logging.getLogger("wirecell.util")
+
 sqrt2pi = sqrt(2*pi)
 
 def gauss(x, A, mu, sigma, *p):
@@ -43,6 +46,11 @@ class BaselineNoise:
     sigma : float
     '''
     Width (fit standard deviation)
+    '''
+
+    N : int
+    '''
+    Number of samples
     '''
 
     C : float
@@ -93,11 +101,18 @@ def baseline_noise(array, bins=200, vrange=100):
     defines an extent about the MEDIAN VALUE.  If it is a tuple it gives this
     extent explicitly or if scalar the extent is symmetric, ie median+/-vrange.
 
+    This will raise exceptions:
+
+    - ZeroDivisionError when the signal in the vrange is zero.
+
+    - RuntimeError when the fit fails.
+
     '''
+    nsig = len(array)
     lo, med, hi = numpy.quantile(array, [0.5-0.34,0.5,0.5+0.34])
 
     if not isinstance(vrange, tuple):
-        vrange=(-vrange, vrange)
+        vrange=(med-vrange, med+vrange)
     vrange=(med+vrange[0], med+vrange[1])
 
     hist = numpy.histogram(array, bins=bins, range=vrange)
@@ -113,11 +128,12 @@ def baseline_noise(array, bins=200, vrange=100):
         (A,mu,sig),cov = curve_fit(gauss, edges[:-1], counts, p0=p0)
     except RuntimeError:
         cov = None
+
     return BaselineNoise(A=A, mu=mu, sigma=sig,
+                         N=nsig,
                          C=C, avg=avg, rms=rms,
                          med=med, lo=lo, hi=hi,
                          cov=cov, hist=hist)
-    
 
 @dataclasses.dataclass
 @dataclass_dictify

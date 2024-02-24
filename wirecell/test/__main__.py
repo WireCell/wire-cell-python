@@ -22,6 +22,7 @@ def cli(ctx):
     '''
     pass
 
+
 @cli.command("plot")
 @click.option("-n", "--name", default="noise",
               help="The test name")
@@ -37,7 +38,6 @@ def plot(ctx, name, datafile, output):
     fp = ario.load(datafile)
     with plottools.pages(output) as out:
         mod.plot(fp, out)
-    
 
 
 def ssss_args(func):
@@ -53,8 +53,11 @@ def ssss_args(func):
     @functools.wraps(func)
     def wrapper(*args, **kwds):
 
-        kwds["splat"] = ssss.load_frame(kwds.pop("splat"))
-        kwds["signal"] = ssss.load_frame(kwds.pop("signal"))
+        kwds["splat_filename"] = kwds.pop("splat")
+        kwds["signal_filename"] = kwds.pop("signal")
+
+        kwds["splat"] = ssss.load_frame(kwds["splat_filename"])
+        kwds["signal"] = ssss.load_frame(kwds["signal_filename"])
 
         channel_ranges = kwds.pop("channel_ranges")
         if channel_ranges:
@@ -73,6 +76,8 @@ def plot_ssss(channel_ranges, nsigma, nbins, splat, signal, output,
     '''
     Perform the simple splat / sim+signal process comparison test and make plots.
     '''
+
+    nminsig = 3                # sanity check
 
     with pages(output) as out:
 
@@ -100,6 +105,13 @@ def plot_ssss(channel_ranges, nsigma, nbins, splat, signal, output,
 
             spl_qch = numpy.sum(spl.activity[bbox], axis=1)
             sig_qch = numpy.sum(sig.activity[bbox], axis=1)
+
+            nspl = len(spl_qch)
+            nsig = len(sig_qch)
+            if nspl != nsig or nsig < nminsig:
+                log.error(f'error: bad signals: {nspl=} {nsig=} {pln=} {ch=}')
+                raise ValueError(f'bad signals: {nspl=} {nsig=}')
+
             byplane.append((spl_qch, sig_qch))
 
 
@@ -132,7 +144,14 @@ def ssss_metrics(channel_ranges, nsigma, nbins, splat, signal, output, params, *
         spl_qch = numpy.sum(spl.activity[bbox], axis=1)
         sig_qch = numpy.sum(sig.activity[bbox], axis=1)
 
-        m = ssss.calc_metrics(spl_qch, sig_qch, nbins)
+        try:
+            m = ssss.calc_metrics(spl_qch, sig_qch, nbins)
+        except Exception as err:
+            splat_filename = kwds['splat_filename']
+            signal_filename = kwds['signal_filename']
+            log.error(f'error: ({err}) failed to calculate metrics for {pln=} {ch=} {splat_filename=} {signal_filename=}')
+            m = ssss.Metrics()
+            
         metrics.append(dataclasses.asdict(m))
 
     if params:
@@ -149,8 +168,10 @@ def ssss_metrics(channel_ranges, nsigma, nbins, splat, signal, output, params, *
               help="PDF file in which to plot metrics")
 @click.option("--coordinate-plane", default=None, type=int,
               help="Use given plane number as global coordinates plane, default uses per-plane coordinates")
+@click.option("-t","--title", default="",
+              help="The title string")
 @click.argument("files",nargs=-1)
-def plot_metrics(output, coordinate_plane, files):
+def plot_metrics(output, coordinate_plane, title, files):
     '''Plot per-plane metrics from files.
 
     Files are as produced by ssss-metrics and must include a "params" key.
@@ -176,9 +197,15 @@ def plot_metrics(output, coordinate_plane, files):
 
             pmet = met[plane]
             add('ineff', pmet['ineff'])
-            add('bias',  pmet['fit']['avg'])
-            hi = pmet['fit']['hi']
-            lo = pmet['fit']['lo']
+            fit = pmet['fit']
+            if fit is None:
+                add('bias', 1)  # fixme: best way to show failure?
+                add('reso', 1)
+                continue
+
+            add('bias',  fit['avg'])
+            hi = fit['hi']
+            lo = fit['lo']
             add('reso', 0.5*(hi+lo) )
             continue;
 
@@ -193,9 +220,15 @@ def plot_metrics(output, coordinate_plane, files):
             add('ty',  par['theta_y_wps'][plane])
             add('txz', par['theta_xz_wps'][plane])
             add('ineff', pmet['ineff'])
-            add('bias',  pmet['fit']['avg'])
-            hi = pmet['fit']['hi']
-            lo = pmet['fit']['lo']
+            fit = pmet['fit']
+            if fit is None:
+                add('bias', 1)  # fixme: best way to show failure?
+                add('reso', 1)
+                continue
+
+            add('bias',  fit['avg'])
+            hi = fit['hi']
+            lo = fit['lo']
             add('reso', 0.5*(hi+lo) )
         
         
@@ -207,11 +240,13 @@ def plot_metrics(output, coordinate_plane, files):
     pcolors = ('#58D453', '#7D99D1', '#D45853')
 
     fig, axes = plt.subplots(nrows=3, ncols=1, sharex=True)
+    if title:
+        title = ' - ' + title
     if coordinate_plane is None:
-        fig.suptitle("Per-plane angles")
+        fig.suptitle("Per-plane angles" + title)
     else:
         letter = "UVW"[coordinate_plane]
-        fig.suptitle(f'Global angles ({letter}-plane)')
+        fig.suptitle(f'Global angles ({letter}-plane)' + title)
 
     todeg = 180/numpy.pi
     # xlabs = [f'{txz}/{ty}' for txz,ty in zip(

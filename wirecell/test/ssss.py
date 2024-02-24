@@ -15,6 +15,9 @@ from wirecell.util.peaks import (
     baseline_noise, 
     gauss as gauss_func
 )
+import logging
+log = logging.getLogger("wirecell.test")
+
 
 def relbias(a,b):
     '''
@@ -197,17 +200,17 @@ def plot_plane(spl_act, sig_act, nsigma=3.0, title=""):
 class Metrics:
     '''Metrics about a signal vs splat'''
 
-    neor: int
+    neor: int = 0
     ''' Number of channels with activity in either the signal or splat (or both)
     and over which the rest are calculated.  This can be less than the number of
     channels in the original "activity" arrays if any given channel has zero
     activity in both "signal" and "splat".  '''
 
-    ineff: float
+    ineff: float = -1
     ''' The relative inefficiency.  This is the fraction of channels with splat
     but with zero signal.  '''
 
-    fit: BaselineNoise
+    fit: BaselineNoise | None = None
     '''
     Gaussian fit to relative difference.  .mu is bias and .sigma is resolution.
     '''
@@ -219,6 +222,12 @@ def calc_metrics(spl_qch, sig_qch, nbins=50):
     - sig_qch :: 1D array giving total charge per channel from signala
     - nbins :: the number of bins over which to fit the relative difference.
     '''
+
+    nspl = len(spl_qch)
+    nsig = len(sig_qch)
+
+    if nspl != nsig:
+        raise ValueError(f'length mismatch {nspl=} != {nsig=}')
 
     # either-or, exclude channels where both are zero
     eor   = numpy.logical_or (spl_qch  > 0, sig_qch  > 0)
@@ -247,7 +256,13 @@ def plot_metrics(splat_signal_activity_pairs, nbins=50, title="", letters="UVW")
     fig, axes = plt.subplots(nrows=2, ncols=3, sharey="row")
     for pln, (spl_qch, sig_qch) in enumerate(splat_signal_activity_pairs):
 
-        m = calc_metrics(spl_qch, sig_qch, nbins)
+        try:
+            m = calc_metrics(spl_qch, sig_qch, nbins)
+        except:
+            log.error(f'error: failed to get metric for {pln=} {spl_qch.size=} {sig_qch.size=} {nbins=} {title=}')
+            log.debug(f'skipped splat:  {spl_qch=}')
+            log.debug(f'skipped signal: {sig_qch=}')
+            continue
         counts, edges = m.fit.hist
         model = gauss_func(edges[:-1], m.fit.A, m.fit.mu, m.fit.sigma)
 
