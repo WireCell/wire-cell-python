@@ -92,18 +92,22 @@ def fr2npz(gain, shaping, json_file, npz_file):
 @cli.command("frzero")
 @click.option("-n", "--number", default=0,
               help="Number of strip to keep, default keeps just zero strip")              
+@click.option("--index", default=0,
+              help="The FR to use in case a detector has multiple (default=0)")              
 @click.option("-o", "--output",
               default="/dev/stdout",
               help="Output WCT file (.json or .json.bz2, def: stdout)")
 @click.argument("infile")
 @click.pass_context
-def frzero(ctx, number, output, infile):
+def frzero(ctx, number, index, output, infile):
     '''
     Given a WCT FR file, make a new one with off-center wires zeroed.
     '''
     import wirecell.sigproc.response.persist as per
     import wirecell.sigproc.response.arrays as arrs
     fr = per.load(infile)
+    if isinstance(fr, list):
+        fr = fr[index]
     for pr in fr.planes:
         for path in pr.paths:
 
