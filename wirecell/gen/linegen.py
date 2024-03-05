@@ -210,10 +210,10 @@ class TrackMetadata:
     'The canonical name of the detector'
 
     apa: int = -1
-    'The APA number'
+    'The APA number.'
 
     plane_idx: int = -1
-    'The plane index'
+    'The plane index.'
     
     @classmethod
     def from_dict(cls: Type["TrackMetadata"], obj: dict = {}):

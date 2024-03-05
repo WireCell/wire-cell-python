@@ -250,7 +250,7 @@ def load_detector(name):
     try:
         fields = detectors.load(name, "fields")
     except KeyError:
-        raise IOError(f'failed to load fields for detector "{name}"')
+        raise IOError(f'failed to load field files for detector "{name}"')
 
     if isinstance(fields, list):
         return [pod2schema(f) for f in fields]
@@ -272,10 +272,10 @@ def load(path, ext="", paths=()):
 
     '''
 
-    try:
-        path = jsio.resolve(path, paths)
-    except RuntimeError:
+    if not (".json" in path or ".npz" in path):
         return load_detector(path)
+
+    path = jsio.resolve(path, paths)
 
     if ext.endswith(("npz", "npy")) or path.suffix == ".npz":
         return dict(numpy.load(path.absolute()))

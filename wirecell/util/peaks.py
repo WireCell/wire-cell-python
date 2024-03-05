@@ -379,6 +379,8 @@ def select_activity(frame, ch, nsigma=3.0):
     bln = baseline_noise(plane)
     thresh = bln.med + nsigma*bln.sigma
     plats = plateaus(plane, thresh)
+    if plats.number <= 0:
+        raise ValueError(f'no activity in frame {frame.shape=} from {ch=}')
     assert plats.number > 0
     bbox = union_bbox(*plats.bboxes)
     return SelectActivity(

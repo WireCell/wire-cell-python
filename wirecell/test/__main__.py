@@ -9,6 +9,7 @@ import numpy
 import matplotlib.pyplot as plt
 
 from wirecell.util import ario, plottools
+from wirecell.util.functions import unitify_parse, unitify
 from wirecell.util.plottools import pages
 from wirecell.util.cli import context, log
 from wirecell.test import ssss
@@ -41,12 +42,16 @@ def plot(ctx, name, datafile, output):
 
 
 def ssss_args(func):
-    @click.option("--channel-ranges", default="0,800,1600,2560",
-                  help="comma-separated list of channel idents defining ranges")
+    @click.option("--channel-ranges", default="detect",
+                  help="comma-separated list of channel idents defining ranges or 'detect'")
     @click.option("--nsigma", default=3.0,
                   help="Relative threshold on signal in units of number of sigma of noise width")
     @click.option("--nbins", default=50,
                   help="Number of bins over which to fit relative signal-splat difference")
+    @click.option("--tshift", default="0*us",
+                  help="Add this number to the SIGNAL time (tickinfo[0])'")
+    @click.option("--trange", default="0,2*ms",
+                  help="Select time range eg '0,2*ms'")
     @click.option("-o",'--output', default='/dev/stdout')
     @click.argument("splat")
     @click.argument("signal")
@@ -56,13 +61,37 @@ def ssss_args(func):
         kwds["splat_filename"] = kwds.pop("splat")
         kwds["signal_filename"] = kwds.pop("signal")
 
-        kwds["splat"] = ssss.load_frame(kwds["splat_filename"])
-        kwds["signal"] = ssss.load_frame(kwds["signal_filename"])
+        trange = unitify_parse(kwds.pop("trange"))
+
+        tshift = unitify(kwds.pop("tshift"))
+
+        spl = kwds["splat"] = ssss.load_frame(kwds["splat_filename"], trange=trange)
+        sig = kwds["signal"] = ssss.load_frame(kwds["signal_filename"], trange=trange, tshift=tshift)
+
+        splat = spl.frame
+        signal = sig.frame
+
+        if splat.shape != signal.shape:
+            raise ValueError(f'frame shape mismatch {splat.shape=} {signal.shape=}')
+
+        if spl.extent != sig.extent:
+            log.warn(f'frame extent mismatch {spl.extent=} {sig.extent=}')
 
         channel_ranges = kwds.pop("channel_ranges")
-        if channel_ranges:
-             channel_ranges = list(map(int,channel_ranges.split(",")))
-             channel_ranges = [slice(*cr) for cr in zip(channel_ranges[:-1], channel_ranges[1:])]
+        if not channel_ranges:
+            raise ValueError('Must supply --channel-ranges')
+
+        if channel_ranges == "detect":
+            nchan = splat.shape[0]
+            if nchan == 2560:   # APA
+                channel_ranges = "0,800,1600,2560"
+            elif nchan == 8256:   # uboone
+                channel_ranges = "0,2400,4800,8256"
+            else:
+                raise ValueError(f'Unable to detect channel ranges given {nchan=}')
+        channel_ranges = list(map(int,channel_ranges.split(",")))
+        channel_ranges = [slice(*cr) for cr in zip(channel_ranges[:-1], channel_ranges[1:])]
+
         kwds["channel_ranges"] = channel_ranges
         return func(*args, **kwds)
     return wrapper

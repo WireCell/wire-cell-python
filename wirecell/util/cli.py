@@ -3,7 +3,7 @@
 CLI decorators to help build __main__'s
 
 '''
-from wirecell.util import jsio, ario, plottools
+from wirecell.util import jsio, ario, plottools, detectors
 
 import click
 import functools
@@ -101,7 +101,7 @@ def context(group_name, log_name="wirecell"):
 # def mycmd(myfilenamearg):
 #     ### use myfilenamearg directly as object
 #
-# Or, to make use of registry indirection
+# Or, to make use of detectors registry indirection
 # @click.command()
 # @jsonnet_loader("myfilenamearg", "wires")
 # def mycmd(myfilenamearg):
@@ -138,10 +138,10 @@ def jsonnet_loader(jfilekey, regkey=None):
             # print(jkwds)
             ext = kwds.pop("ext")
             jkwds.update(jsio.tla_pack(ext, jpath, 'ext_'))
-            if '.json' in jfile or regkey is None:
+            if '.json' in jfile or regkey is None:  # a literal file
                 kwds[jfkey] = jsio.load(jfile, paths=jpath, **jkwds)
-            else:
-                kwds[jfkey] = jsio.load_registry(jfile, regkey=regkey, paths=jpath, **jkwds)
+            else:               # interpret as detector name
+                kwds[jfkey] = detectors.load(jfile, regkey=regkey, paths=jpath, **jkwds)
             return func(*args, **kwds)
         return wrapper
     return decorator

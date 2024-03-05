@@ -113,7 +113,7 @@ def frzero(ctx, number, index, output, infile):
 
             wire = int(path.pitchpos / pr.pitch)
             if abs(wire) <= number:
-                log.info(f'keep wire: {wire}, pitch = {path.pitchpos} / {pr.pitch}')
+                log.debug(f'keep wire: {wire}, pitch = {path.pitchpos} / {pr.pitch}')
                 continue
 
             nc = len(path.current)

@@ -28,6 +28,7 @@ def relbias(a,b):
     rb[ok] = a[ok]/b[ok] - 1
     return rb
 
+
 @dataclasses.dataclass
 class Frame:
     '''
@@ -55,15 +56,23 @@ class Frame:
     Sample period in WCT system of units
     '''
 
-def load_frame(fname):
+def load_frame(fname, tag="*", ident=0, trange=None, tshift=None):
     '''
     Load a frame with time values in explicit units.
+
+    If trange is given it is a tuple providing (t0,tf) in system of units.
+
+    If tshift is given it is ADDED to the t0 (tickinfo[0]).  
     '''
     fp = numpy.load(fname)
-    f = fp["frame_*_0"]
-    t = fp["tickinfo_*_0"]
-    c = fp["channels_*_0"]
+    suffix = f'{tag}_{ident}'
+    f = fp["frame_"+suffix]
+    t0, tick, tbin = fp["tickinfo_"+suffix]
+    if tshift:
+        t0 += tshift
+    c = fp["channels_"+suffix]
 
+    # assure channels are ordered
     c2 = numpy.array(c)
     numpy.sort(c2)
     assert numpy.all(c == c2)
@@ -74,30 +83,53 @@ def load_frame(fname):
     ff = numpy.zeros((nch, f.shape[1]), dtype=f.dtype)
     for irow, ch in enumerate(c):
         ff[cmin-ch] = f[irow]
-
-    t0 = t[0]
-    tick = t[1]
-    tf = t0 + f.shape[1]*tick
-
-    # edge values
-    extent=(t0, tf+tick, cmin, cmax+1)
     origin = "lower"            # lower flips putting [0,0] at bottom
     ff = numpy.flip(ff, axis=0)
-    return Frame(fname, ff, extent, origin, tick)
+    array_t0 = t0 + tbin*tick
+    array_tf = array_t0 + ff.shape[1]*tick
+
+    if trange:
+        dt0 = (trange[0] - array_t0)/tick
+        dtf = (trange[1] - array_tf)/tick
+        print(f'{dt0=} {dtf=}')
+        dt0 = round(dt0)
+        dtf = round(dtf)
+        if dt0 > 0:
+            ff = ff[:, dt0:]
+        if dt0 < 0:
+            ff = numpy.hstack([numpy.zeros( (ff.shape[0], -dt0) ), ff])
+        array_t0 = trange[0]
+
+        if dtf > 0:
+            ff = numpy.hstack([ff, numpy.zeros( (ff.shape[0], dtf) )])
+        if dtf < 0:
+            ff = ff[:, :dtf]
+        array_tf = trange[1]
+        print(f'{trange=} {dt0=} {dtf=} {ff.shape=}')
+
+    array_extent = (array_t0, array_tf, cmin, cmax+1)
+
+    return Frame(fname, ff, array_extent, origin, tick)
 
 def plot_frame(gs, fr, channel_ranges=None, which="splat", tit=""):
     '''
-    Plot one Frame
+    Plot one Frame as 2D and 2x1D projections.
     '''
+    tunits = units.us
+
     t0,tf,c0,cf = fr.extent
-    t0_us = t0/units.us
-    tf_us = tf/units.us
+    t0_us = t0/tunits
+    tf_us = tf/tunits
+    extent_us = (t0_us, tf_us, c0, cf)
 
     gs = GridSpecFromSubplotSpec(2,2, subplot_spec=gs,
                   height_ratios = [5,1], width_ratios = [6,1])                                 
 
+    # 2D chan vs time frame
     fax = plt.subplot(gs[0,0])
+    # 1D time projection
     tax = plt.subplot(gs[1,0], sharex=fax)
+    # 1D channel projection
     cax = plt.subplot(gs[0,1], sharey=fax)
 
     cax.set_xlabel(which)
@@ -112,14 +144,14 @@ def plot_frame(gs, fr, channel_ranges=None, which="splat", tit=""):
     if which=="splat":
         plt.setp(tax.get_xticklabels(), visible=False)
 
-    im = fax.imshow(fr.frame, extent=fr.extent, origin=fr.origin,
+    im = fax.imshow(fr.frame, extent=extent_us, origin=fr.origin,
                     aspect='auto', vmax=500, cmap='hot_r')
 
     tval = fr.frame.sum(axis=0)
-    t = numpy.linspace(fr.extent[0], fr.extent[1], fr.frame.shape[1]+1,endpoint=True)
-    tax.plot(t[:-1], tval)
+    t = numpy.linspace(t0_us, tf_us, fr.frame.shape[1]+1,endpoint=True)
+    tax.plot(t[:-1], tval)      # all channels
     if channel_ranges:
-        for p,chans in zip("UVW",channel_ranges): # fixme: map to plane labels is only an assumption!
+        for p, chans in zip("UVW",channel_ranges): # fixme: map to plane labels is only an assumption!
             val = fr.frame[chans,:].sum(axis=0)
             c1 = chans.start
             c2 = chans.stop
@@ -245,7 +277,7 @@ def calc_metrics(spl_qch, sig_qch, nbins=50):
     # inefficiency
     ineff = numpy.sum(nosig)/numpy.sum(wspl)
 
-    reldiff = (spl_qch[both] - sig_qch[both])/spl_qch[both],
+    reldiff = (spl_qch[both] - sig_qch[both])/spl_qch[both]
     vrange = 0.01*nbins/2
     bln = baseline_noise(reldiff, nbins, vrange)
 
