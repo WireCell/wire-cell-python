@@ -91,7 +91,6 @@ def load_frame(fname, tag="*", ident=0, trange=None, tshift=None):
     if trange:
         dt0 = (trange[0] - array_t0)/tick
         dtf = (trange[1] - array_tf)/tick
-        print(f'{dt0=} {dtf=}')
         dt0 = round(dt0)
         dtf = round(dtf)
         if dt0 > 0:
@@ -105,7 +104,6 @@ def load_frame(fname, tag="*", ident=0, trange=None, tshift=None):
         if dtf < 0:
             ff = ff[:, :dtf]
         array_tf = trange[1]
-        print(f'{trange=} {dt0=} {dtf=} {ff.shape=}')
 
     array_extent = (array_t0, array_tf, cmin, cmax+1)
 

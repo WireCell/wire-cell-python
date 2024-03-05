@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
-import os
 import sys
 import math
 import json
 import click
 import numpy
+from pathlib import Path
 from collections import defaultdict
 from wirecell import units
 from wirecell.util.functions import unitify, unitify_parse
@@ -72,18 +72,20 @@ def npz_to_wct(transpose, output, name, format, ranges, tinfo, baseline, scale, 
     - A file.npz:array_name with a 1D array of integers.
 
     """
-    from collections import OrderedDict
+    output = Path(output)
+    if output.suffix != '.npz':
+        raise click.BadParameter(f'unsupported output file type: {output}')
 
     tinfo = unitify(tinfo)
     baseline = float(baseline)
     scale = float(scale)
 
-    out_arrays = OrderedDict()
+    out_arrays = dict()
     event = int(event)          # count "event" number
     fp = numpy.load(npzfile)
     for aname in fp:
         arr = fp[aname]
-        print(f'processing {npzfile}')
+        # print(f'processing {npzfile}')
         if transpose:
             arr = arr.T
         if len(arr.shape) != 3:
@@ -127,16 +129,12 @@ def npz_to_wct(transpose, output, name, format, ranges, tinfo, baseline, scale, 
         out_arrays[f'channels_{label}'] = channels
         out_arrays[f'tickinfo_{label}'] = tinfo
 
-    out_dir = os.path.dirname(output)
-    if not os.path.exists(out_dir):
-        os.makedirs(out_dir)
-    if output.endswith(".npz"):
-        if compress:
-            numpy.savez_compressed(output, **out_arrays)
-        else:
-            numpy.savez(output, **out_arrays)
+    if not output.parent.exists():
+        output.parent.mkdir(parents=True)
+    if compress:
+        numpy.savez_compressed(output, **out_arrays)
     else:
-        raise click.BadParameter(f'unsupported output file type: {output}')
+        numpy.savez(output, **out_arrays)
 
 
 @cli.command("comp-metric")
