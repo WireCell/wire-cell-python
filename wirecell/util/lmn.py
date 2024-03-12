@@ -28,6 +28,11 @@ class Sampling:
     The number of samples
     '''
 
+    t0: float = 0.0
+    '''
+    A starting time for the time-domain sampling.
+    '''
+
     @property
     def F(self):
         'The maximum sampling frequency'
@@ -51,7 +56,7 @@ class Sampling:
     @property
     def times(self):
         'Sequence of sample times'
-        return numpy.linspace(0, self.duration, self.N, endpoint=False)
+        return self.t0+numpy.linspace(0, self.duration, self.N, endpoint=False)
 
     @property
     def freqs(self):
@@ -139,6 +144,13 @@ class Signal:
         The amount of Parseval energy in the frequency domain.
         '''
         return numpy.sum( numpy.abs( self.spec * numpy.conj(self.spec) ) ) / self.sampling.N
+
+    def linterp(self, sampling, name=None):
+        '''
+        Return a new signal that is a time-domain linear interpolation
+        '''
+        wave = numpy.interp(sampling.times, self.sampling.times, self.wave)
+        return Signal(sampling, wave=wave, name=name or self.name)
 
 
 def bezout(a, b, eps=1e-6):

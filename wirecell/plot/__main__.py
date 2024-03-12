@@ -390,7 +390,7 @@ def channels(output, channel, trange, frange, yrange, frame_files, **kwds):
                 for fr in frs:
                     wave = fr.waves(chan)
                     axes[0].set_title("waveforms")
-                    axes[0].plot(fr.times/units.us, wave, drawstyle='steps')
+                    axes[0].plot(fr.times/units.us, wave)
                     if trange:
                         axes[0].set_xlim(trange[0]/units.us, trange[1]/units.us)
                     if yrange:
