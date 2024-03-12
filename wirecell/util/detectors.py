@@ -49,7 +49,7 @@ def load(name,
     loaded objects is returned.  Else, the object is returned.
 
     '''
-    if '.jsio' in name or regkey is None: # act like load()
+    if '.json' in name or regkey is None: # act like load()
         return jload(name, paths, **kwds)
 
     fname = resolve(name, regkey, registry, paths, **kwds)

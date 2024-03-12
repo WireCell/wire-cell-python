@@ -405,24 +405,22 @@ def wires_channels(ctx, output, json_file):
     
 
 @cli.command("wires-volumes")
-@click.option('-a', '--anode', default=1.0*units.cm,
-              help='Distance from collection plane to "anode" (cutoff) plane (cm)')
-@click.option('-r', '--response', default=10.0*units.cm,
-              help='Distance from collection plane to "respones" plane, should probably match Garfield (cm)')
-@click.option('-c', '--cathode', default=1.0*units.m,
-              help='Distance from colleciton plane to "cathode" plane (cm)')
+@click.option('-a', '--anode', default="1*cm",
+              help='Distance from collection plane to "anode" (cutoff) plane (in system of units)')
+@click.option('-r', '--response', default="10*cm",
+              help='Distance from collection plane to "respones" plane, should probably match Garfield (in system of units)')
+@click.option('-c', '--cathode', default="1*m",
+              help='Distance from colleciton plane to "cathode" plane (in system of units)')
 @click.argument("json-file")
 @click.pass_context
 def wires_volumes(ctx, anode, response, cathode, json_file):
     '''
-    Print a parms.det.volumes JSON fragment for the given wires file.
+    Print a params.geometry JSON fragment for the given wires file.
 
-    You very likely want to carefully supply ALL command line options.
+    You likely want to pipe this through jsonnetfmt go get pretty print.
     '''
-    import wirecell.util.wires.persist as wpersist
     import wirecell.util.wires.info as winfo
-    wires = wpersist.load(json_file)
-    jv = winfo.jsonnet_volumes(wires, anode*units.cm, response*units.cm, cathode*units.cm)
+    jv = winfo.jsonnet_volumes(json_file, unitify(anode), unitify(response), unitify(cathode))
     click.echo(str(jv))
 
 

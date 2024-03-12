@@ -86,6 +86,8 @@ def condition(period, rolloff, output, frfile):
     import wirecell.resp.resample as res
 
     fr = per.load(frfile)
+    if isinstance(fr, list):
+        fr = fr[0]
     if period:
         fr.period = unitify(period)
     if rolloff:

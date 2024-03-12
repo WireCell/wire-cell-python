@@ -2,6 +2,7 @@
 '''
 Functions to provide information about wires
 '''
+from pathlib import Path
 from wirecell import units
 from .common import Ray
 import numpy
@@ -277,8 +278,8 @@ def summary(store):
                                   len(plane['wires']), pitches[pind]))
     return lines
 
-def jsonnet_volumes(store,
-                    danode=0.0, dresponse=10*units.cm, dcathode=1*units.m, volpat=None):
+def jsonnet_volumes(wires_name,
+                    danode=0.0, dresponse=10*units.cm, dcathode=1*units.m):
     '''
     Return a Jsonnet string suitable for copying to set
     params.det.volumes found in the pgrapher configuration.
@@ -290,51 +291,104 @@ def jsonnet_volumes(store,
     The "d" arguments give the distance measured from the collection
     plane to each of these logical planes.
     '''
+    import wirecell.util.wires.persist as wpersist
+    store = wpersist.load(wires_name)
+
+    if ".json" in wires_name:
+        wires_fname = wires_name
+    else:
+        from wirecell.util import detectors
+        wires_fname = detectors.resolve(wires_name, "wires")
+    wires_fname = Path(wires_fname).name
+
+    header = f'''
+    wires_file: "{wires_fname}",
+    
+    // distance between collection wire plane and a plane.
+    xplanes: {{
+        danode: {danode/units.mm:.1f}*wc.mm,
+        dresponse: {dresponse/units.mm:.1f}*wc.mm,
+        dcathode: {dcathode/units.mm:.1f}*wc.mm
+    }},
+    local xplanes = self.xplanes, // to make available below
+'''
 
     voltexts = list()
-    volpat = volpat or '''
+    volpat = '''
+    {{
         wires: {anode},
-        name: anode{anode},
-        faces: [ {faces} ],
+        xcenter: {xcenter_mm:.1f}*wc.mm, // absolute center of APA
+        local xcenter = self.xcenter, // to make available below.
+        faces: [
+{faces}
+        ],
+    }},
 '''
-    facepat = "anode:{anodex}*wc.cm, cathode:{cathodex}*wc.cm, response:{responsex}*wc.cm"
+    facepat = '''
+        {{
+            local dcollection = {dcollection_str},
+            anode: xcenter {sign} (xplanes.danode + dcollection),
+            response: xcenter {sign} (xplanes.dresponse + dcollection),
+            cathode: xcenter {sign} (xplanes.dcathode + dcollection),
+        }},
+'''
 
     for idet, det in enumerate(todict(store)):
         for anode in det['anodes']:
             faces = anode['faces']
+            nfaces = len(faces)
             assert (len(faces) <= 2)
+
+            # find "center" of one or two W planes.
+            w_bb = BoundingBox()
+            for face in faces:
+                # fixme: technically, ident is an opaque number but this is the
+                # dominant convention!(?).
+                w_plane = [p for p in face['planes'] if p['ident'] == 2][0]
+                for wire in w_plane['wires']:
+                    w_bb(wire['head']);
+                    w_bb(wire['tail']);
+            wcenterx = w_bb.center()['x']
+
+            # iterate faces
             facetexts = ["null","null"]
             for face in faces:
-                face_bbs = list()
-                for plane in face['planes']:
-                    bb = BoundingBox()
-                    for wire in plane['wires']:
-                        bb(wire['head']);
-                        bb(wire['tail']);
-                    face_bbs.append(bb)
-                    continue    # plane
-                uvw_x = [bb.minp['x'] for bb in face_bbs]
-                sign = +1.0
+                u_bb = BoundingBox()
+                u_plane = [p for p in face['planes'] if p['ident'] == 0][0]
+                for wire in u_plane['wires']:
+                    u_bb(wire['head']);
+                    u_bb(wire['tail']);
+                ucenterx = u_bb.center()['x']
+
+                dcollection = ucenterx - wcenterx
+
+                sign = "+"
                 find = 0
-                if uvw_x[0] < uvw_x[2]: # U below W means "back" face
-                    sign = -1.0
+                if dcollection < 0: # U below W means "back" face
+                    sign = "-"
                     find = 1
                 
-                xorigin = uvw_x[2]
-                facetexts[find] = "\n            {" + facepat.format(
-                    anodex = (xorigin + sign*danode)/units.cm,
-                    responsex = (xorigin + sign*dresponse)/units.cm,
-                    cathodex = (xorigin + sign*dcathode)/units.cm) + "}"
+                dcollection_str = f'{abs(dcollection/units.mm):.1f}*wc.mm'
+                facetexts[find] = facepat.format(sign=sign, dcollection_str=dcollection_str)
                 continue        # face
 
-            facetext = ','.join(facetexts)
-            voltext = "    {" + volpat.format(anode=anode["ident"], faces=facetext) + "    }"
+            facetext = ''.join(facetexts)
+            voltext = volpat.format(anode=anode['ident'],
+                                    xcenter_mm=wcenterx/units.mm,
+                                    faces=facetext)
             voltexts.append(voltext)
             continue            # anode
         continue                # detector
     
-    argstext   = "    local volumeargs = { danode:%f*wc.cm, dresponse:%f*wc.cm, dcathode:%f*wc.cm },\n" \
-                                         % (danode/units.cm, dresponse/units.cm, dcathode/units.cm)
-    volumetext = "    volumes: [\n" + ',\n'.join(voltexts) + "\n    ],\n";
-    return argstext+volumetext;
+    all_voltexts = '\n'.join(voltexts)
+    text = f'''
+    local wc = import "wirecell.jsonnet";
+    {{
+    {header}
+    volumes: [
+    {all_voltexts}
+    ]
+    }}
+    '''
+    return text
     

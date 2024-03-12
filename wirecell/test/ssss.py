@@ -15,6 +15,9 @@ from wirecell.util.peaks import (
     baseline_noise, 
     gauss as gauss_func
 )
+import logging
+log = logging.getLogger("wirecell.test")
+
 
 def relbias(a,b):
     '''
@@ -24,6 +27,7 @@ def relbias(a,b):
     ok = b>0
     rb[ok] = a[ok]/b[ok] - 1
     return rb
+
 
 @dataclasses.dataclass
 class Frame:
@@ -52,15 +56,23 @@ class Frame:
     Sample period in WCT system of units
     '''
 
-def load_frame(fname):
+def load_frame(fname, tag="*", ident=0, trange=None, tshift=None):
     '''
     Load a frame with time values in explicit units.
+
+    If trange is given it is a tuple providing (t0,tf) in system of units.
+
+    If tshift is given it is ADDED to the t0 (tickinfo[0]).  
     '''
     fp = numpy.load(fname)
-    f = fp["frame_*_0"]
-    t = fp["tickinfo_*_0"]
-    c = fp["channels_*_0"]
+    suffix = f'{tag}_{ident}'
+    f = fp["frame_"+suffix]
+    t0, tick, tbin = fp["tickinfo_"+suffix]
+    if tshift:
+        t0 += tshift
+    c = fp["channels_"+suffix]
 
+    # assure channels are ordered
     c2 = numpy.array(c)
     numpy.sort(c2)
     assert numpy.all(c == c2)
@@ -71,30 +83,51 @@ def load_frame(fname):
     ff = numpy.zeros((nch, f.shape[1]), dtype=f.dtype)
     for irow, ch in enumerate(c):
         ff[cmin-ch] = f[irow]
-
-    t0 = t[0]
-    tick = t[1]
-    tf = t0 + f.shape[1]*tick
-
-    # edge values
-    extent=(t0, tf+tick, cmin, cmax+1)
     origin = "lower"            # lower flips putting [0,0] at bottom
     ff = numpy.flip(ff, axis=0)
-    return Frame(fname, ff, extent, origin, tick)
+    array_t0 = t0 + tbin*tick
+    array_tf = array_t0 + ff.shape[1]*tick
+
+    if trange:
+        dt0 = (trange[0] - array_t0)/tick
+        dtf = (trange[1] - array_tf)/tick
+        dt0 = round(dt0)
+        dtf = round(dtf)
+        if dt0 > 0:
+            ff = ff[:, dt0:]
+        if dt0 < 0:
+            ff = numpy.hstack([numpy.zeros( (ff.shape[0], -dt0) ), ff])
+        array_t0 = trange[0]
+
+        if dtf > 0:
+            ff = numpy.hstack([ff, numpy.zeros( (ff.shape[0], dtf) )])
+        if dtf < 0:
+            ff = ff[:, :dtf]
+        array_tf = trange[1]
+
+    array_extent = (array_t0, array_tf, cmin, cmax+1)
+
+    return Frame(fname, ff, array_extent, origin, tick)
 
 def plot_frame(gs, fr, channel_ranges=None, which="splat", tit=""):
     '''
-    Plot one Frame
+    Plot one Frame as 2D and 2x1D projections.
     '''
+    tunits = units.us
+
     t0,tf,c0,cf = fr.extent
-    t0_us = t0/units.us
-    tf_us = tf/units.us
+    t0_us = t0/tunits
+    tf_us = tf/tunits
+    extent_us = (t0_us, tf_us, c0, cf)
 
     gs = GridSpecFromSubplotSpec(2,2, subplot_spec=gs,
                   height_ratios = [5,1], width_ratios = [6,1])                                 
 
+    # 2D chan vs time frame
     fax = plt.subplot(gs[0,0])
+    # 1D time projection
     tax = plt.subplot(gs[1,0], sharex=fax)
+    # 1D channel projection
     cax = plt.subplot(gs[0,1], sharey=fax)
 
     cax.set_xlabel(which)
@@ -109,14 +142,14 @@ def plot_frame(gs, fr, channel_ranges=None, which="splat", tit=""):
     if which=="splat":
         plt.setp(tax.get_xticklabels(), visible=False)
 
-    im = fax.imshow(fr.frame, extent=fr.extent, origin=fr.origin,
+    im = fax.imshow(fr.frame, extent=extent_us, origin=fr.origin,
                     aspect='auto', vmax=500, cmap='hot_r')
 
     tval = fr.frame.sum(axis=0)
-    t = numpy.linspace(fr.extent[0], fr.extent[1], fr.frame.shape[1]+1,endpoint=True)
-    tax.plot(t[:-1], tval)
+    t = numpy.linspace(t0_us, tf_us, fr.frame.shape[1]+1,endpoint=True)
+    tax.plot(t[:-1], tval)      # all channels
     if channel_ranges:
-        for p,chans in zip("UVW",channel_ranges): # fixme: map to plane labels is only an assumption!
+        for p, chans in zip("UVW",channel_ranges): # fixme: map to plane labels is only an assumption!
             val = fr.frame[chans,:].sum(axis=0)
             c1 = chans.start
             c2 = chans.stop
@@ -197,19 +230,21 @@ def plot_plane(spl_act, sig_act, nsigma=3.0, title=""):
 class Metrics:
     '''Metrics about a signal vs splat'''
 
-    neor: int
-    ''' Number of channels over which the rest are calculated.  This can be less
-    than the number of channels in the original "activity" arrays if any given
-    channel has zero activity in both "signal" and "splat".  '''
+    neor: int = 0
+    ''' Number of channels with activity in either the signal or splat (or both)
+    and over which the rest are calculated.  This can be less than the number of
+    channels in the original "activity" arrays if any given channel has zero
+    activity in both "signal" and "splat".  '''
 
-    ineff: float
+    ineff: float = -1
     ''' The relative inefficiency.  This is the fraction of channels with splat
     but with zero signal.  '''
 
-    fit: BaselineNoise
+    fit: BaselineNoise | None = None
     '''
     Gaussian fit to relative difference.  .mu is bias and .sigma is resolution.
     '''
+
 
 def calc_metrics(spl_qch, sig_qch, nbins=50):
     '''Return Metrics instance for splat and signal "channel activity" arrays.
@@ -218,23 +253,29 @@ def calc_metrics(spl_qch, sig_qch, nbins=50):
     - nbins :: the number of bins over which to fit the relative difference.
     '''
 
+    nspl = len(spl_qch)
+    nsig = len(sig_qch)
+
+    if nspl != nsig:
+        raise ValueError(f'length mismatch {nspl=} != {nsig=}')
+
     # either-or, exclude channels where both are zero
     eor   = numpy.logical_or (spl_qch  > 0, sig_qch  > 0)
     # both are nonzero
     both  = numpy.logical_and(spl_qch  > 0, sig_qch  > 0)
+    # splat but no signal (under efficient)
     nosig = numpy.logical_and(spl_qch  > 0, sig_qch == 0)
+    wsig  = sig_qch  > 0
+    # signal but not splat (over efficient)
     nospl = numpy.logical_and(spl_qch == 0, sig_qch  > 0)
+    wspl  = spl_qch  > 0
 
     neor = numpy.sum(eor)
     nboth = numpy.sum(both)
     # inefficiency
-    nnosig = numpy.sum(nosig)
-    ineff = nnosig/neor
-    # "over" efficiency
-    nnospl = numpy.sum(nospl)
-    oveff = nnospl/neor
+    ineff = numpy.sum(nosig)/numpy.sum(wspl)
 
-    reldiff = (spl_qch[both] - sig_qch[both])/spl_qch[both],
+    reldiff = (spl_qch[both] - sig_qch[both])/spl_qch[both]
     vrange = 0.01*nbins/2
     bln = baseline_noise(reldiff, nbins, vrange)
 
@@ -245,7 +286,13 @@ def plot_metrics(splat_signal_activity_pairs, nbins=50, title="", letters="UVW")
     fig, axes = plt.subplots(nrows=2, ncols=3, sharey="row")
     for pln, (spl_qch, sig_qch) in enumerate(splat_signal_activity_pairs):
 
-        m = calc_metrics(spl_qch, sig_qch, nbins)
+        try:
+            m = calc_metrics(spl_qch, sig_qch, nbins)
+        except:
+            log.error(f'error: failed to get metric for {pln=} {spl_qch.size=} {sig_qch.size=} {nbins=} {title=}')
+            log.debug(f'skipped splat:  {spl_qch=}')
+            log.debug(f'skipped signal: {sig_qch=}')
+            continue
         counts, edges = m.fit.hist
         model = gauss_func(edges[:-1], m.fit.A, m.fit.mu, m.fit.sigma)
 
