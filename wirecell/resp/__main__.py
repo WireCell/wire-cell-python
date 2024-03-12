@@ -301,6 +301,7 @@ def compare(ctx, prange, logy, irange, arange, gain, shaping, output, responsefi
             printer.savefig()
 
 
+# lazy.
 from wirecell.resp.plots import *
 
 @cli.command("lmn-fr-plots")
@@ -332,6 +333,7 @@ def lmn_fr_plots(impact, plane, period,
     '''
     Make plots for LMN FR presentation.
     '''
+
     Tr = unitify(tick)
     if vmm:
         vmm = unitify_parse(vmm)
@@ -354,6 +356,8 @@ def lmn_fr_plots(impact, plane, period,
 
     dsigs = lmn.convolve(sigs, ers, name='I_{og} \otimes E_{og}')
     dsigr = lmn.convolve(sigr, err, name='I_{rs} \otimes E_{rs}')
+    print(f'{sigs.wave.shape}........ ')
+
     dsigr2 = lmn.interpolate(dsigs, Tr, name="(I_{og} \otimes E_{og})_{rs}")
 
     dtsigs = multiply_period(dsigs, name='T \cdot I_{og} \otimes E_{og}')
@@ -364,6 +368,20 @@ def lmn_fr_plots(impact, plane, period,
     qsigr = multiply_period(sigr, name='Q_{rs}')
     qdsigs = lmn.convolve(qsigs, ers, name='Q_{og} \otimes E_{og}')
     qdsigr = lmn.convolve(qsigr, err, name='Q_{rs} \otimes E_{rs}')
+
+    # here we set up downsample before FRxER convolution.
+    sim_tick = 500*units.ns
+    # downsample
+    sigs_ds = lmn.interpolate(sigs, sim_tick, name="Q_{ds}")
+    ers_ds = eresp(sigs_ds.sampling, "E_{ds}")
+    dsigs_dc = lmn.convolve(sigs_ds, ers_ds, name='I_{ds} \otimes E_{ds}')
+    qdsigs_dc = multiply_period(dsigs_dc, name='V_{dc}')
+    # convolve then downsample
+    qdsigs_cd = lmn.interpolate(dtsigs, sim_tick,name='V_{cd}')
+    print(f'{dtsigs.wave.shape=} {qdsigs_cd.wave.shape=} {qdsigs_dc.wave.shape=}')
+
+    qdsigs_dccd_diff = qdsigs_dc.subtract(qdsigs_cd, name='V_{dc} - V_{cd}')
+
 
     full_range = dict(tlim=(0, sigs.sampling.T*sigs.sampling.N),
                       flim=(0*units.MHz, 10*units.MHz))
@@ -451,6 +469,28 @@ def lmn_fr_plots(impact, plane, period,
         axes[0].set_ylim(-tiny, tiny)
         newpage(fig, 'fig-v-back', f'voltage response ({detector_name} plane {plane} impact {impact}, zoom back)')
         print('q=', 100*numpy.sum(qdsigs.wave) / numpy.sum(numpy.abs(qdsigs.wave)), '%')
+
+        # ER in fast and slow binning
+        fig,_ = plot_signals((ers, ers_ds), iunits='mV/fC',
+                             tlim=(0*units.us, 20*units.us),
+                             flim=(0*units.MHz, 1*units.MHz))
+        newpage(fig, 'fig-cer-ds', 'slow sampled cold electronics response: $ER$')
+        
+        # FR in fast and slow
+        fig,_ = plot_signals((sigs, sigs_ds), iunits='femtoampere', **zoom_kwds)
+        newpage(fig, 'fig-fr-ds', frtit + ' downsampled')
+
+        # DR: fast and down+conv and conv+down.
+        fig,_ = plot_signals((qdsigs, qdsigs_dc, qdsigs_cd), iunits='mV', **conv_range)
+        newpage(fig, 'fig-v-dccd', f'd+c/c+d voltage response ({detector_name} plane {plane} impact {impact})')
+
+        # Diff of DR between down+conv and conv+down.
+        fig,_ = plot_signals((qdsigs_dccd_diff,), iunits='mV', **conv_range)
+        newpage(fig, 'fig-dv-dccd', f'voltage response cd/dc error ({detector_name} plane {plane} impact {impact})')
+        # fig,_ = plot_shift((qdsigs_dc, qdsigs_cd), iunits='mV', **conv_range)
+        # newpage(fig, 'fig-v-dccd-shift', f'd+c/c+d voltage shift ({detector_name} plane {plane} impact {impact})')
+
+        # yet more checks
 
         colors=["black","red","blue","green","yellow"]
 

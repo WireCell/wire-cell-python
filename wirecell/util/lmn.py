@@ -152,6 +152,14 @@ class Signal:
         wave = numpy.interp(sampling.times, self.sampling.times, self.wave)
         return Signal(sampling, wave=wave, name=name or self.name)
 
+    def subtract(self, other, name=None):
+        siz = min(self.wave.size, other.wave.size)
+        wav = self.wave[:siz] - other.wave[:siz]
+        sam = Sampling(T=self.sampling.T, N=siz)
+        return Signal(sam, wave = wav, name=name or self.name)
+    
+    def multiply(self, factor, name=None):
+        return Signal(self.sampling, wave=self.wave*factor, name=name or self.name)
 
 def bezout(a, b, eps=1e-6):
     '''Greated common divisor and Bezout coefficients.

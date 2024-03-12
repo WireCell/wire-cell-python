@@ -105,6 +105,28 @@ def plot_signals(sigs, tlim=None, flim=None, tunits="us", funits="MHz",
     axes[1].legend()
     return fig, axes
 
+def plot_shift(sig1, sig2,
+               tlim=None, flim=None, tunits="us", funits="MHz",
+               iunits="femtoampere", ilim=None,
+               drawstyle='steps',
+               *args, **kwds):
+    '''
+    Plot the amplitude of the two signals in frequency domain and the phase
+    of the ratio of their frequency domain samples.
+
+    The two signals must have identical sampling.
+
+    '''
+    fig,axes = plt.subplots(nrows=1, ncols=2)
+
+    tunits_v = unitify(tunits)
+    funits_v = unitify(funits)
+    iunits_v = unitify(iunits)
+
+    colors = ["black","red","blue"]
+    
+    
+
 def plot_ends(arrays, names, iunits='femtoampere'):
     fig,ax = plt.subplots(nrows=1, ncols=1)
 
@@ -161,7 +183,7 @@ def plot_wave_diffs(sigs, primary=0, xlim=None,
     axes[0].set_xlabel('time [us]')
 
     axes[1].legend()
-    axes[1].set_title(f'Difference from {prim.name}')
+    axes[1].set_title(f'Difference from ${prim.name}$')
     axes[1].set_xlabel('time [us]')
     axes[1].set_ylabel('difference')
     if xlim:
