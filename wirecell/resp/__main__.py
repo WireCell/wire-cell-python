@@ -350,12 +350,17 @@ def lmn_fr_plots(impact, plane, period,
     FRs = load_fr(field_file or detector_name)
     if period:
         FRs.period = unitify(period)
-    sigs = fr_sig(FRs, "I_{og}", impact, plane)
+    nrat = lmn.rational_size(FRs.period, Tr)
+    sigs_orig = fr_sig(FRs, "I_{og}", impact, plane)
+    print(f'Ns_orig={sigs_orig.sampling.N} Ts={sigs_orig.sampling.T} {Tr=} -> {nrat=}')
+
+    sigs = lmn.rational(sigs_orig, Tr)
     arrs = fr_arr(FRs)
 
     FRr = res.resample(FRs, Tr)
     sigr = fr_sig(FRr, "I_{rs}", impact, plane)
     arrr = fr_arr(FRr)
+    print(f'Ns={sigs.sampling.N} Ts={sigs.sampling.T} Nr={sigr.sampling.N} Tr={sigr.sampling.T}')
 
     ers = eresp(sigs.sampling, "E_{og}")
     err = eresp(sigr.sampling, "E_{rs}")
@@ -365,7 +370,6 @@ def lmn_fr_plots(impact, plane, period,
 
     dsigs = lmn.convolve(sigs, ers, name=r'I_{og} \otimes E_{og}')
     dsigr = lmn.convolve(sigr, err, name=r'I_{rs} \otimes E_{rs}')
-    print(f'{sigs.wave.shape}........ ')
 
     dsigr2 = lmn.interpolate(dsigs, Tr, name=r"(I_{og} \otimes E_{og})_{rs}")
 
@@ -380,14 +384,22 @@ def lmn_fr_plots(impact, plane, period,
 
     # here we set up downsample before FRxER convolution.
     sim_tick = 500*units.ns
+    decimation = round(sim_tick/sigs.sampling.T)
+
     # downsample
-    sigs_ds = lmn.interpolate(sigs, sim_tick, name="Q_{ds}")
-    ers_ds = eresp(sigs_ds.sampling, "E_{ds}")
-    dsigs_dc = lmn.convolve(sigs_ds, ers_ds, name=r'I_{ds} \otimes E_{ds}')
-    qdsigs_dc = multiply_period(dsigs_dc, name='V_{dc}')
-    # convolve then downsample
-    qdsigs_cd = lmn.interpolate(dtsigs, sim_tick, name='V_{cd}')
-    qdsigs_dccd_diff = qdsigs_dc.subtract(qdsigs_cd, name='V_{dc} - V_{cd}')
+    sigs_ds = lmn.interpolate(sigs, sim_tick, name="I_{ds}")
+    sigs_dm = lmn.decimate(sigs, decimation, name="I_{dm}")
+    ers_ss = eresp(sigs_ds.sampling, "E_{ss}")  # slow sample
+    dsigs_dsc = lmn.convolve(sigs_ds, ers_ss, name='I_{ds} \otimes E_{ss}')
+    dsigs_dmc = lmn.convolve(sigs_dm, ers_ss, name='I_{dm} \otimes E_{ss}')
+    qdsigs_dsc = multiply_period(dsigs_dsc, name='V_{dsc}')
+    qdsigs_dmc = multiply_period(dsigs_dmc, name='V_{dmc}')
+    # convolve then downsample/decimate
+    qdsigs_cds = lmn.interpolate(dtsigs, sim_tick,name='V_{cds}')
+    qdsigs_cdm = lmn.decimate(dtsigs, decimation, name='V_{cdm}')
+    print(f'{dtsigs.wave.shape=} {qdsigs_cds.wave.shape=} {qdsigs_dsc.wave.shape=} {qdsigs_cdm.wave.shape=} {qdsigs_dmc.wave.shape=}')
+
+    ## end building data arrays
 
     full_range = dict(tlim=(0, sigs.sampling.T*sigs.sampling.N),
                       flim=(0*units.MHz, 10*units.MHz))
@@ -497,23 +509,17 @@ def lmn_fr_plots(impact, plane, period,
                 'slow sampled cold electronics response: $ER$')
 
         # FR in fast and slow
-        fig, _ = plot_signals((sigs, sigs_ds), iunits='femtoampere',
-                              **zoom_kwds)
-        newpage(fig, 'fig-fr-ds', frtit + ' downsampled')
+        fig,_ = plot_signals((sigs, sigs_ds, sigs_dm), iunits='femtoampere', **zoom_kwds)
+        newpage(fig, 'fig-fr-ds', 'FR(I) (downsample vs decimate) $\leftrightarrow$ convolve')
 
         # DR: fast and down+conv and conv+down.
-        fig, _ = plot_signals((qdsigs, qdsigs_dc, qdsigs_cd), iunits='mV',
-                              **conv_range)
-        newpage(fig, 'fig-v-dccd', 'd+c/c+d voltage response '
-                f'({detector_name} plane {plane} impact {impact})')
+        fig,_ = plot_signals((qdsigs, qdsigs_dsc, qdsigs_cds, qdsigs_dmc, qdsigs_cdm),
+                             iunits='mV', drawstyle='steps-mid', **conv_range)
+        newpage(fig, 'fig-v-dccd', '$V=T \cdot FR \otimes ER$ (downsample vs decimate) $\leftrightarrow$ convolve')
 
-        # Diff of DR between down+conv and conv+down.
-        fig, _ = plot_signals((qdsigs_dccd_diff,), iunits='mV', **conv_range)
-        newpage(fig, 'fig-dv-dccd', 'voltage response cd/dc error '
-                f'({detector_name} plane {plane} impact {impact})')
-
-        # fig,_ = plot_shift((qdsigs_dc, qdsigs_cd), iunits='mV', **conv_range)
-        # newpage(fig, 'fig-v-dccd-shift', f'd+c/c+d voltage shift ({detector_name} plane {plane} impact {impact})')
+        shift_range = dict(flim=(0*units.MHz, 1.0*units.MHz))
+        fig,_ = plot_shift((qdsigs_cds, qdsigs_dsc, qdsigs_cdm, qdsigs_dmc), **shift_range)
+        newpage(fig, 'fig-v-dccd-shift', 'V shift? (downsample vs decimate) $\leftrightarrow$ convolve')
 
         # yet more checks
 
@@ -559,12 +565,12 @@ def lmn_fr_plots(impact, plane, period,
 
         diff_sigs = [qdsigs, qdsigr, vr_shift]
         ndiff_sigs = len(diff_sigs)
-        fig, axes = plot_wave_diffs(
-            diff_sigs, xlim=zoom_kwds['tlim'], marker='.',
-            per=[dict(markersize=ndiff_sigs-ind,
-                      color=colors[ind]) for ind in range(ndiff_sigs)])
-        newpage(fig, 'fig-v-diff', 'voltage differences '
-                f'({detector_name} plane {plane} impact {impact})')
+        fig, axes = plot_wave_diffs(diff_sigs, xlim=zoom_kwds['tlim'], marker='.',
+                                    per = [dict(markersize=ndiff_sigs-ind,
+                                                color=colors[ind]) for ind in range(ndiff_sigs)])
+        newpage(fig, 'fig-v-diff', f'voltage response ({detector_name} plane {plane} impact {impact})')
+ 
+        
 
     if org_output:
         with open(org_output, "w") as oo:
