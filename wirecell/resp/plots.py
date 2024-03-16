@@ -57,7 +57,7 @@ def label(sig):
 
 def plot_signals(sigs, tlim=None, flim=None, tunits="us", funits="MHz",
                  iunits="femtoampere", ilim=None,
-                 drawstyle='steps',
+                 drawstyle='steps-mid',
                  *args, **kwds):
     '''
     Plot signals in time and frequency domain.
@@ -71,7 +71,7 @@ def plot_signals(sigs, tlim=None, flim=None, tunits="us", funits="MHz",
     funits_v = unitify(funits)
     iunits_v = unitify(iunits)
 
-    colors = ["black","red","blue"]
+    colors = ["black", "red", "blue", "purple"]
 
     for ind, sig in enumerate(sigs):
         try:
