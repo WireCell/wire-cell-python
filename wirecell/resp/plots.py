@@ -57,7 +57,7 @@ def label(sig):
 
 def plot_signals(sigs, tlim=None, flim=None, tunits="us", funits="MHz",
                  iunits="femtoampere", ilim=None,
-                 drawstyle='steps',
+                 drawstyle='steps-mid', linewidth = 1,
                  *args, **kwds):
     '''
     Plot signals in time and frequency domain.
@@ -71,13 +71,24 @@ def plot_signals(sigs, tlim=None, flim=None, tunits="us", funits="MHz",
     funits_v = unitify(funits)
     iunits_v = unitify(iunits)
 
-    colors = ["black","red","blue"]
+    colors = ["black","red","blue","orange","purple"]
 
+    nsigs = len(sigs)
     for ind, sig in enumerate(sigs):
+
+        # Drawing options
+        pargs = dict(kwds, drawstyle=drawstyle)
         try:
-            pargs = dict(kwds, args[ind])
+            pargs.update(args[ind])
         except IndexError:
-            pargs = dict(kwds)
+            pass
+        if linewidth == "progressive":
+            lwidth = nsigs-ind
+        elif isinstance(linewidth, list):
+            lwidth = linewidth[ind % nsigs]
+        else:
+            lwidth = linewidth
+        pargs.update(label = label(sig), color=colors[ind], linewidth=lwidth)
 
         ss = sig.sampling
         wave = sig.wave / iunits_v
@@ -85,8 +96,7 @@ def plot_signals(sigs, tlim=None, flim=None, tunits="us", funits="MHz",
         times = ss.times/tunits_v
         freqs = ss.freqs_zc/funits_v
 
-        pargs.update(label = label(sig),
-                     color=colors[ind], linewidth=len(sigs)-ind)
+
         axes[0].plot(times, wave, **pargs)
         axes[1].plot(freqs, spec, **pargs)
 
@@ -105,26 +115,80 @@ def plot_signals(sigs, tlim=None, flim=None, tunits="us", funits="MHz",
     axes[1].legend()
     return fig, axes
 
-def plot_shift(sig1, sig2,
-               tlim=None, flim=None, tunits="us", funits="MHz",
-               iunits="femtoampere", ilim=None,
-               drawstyle='steps',
+def plot_shift(sigs,
+               flim=None, funits="MHz",
+               drawstyle='steps-mid',
                *args, **kwds):
     '''
-    Plot the amplitude of the two signals in frequency domain and the phase
-    of the ratio of their frequency domain samples.
+    Plot seeking shift.
 
-    The two signals must have identical sampling.
+    With a single sig in sigs, simply plot abs and angle of its spectrum.
 
+    O.w. plot ratio of abs and angle of subsequent signals to first signal.
+
+    The signals must have identical sampling.
     '''
+
+    for sig in sigs:
+        if sig.sampling.N == sigs[0].sampling.N:
+            continue
+        raise ValueError(f'sampling size mismatch {sig.sampling.N} != {sigs[0].sampling.N}')
+
     fig,axes = plt.subplots(nrows=1, ncols=2)
 
-    tunits_v = unitify(tunits)
     funits_v = unitify(funits)
-    iunits_v = unitify(iunits)
 
-    colors = ["black","red","blue"]
-    
+    colors = ["black","red","blue","orange","purple"]
+
+    # use when len(sigs)>1
+    denom_spec = None
+    def phase_clamp(ang):
+        ang[ang>numpy.pi] -= 2*numpy.pi
+        ang[ang<-numpy.pi] += 2*numpy.pi
+        return ang
+
+    for ind, sig in enumerate(sigs):
+        try:
+            pargs = dict(kwds, args[ind])
+        except IndexError:
+            pargs = dict(kwds)
+        pargs.update(label = label(sig), color=colors[ind], linewidth=len(sigs)-ind)
+
+        ss = sig.sampling
+        spec = numpy.fft.ifftshift(sig.spec)
+        freqs = ss.freqs_zc/funits_v
+        if denom_spec is None:
+            denom_spec = spec
+
+        if len(sigs) > 1:       # relative plots
+            if ind==0:
+                continue        # relative plots, skip first
+            variant = "relative"
+            rel = spec/denom_spec
+            amp = numpy.abs(rel)
+            ang = phase_clamp(numpy.angle(spec) - numpy.angle(denom_spec))
+
+        else:
+            variant = "absolute"
+            amp = numpy.abs(spec)
+            ang = numpy.angle(spec)
+
+
+        axes[0].plot(freqs, amp, **pargs)
+        axes[1].plot(freqs, ang, **pargs)
+
+        axes[0].set_xlabel(f'frequency [{funits}]')
+        axes[0].set_ylabel(f'amplitude ({variant})')
+        axes[1].set_xlabel(f'frequency [{funits}]')
+        axes[1].set_ylabel(f'phase ({variant}) [radian]')
+
+    if flim:
+        axes[0].set_xlim(flim[0]/funits_v, flim[1]/funits_v)
+        axes[1].set_xlim(flim[0]/funits_v, flim[1]/funits_v)
+    axes[0].set_title("spectrum")
+    axes[1].set_title("spectrum")
+    axes[0].legend()
+    return fig, axes
     
 
 def plot_ends(arrays, names, iunits='femtoampere'):
@@ -160,6 +224,12 @@ def plot_wave(ax, sig, pos=False, **kwds):
 
 def plot_wave_diffs(sigs, primary=0, xlim=None,
                     tunits = units.us, per=(), **kwds):
+    '''
+    Plot differences between first and subsequent signals.
+
+    Subsequent signals are linearly interpolated in the interval domain to match
+    the sampling of the initial signal.
+    '''
     fig, axes = plt.subplots(nrows=2, ncols=1, sharex=True)
 
     prim = sigs[primary]

@@ -153,13 +153,54 @@ class Signal:
         return Signal(sampling, wave=wave, name=name or self.name)
 
     def subtract(self, other, name=None):
+        '''
+        Subtract other from this signal and return.
+        '''
         siz = min(self.wave.size, other.wave.size)
         wav = self.wave[:siz] - other.wave[:siz]
         sam = Sampling(T=self.sampling.T, N=siz)
         return Signal(sam, wave = wav, name=name or self.name)
     
     def multiply(self, factor, name=None):
+        '''
+        Return new signal with wave amplitude this factor of self. 
+        '''
         return Signal(self.sampling, wave=self.wave*factor, name=name or self.name)
+
+    def resize(self, Ns, time_padding='linear', name=None):
+        '''
+        Return this signal resized to N.
+
+        If N is longer the current size, pad end according to time_padding scheme.
+        '''
+        Ns_orig = self.sampling.N
+        cur = self.wave.copy()
+        cur.resize(Ns)
+        if Ns > Ns_orig:
+            if time_padding == "zero":
+                cur[Ns_orig:] = 0
+            elif time_padding =="last":
+                cur[Ns_orig:] = cur[Ns_orig-1]
+            elif time_padding =="median":
+                cur[Ns_orig:] = numpy.median(cur[:Ns])
+            elif time_padding == "linear":
+                npad = Ns-Ns_orig + 1
+                pad = numpy.linspace(cur[Ns_orig-1], cur[0], npad, endpoint=False)
+                cur[Ns_orig-1:] = pad
+            elif time_padding == "cosine":
+                npad = Ns-Ns_orig + 1
+                pad = numpy.cos(numpy.linspace(0, numpy.pi, npad, endpoint=False))
+                A = cur[Ns_orig-1]
+                B = cur[0]
+                pad = 0.5*(pad - 1)*(A-B) + A
+                cur[Ns_orig-1:] = pad            
+            else:
+                raise ValueError(f'unsupported time_padding: "{time_padding}"')
+
+        ss = Sampling(self.sampling.T, cur.size)
+        sig = Signal(ss, wave=cur, name=name or self.name)
+        return sig
+
 
 def bezout(a, b, eps=1e-6):
     '''Greated common divisor and Bezout coefficients.
@@ -230,6 +271,7 @@ def rational_size(Ts, Tr, eps=1e-6):
 
     n = dT/egcd(Tr, dT, eps=eps)
     rn = round(n)
+    print(f"delta-n = {n}")
 
     err = abs(n - rn)
     if err > eps:
@@ -244,7 +286,7 @@ def rational_size(Ts, Tr, eps=1e-6):
     return rNs
 
 
-def rational(sig, Tr, time_padding="linear", eps=1e-6):
+def rational(sig, Tr, time_padding="linear", eps=1e-6, name=None):
     '''
     Return a new signal like sig but maybe extended to have rational size.
 
@@ -265,32 +307,7 @@ def rational(sig, Tr, time_padding="linear", eps=1e-6):
 
     npad = nrat - nrag
     Ns = Ns_orig + npad
-    cur = sig.wave.copy()
-    cur.resize(Ns)
-    if Ns > Ns_orig:
-        if time_padding == "zero":
-            cur[Ns_orig:] = 0
-        elif time_padding =="last":
-            cur[Ns_orig:] = cur[Ns_orig-1]
-        elif time_padding =="median":
-            cur[Ns_orig:] = numpy.median(cur[:Ns])
-        elif time_padding == "linear":
-            npad = Ns-Ns_orig + 1
-            pad = numpy.linspace(cur[Ns_orig-1], cur[0], npad, endpoint=False)
-            cur[Ns_orig-1:] = pad
-        elif time_padding == "cosine":
-            npad = Ns-Ns_orig + 1
-            pad = numpy.cos(numpy.linspace(0, numpy.pi, npad, endpoint=False))
-            A = cur[Ns_orig-1]
-            B = cur[0]
-            pad = 0.5*(pad - 1)*(A-B) + A
-            cur[Ns_orig-1:] = pad            
-        else:
-            raise ValueError(f'unsupported time_padding: "{time_padding}"')
-
-    ss = Sampling(Ts, cur.size)
-    sig = Signal(ss, wave=cur)
-    return sig
+    return sig.resize(Ns, time_padding=time_padding, name=name)
 
 
 def condition(signal, Tr, eps=1e-6, name=None):
@@ -382,6 +399,19 @@ def resample(signal, Nr, name=None):
 
     return Signal(resampling, spec = R, name=name)
 
+
+def decimate(sig, dN, name=None):
+    '''
+    Downsample via decimating by dN.  Every dN samples, remove dN-1.
+
+    No low-pass shaping filter is applied.
+    '''
+    wave = sig.wave.copy()
+    wave = wave[::dN]
+    return Signal(Sampling(T=dN*sig.sampling.T, N=wave.size), wave=wave, name=name or sig.name)
+
+
+
 def interpolate(sig, Tr, time_padding="zero", eps=1e-6, name=None):
     '''
     Interpolation resampling.
@@ -417,6 +447,7 @@ def convolve(s1, s2, mode='full', name=None):
     Return new signal that is the convolution of the two.
 
     Mode is as taken by numpy.convolve which provides the kernel.
+
     '''
     if s1.sampling.T != s2.sampling.T:
         raise ValueError("can not convolve signals if differing sample period")
