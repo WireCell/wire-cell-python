@@ -323,6 +323,10 @@ def compare(ctx, prange, logy, irange, arange, gain, shaping, output, responsefi
 @click.option("-t", "--tick", default='64*ns',
               help="Resample the field response to have this sample period "
               "with units, eg '64*ns'")
+@click.option("--slow-tick", default='500*ns',
+              help="Sample period of ADC for nominal ER")
+@click.option("--slow-nticks", default=200,
+              help="Number of ADC ticks for nominal ER")
 @click.option("-O", "--org-output", default=None,
               help="Generate an org mode file with macros expanding to "
               "figure inclusion.")
@@ -330,7 +334,7 @@ def compare(ctx, prange, logy, irange, arange, gain, shaping, output, responsefi
 def lmn_fr_plots(impact, plane, period,
                  zoom_start, zoom_window, vmm,
                  detector_name, field_file,
-                 tick, org_output, output):
+                 tick, slow_tick, slow_nticks, org_output, output):
     '''
     Make plots for LMN FR presentation.
     '''
@@ -338,7 +342,9 @@ def lmn_fr_plots(impact, plane, period,
     from wirecell.util import lmn
     from wirecell.resp.plots import (
         load_fr, multiply_period, fr_sig, fr_arr, eresp,
-        plot_signals, plot_ends, plot_wave_diffs)
+        plot_signals, plot_ends, plot_wave_diffs, plot_shift)
+
+    slow_tick = unitify(slow_tick)
 
     Tr = unitify(tick)
     if vmm:
@@ -352,7 +358,8 @@ def lmn_fr_plots(impact, plane, period,
         FRs.period = unitify(period)
     nrat = lmn.rational_size(FRs.period, Tr)
     sigs_orig = fr_sig(FRs, "I_{og}", impact, plane)
-    print(f'Ns_orig={sigs_orig.sampling.N} Ts={sigs_orig.sampling.T} {Tr=} -> {nrat=}')
+    print(f'Ns_orig={sigs_orig.sampling.N} '
+          f'Ts={sigs_orig.sampling.T} {Tr=} -> {nrat=}')
 
     sigs = lmn.rational(sigs_orig, Tr)
     arrs = fr_arr(FRs)
@@ -360,13 +367,18 @@ def lmn_fr_plots(impact, plane, period,
     FRr = res.resample(FRs, Tr)
     sigr = fr_sig(FRr, "I_{rs}", impact, plane)
     arrr = fr_arr(FRr)
-    print(f'Ns={sigs.sampling.N} Ts={sigs.sampling.T} Nr={sigr.sampling.N} Tr={sigr.sampling.T}')
+    print(f'Ns={sigs.sampling.N} Ts={sigs.sampling.T} '
+          f'Nr={sigr.sampling.N} Tr={sigr.sampling.T}')
 
     ers = eresp(sigs.sampling, "E_{og}")
     err = eresp(sigr.sampling, "E_{rs}")
 
-    vrs = lmn.convolve_downsample(sigs, ers)
-    vrr = lmn.convolve_downsample(sigr, err)
+    # check simultaneous downsample+convolution
+    slow_sampling = lmn.Sampling(T=slow_tick, N=slow_nticks)
+    ers_slow = eresp(slow_sampling, "E_{og,slow}")
+    vrs_slow = lmn.convolve_downsample(sigs, ers_slow)
+    # should also work when samplings match
+    vrs_fast = lmn.convolve_downsample(sigs, ers)
 
     dsigs = lmn.convolve(sigs, ers, name=r'I_{og} \otimes E_{og}')
     dsigr = lmn.convolve(sigr, err, name=r'I_{rs} \otimes E_{rs}')
@@ -462,9 +474,10 @@ def lmn_fr_plots(impact, plane, period,
                               flim=(0*units.MHz, 1*units.MHz))
         newpage(fig, 'fig-cer', 'cold electronics response: $ER$')
 
-        fig, _ = plot_signals((vrs, vrr, dsigs, dsigr),
+        fig, _ = plot_signals((vrs_fast, vrs_slow),
+                              linewidth='progressive',
                               iunits='mV',
-                              tlim=(0*units.us, 100*units.us),
+                              tlim=(40*units.us, 80*units.us),
                               flim=(0*units.MHz, 1*units.MHz))
         newpage(fig, 'fig-vr', 'voltage response scd')
 
@@ -502,11 +515,10 @@ def lmn_fr_plots(impact, plane, period,
               numpy.sum(numpy.abs(qdsigs.wave)), '%')
 
         # ER in fast and slow binning
-        fig, _ = plot_signals((ers, ers_ds), iunits='mV/fC',
-                              tlim=(0*units.us, 20*units.us),
-                              flim=(0*units.MHz, 1*units.MHz))
-        newpage(fig, 'fig-cer-ds',
-                'slow sampled cold electronics response: $ER$')
+        fig,_ = plot_signals((ers, ers_ss), iunits='mV/fC',
+                             tlim=(0*units.us, 20*units.us),
+                             flim=(0*units.MHz, 1*units.MHz))
+        newpage(fig, 'fig-cer-ds', 'slow sampled cold electronics response: $ER$')
 
         # FR in fast and slow
         fig,_ = plot_signals((sigs, sigs_ds, sigs_dm), iunits='femtoampere', **zoom_kwds)

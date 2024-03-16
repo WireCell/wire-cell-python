@@ -84,6 +84,7 @@ class Sampling:
     def __str__(self):
         return f'N={self.N} T={self.T}'
 
+
 @dataclasses.dataclass
 class Signal:
     '''
@@ -129,7 +130,10 @@ class Signal:
             self.spec = numpy.fft.fft(self.wave)
 
     def __str__(self):
-        return f'{self.name} {self.sampling}'
+        return f'"{self.name}" {self.sampling}'
+
+    def __repr__(self):
+        return f'{self.sampling} "{self.name}"'
 
     @property
     def time_energy(self):
@@ -279,7 +283,6 @@ def rational_size(Ts, Tr, eps=1e-6):
     dT = Ts - Tr
     n = dT/egcd(Tr, dT, eps=eps)
     rn = round(n)
-    print(f"delta-n = {n}")
 
     err = abs(n - rn)
     if err > eps:
@@ -366,12 +369,12 @@ def condition(signal, Tr, eps=1e-6, name=None):
 
 def resample(signal, Nr, name=None):
     '''
-    Return a new signal of same duration that is resampled to have number of samples Nr.
+    Return a new signal of same duration that is resampled
+    to have number of samples Nr.
 
     '''
     Ns = signal.sampling.N
     resampling = signal.sampling.resampling(Nr)
-    Tr = resampling.T
 
     S = signal.spec
     R = numpy.zeros(Nr, dtype=S.dtype)
@@ -484,19 +487,30 @@ def convolution_downsample_size(Ta, Na, Tb, Nb):
     return int(Nea), int(Neb)
 
 
-def convolve_downsample(sa, sb):
+def convolve_downsample(sa, sb, name=None):
     '''
     Convolve the two signals and downsample to the slower
     '''
     if sa.sampling.T > sb.sampling.T:
         sa, sb = sb, sa
-    duration = sa.sampling.duration + sb.sampling.duration
+
+    aa = sa.sampling            # eg T=100ns
+    bb = sb.sampling            # eg T=500ns
+
+    # "total" duration must be evenly divisible by both T's!
+    duration = math.ceil(aa.duration/bb.T)*bb.T + bb.duration
     sae = resize(sa, duration)
     sbe = resize(sb, duration)
-
+    print(f'{duration=} = {sa.sampling.duration} + {sb.sampling.duration}')
+    print(f'{sa.sampling.duration/sb.sampling.T} '
+          f'{sb.sampling.duration/sa.sampling.T}')
+    print(f'{sa=}\n{sb=}\n{sae=}\n{sbe=}')
     R = sa.sampling.T / sb.sampling.T
-
-    Nr = int(R*sae.sampling.N)
+    Nrf = R*sae.sampling.N
+    Nr = int(Nrf)
+    print(f'{R=} {Nr=} {Nrf=}')
     saed = resample(sae, Nr)
-    sced = Signal(sbe.sampling, spec = saed.spec * sbe.spec)
+    print(f'{saed=}')
+    sced = Signal(sbe.sampling, spec=saed.spec * sbe.spec,
+                  name=name or f'{sa.name} (x) {sb.name}')
     return sced
