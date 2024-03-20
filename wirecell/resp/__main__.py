@@ -6,7 +6,7 @@ Main CLI to wirecell.resp.
 import click
 from wirecell.util.fileio import load as source_loader
 from wirecell import units
-from wirecell.util.functions import unitify
+from wirecell.util.functions import unitify, unitify_parse
 import numpy
 import matplotlib.pyplot as plt
 import matplotlib as mpl
@@ -301,150 +301,8 @@ def compare(ctx, prange, logy, irange, arange, gain, shaping, output, responsefi
             printer.savefig()
 
 
-
-from wirecell.util import lmn
-def fr_sig(fr, name=None, impact=66, plane=0):
-    '''
-    Return one path response as a signal.
-    '''
-    pr = fr.planes[plane]
-    try:
-        wave = pr.paths[impact].current
-    except IndexError:
-        npaths = len(pr.paths)
-        nwires = npaths//6
-        ntry = int(6*(nwires-1)/2 + 5)
-        print(f'No impact {impact} out of {npaths}, probably {nwires} wires, try --impact={ntry}')
-        raise
-    return lmn.Signal(lmn.Sampling(T=fr.period, N=wave.size), wave=wave, name=name)
-
-def fr_arr(fr, plane=0):
-    '''
-    Return FR as 2D (nimp,ntick) array.
-
-    If plane is given, return only that plane
-    '''
-    prs = fr.planes
-    if plane is not None:
-        prs = [prs[plane]]
-    nchan = sum([len(pr.paths) for pr in prs])
-    nimps = prs[0].paths[0].current.size
-    ret = numpy.zeros((nchan, nimps))
-    imp = 0
-    for pr in prs:
-        for path in pr.paths:
-            ret[imp] = path.current
-            imp += 1
-    return ret
-
-
-from wirecell.sigproc.response import electronics
-def eresp(ss, name="coldelec", gain=14*units.mV/units.fC, shaping=2*units.us):
-    '''
-    Return electronics response as a signal.
-    '''
-    times = numpy.linspace(0, ss.N*ss.T, ss.N, endpoint=False)
-    eresp = electronics(times, gain, shaping)
-    return lmn.Signal(ss, wave = eresp, name=name)
-
-def label(sig):
-    '''
-    Return a legend label for signal.
-    '''
-    ss = sig.sampling
-    return f'${sig.name},\ N={ss.N},\ T={ss.T/units.ns:.0f}\ ns$'
-
-def plot_signals(sigs, tlim=None, flim=None, tunits="us", funits="MHz",
-                 iunits="femtoampere", ilim=None,
-                 *args, **kwds):
-    '''
-    Plot signals in time and frequency domain.
-
-    Any args are dicts matched to signals and passed to their plt.plot()'s.
-    Any kwds are are passed to all plt.plot()'s.
-    '''
-    fig,axes = plt.subplots(nrows=1, ncols=2)
-
-    tunits_v = unitify(tunits)
-    funits_v = unitify(funits)
-    iunits_v = unitify(iunits)
-
-    colors = ["black","red","blue"]
-
-    for ind, sig in enumerate(sigs):
-        try:
-            pargs = dict(kwds, args[ind])
-        except IndexError:
-            pargs = dict(kwds)
-
-        ss = sig.sampling
-        wave = sig.wave / iunits_v
-        spec = numpy.fft.ifftshift(numpy.abs(sig.spec))
-        times = ss.times/tunits_v
-        freqs = ss.freqs_zc/funits_v
-
-        pargs.update(label = label(sig),
-                     drawstyle='steps',
-                     color=colors[ind], linewidth=len(sigs)-ind)
-        axes[0].plot(times, wave, **pargs)
-        axes[1].plot(freqs, spec, **pargs)
-
-        axes[0].set_xlabel(f'time [{tunits}]')
-        axes[0].set_ylabel(f'signal [{iunits}]')
-        axes[1].set_xlabel(f'frequency [{funits}]')
-
-    if ilim:
-        axes[0].set_ylim(ilim[0]/iunits_v, ilim[1]/iunits_v)
-    if tlim:
-        axes[0].set_xlim(tlim[0]/tunits_v, tlim[1]/tunits_v)
-    if flim:
-        axes[1].set_xlim(flim[0]/funits_v, flim[1]/funits_v)
-    axes[0].set_title("waveform")
-    axes[1].set_title("spectrum")
-    axes[1].legend()
-    return fig, axes
-
-def plot_ends(arrays, names, iunits='femtoampere'):
-    fig,ax = plt.subplots(nrows=1, ncols=1)
-
-    iunits_v = unitify(iunits)
-
-    for ind, arr in enumerate(arrays):
-        arr = arr / iunits_v
-        col = ['black','red'][ind]
-        name = names[ind]
-        f = arr[:,0]
-        l = arr[:,-1]
-        d = l - f
-        ax.plot(f, color=col, linestyle='dashed', drawstyle='steps', label=f'${name}$ first')
-        ax.plot(l, color=col, linestyle='dotted', drawstyle='steps', label=f'${name}$ last')
-        ax.plot(d, color=col, linestyle='solid', drawstyle='steps', label=f'${name}$ diff')
-
-    ax.set_xlabel('impact positions')
-    ax.set_ylabel(f'[{iunits}]')
-    ax.legend()
-    return fig, ax
-    
-
-def multiply_period(current, name=None):
-    '''
-    Return a signal sampling integrated charge from one sampling instantaneous current.
-    '''
-    ss = current.sampling
-    charge = current.wave * ss.T
-    return lmn.Signal(ss, wave=charge, name=name)
-
-import wirecell.sigproc.response.persist as per
-from wirecell.util.fileio import wirecell_path
-def load_fr(detector):
-    '''
-    Load first FR for a detector
-    '''
-    paths = wirecell_path()
-    got = per.load(detector, paths=paths)
-    if isinstance(got, list):
-        return got[0]
-    return got
+# lazy.
+from wirecell.resp.plots import *
 
 @cli.command("lmn-fr-plots")
 @click.option("-i", "--impact", default=6*10+5, # on top of central wire of interest
@@ -457,6 +315,8 @@ def load_fr(detector):
               help="The start time for 'zoom'.")
 @click.option("-W", "--zoom-window", default='20*us',
               help="The time window over which to 'zoom'")
+@click.option("--vmm", default=None, type=str,
+              help="Wave value min,max limits for zoom.")
 @click.option("-d", "--detector-name", default='uboone',
               help="The canonical detector name")
 @click.option("-r", "--field-file", default=None,
@@ -467,13 +327,16 @@ def load_fr(detector):
               help="Generate an org mode file with macros expanding to figure inclusion.")
 @click.option("-o","--output",default="lmn-fr-plots.pdf")
 def lmn_fr_plots(impact, plane, period,
-                 zoom_start, zoom_window,
+                 zoom_start, zoom_window, vmm,
                  detector_name, field_file,
                  tick, org_output, output):
     '''
     Make plots for LMN FR presentation.
     '''
+
     Tr = unitify(tick)
+    if vmm:
+        vmm = unitify_parse(vmm)
 
     import wirecell.resp.resample as res
     from wirecell.util.plottools import pages
@@ -481,18 +344,25 @@ def lmn_fr_plots(impact, plane, period,
     FRs = load_fr(field_file or detector_name)
     if period:
         FRs.period = unitify(period)
-    sigs = fr_sig(FRs, "I_{og}", impact, plane)
+    nrat = lmn.rational_size(FRs.period, Tr)
+    sigs_orig = fr_sig(FRs, "I_{og}", impact, plane)
+    print(f'Ns_orig={sigs_orig.sampling.N} Ts={sigs_orig.sampling.T} {Tr=} -> {nrat=}')
+
+    sigs = lmn.rational(sigs_orig, Tr)
     arrs = fr_arr(FRs)
 
     FRr = res.resample(FRs, Tr)
     sigr = fr_sig(FRr, "I_{rs}", impact, plane)
     arrr = fr_arr(FRr)
+    print(f'Ns={sigs.sampling.N} Ts={sigs.sampling.T} Nr={sigr.sampling.N} Tr={sigr.sampling.T}')
 
     ers = eresp(sigs.sampling, "E_{og}")
     err = eresp(sigr.sampling, "E_{rs}")
 
     dsigs = lmn.convolve(sigs, ers, name='I_{og} \otimes E_{og}')
     dsigr = lmn.convolve(sigr, err, name='I_{rs} \otimes E_{rs}')
+    print(f'{dsigs.wave.shape=} {dsigr.wave.shape=}')
+
     dsigr2 = lmn.interpolate(dsigs, Tr, name="(I_{og} \otimes E_{og})_{rs}")
 
     dtsigs = multiply_period(dsigs, name='T \cdot I_{og} \otimes E_{og}')
@@ -503,6 +373,26 @@ def lmn_fr_plots(impact, plane, period,
     qsigr = multiply_period(sigr, name='Q_{rs}')
     qdsigs = lmn.convolve(qsigs, ers, name='Q_{og} \otimes E_{og}')
     qdsigr = lmn.convolve(qsigr, err, name='Q_{rs} \otimes E_{rs}')
+
+    # here we set up downsample before FRxER convolution.
+    sim_tick = 500*units.ns
+    decimation = round(sim_tick/sigs.sampling.T)
+
+    # downsample
+    sigs_ds = lmn.interpolate(sigs, sim_tick, name="I_{ds}")
+    sigs_dm = lmn.decimate(sigs, decimation, name="I_{dm}")
+    ers_ss = eresp(sigs_ds.sampling, "E_{ss}")  # slow sample
+    dsigs_dsc = lmn.convolve(sigs_ds, ers_ss, name='I_{ds} \otimes E_{ss}')
+    dsigs_dmc = lmn.convolve(sigs_dm, ers_ss, name='I_{dm} \otimes E_{ss}')
+    qdsigs_dsc = multiply_period(dsigs_dsc, name='V_{dsc}')
+    qdsigs_dmc = multiply_period(dsigs_dmc, name='V_{dmc}')
+    # convolve then downsample/decimate
+    qdsigs_cds = lmn.interpolate(dtsigs, sim_tick,name='V_{cds}')
+    qdsigs_cdm = lmn.decimate(dtsigs, decimation, name='V_{cdm}')
+    print(f'{dtsigs.wave.shape=} {qdsigs_cds.wave.shape=} {qdsigs_dsc.wave.shape=} {qdsigs_cdm.wave.shape=} {qdsigs_dmc.wave.shape=}')
+
+    ## end building data arrays
+
 
     full_range = dict(tlim=(0, sigs.sampling.T*sigs.sampling.N),
                       flim=(0*units.MHz, 10*units.MHz))
@@ -515,8 +405,10 @@ def lmn_fr_plots(impact, plane, period,
 
     zoom_start = unitify(zoom_start)
     zoom_window = unitify(zoom_window)
-    zoom_range = dict(tlim=(zoom_start, zoom_start+zoom_window),
-                      flim=(0*units.MHz, 6*units.MHz))
+    zoom_kwds = dict(tlim=(zoom_start, zoom_start+zoom_window),
+                     flim=(0*units.MHz, 6*units.MHz),
+                     ilim=vmm,
+                     drawstyle=None)
 
     conv_range = dict(tlim=(zoom_start, zoom_start+zoom_window),
                       flim=(0*units.MHz, 1*units.MHz))
@@ -543,7 +435,7 @@ def lmn_fr_plots(impact, plane, period,
         fig,_ = plot_signals((sigs, sigr), iunits='femtoampere', **full_range)
         newpage(fig, 'fig-fr', frtit)
 
-        fig,_ = plot_signals((sigs, sigr), iunits='femtoampere', **zoom_range)
+        fig,_ = plot_signals((sigs, sigr), iunits='femtoampere', **zoom_kwds)
         newpage(fig, 'fig-fr-zoom', frtit + ' zoom')
 
         ilim = 0.05*units.femtoampere
@@ -573,7 +465,7 @@ def lmn_fr_plots(impact, plane, period,
 
         fig,_ = plot_signals((qsigs, qsigr),
                              iunits='fC',
-                             **zoom_range)
+                             **zoom_kwds)
         newpage(fig, 'fig-q', f'charge field response $Q = T\cdot FR$ ({detector_name} plane {plane} impact {impact})')
 
         fig,_ = plot_signals((qdsigs, qdsigr), iunits='mV', **conv_range)
@@ -588,6 +480,65 @@ def lmn_fr_plots(impact, plane, period,
         axes[0].set_ylim(-tiny, tiny)
         newpage(fig, 'fig-v-back', f'voltage response ({detector_name} plane {plane} impact {impact}, zoom back)')
         print('q=', 100*numpy.sum(qdsigs.wave) / numpy.sum(numpy.abs(qdsigs.wave)), '%')
+
+        # ER in fast and slow binning
+        fig,_ = plot_signals((ers, ers_ss), iunits='mV/fC',
+                             tlim=(0*units.us, 20*units.us),
+                             flim=(0*units.MHz, 1*units.MHz))
+        newpage(fig, 'fig-cer-ds', 'slow sampled cold electronics response: $ER$')
+        
+        # FR in fast and slow
+        fig,_ = plot_signals((sigs, sigs_ds, sigs_dm), iunits='femtoampere', **zoom_kwds)
+        newpage(fig, 'fig-fr-ds', 'FR(I) (downsample vs decimate) $\leftrightarrow$ convolve')
+
+        # DR: fast and down+conv and conv+down.
+        fig,_ = plot_signals((qdsigs, qdsigs_dsc, qdsigs_cds, qdsigs_dmc, qdsigs_cdm),
+                             iunits='mV', drawstyle='steps-mid', **conv_range)
+        newpage(fig, 'fig-v-dccd', '$V=T \cdot FR \otimes ER$ (downsample vs decimate) $\leftrightarrow$ convolve')
+
+        shift_range = dict(flim=(0*units.MHz, 1.0*units.MHz))
+        fig,_ = plot_shift((qdsigs_cds, qdsigs_dsc, qdsigs_cdm, qdsigs_dmc), **shift_range)
+        newpage(fig, 'fig-v-dccd-shift', 'V shift? (downsample vs decimate) $\leftrightarrow$ convolve')
+
+        # yet more checks
+
+        colors=["black","red","blue","green","yellow"]
+
+        # Check shift
+        tshift_ns = 1
+
+        # current
+        ss = lmn.Sampling(T=sigr.sampling.T, N=sigr.sampling.N, t0=tshift_ns*units.ns)
+        sigr_shift = lmn.Signal(ss, wave=sigr.wave, name='I_{rs} + %dns'%tshift_ns)
+        diff_sigs = [sigs, sigr, sigr_shift]
+        ndiff_sigs = len(diff_sigs)
+        fig, axes = plot_wave_diffs(diff_sigs, xlim=zoom_kwds['tlim'], marker='.',
+                                    per = [dict(markersize=ndiff_sigs-ind,
+                                                color=colors[ind]) for ind in range(ndiff_sigs)])
+        newpage(fig, 'fig-fr-diff', f'FR differences ({detector_name} plane {plane} impact {impact})')
+        
+        # coldelec
+        ss = lmn.Sampling(T=err.sampling.T, N=err.sampling.N, t0=tshift_ns*units.ns)
+        err_shift = lmn.Signal(ss, wave=err.wave, name='I_{rs} + %dns'%tshift_ns)
+        diff_sigs = [ers, err, err_shift]
+        ndiff_sigs = len(diff_sigs)
+        fig, axes = plot_wave_diffs(diff_sigs, xlim=zoom_kwds['tlim'], marker='.',
+                                    per = [dict(markersize=ndiff_sigs-ind,
+                                                color=colors[ind]) for ind in range(ndiff_sigs)])
+        newpage(fig, 'fig-fr-diff', f'FR differences ({detector_name} plane {plane} impact {impact})')
+
+        # voltage
+        ss = lmn.Sampling(T=qdsigr.sampling.T, N=qdsigr.sampling.N, t0=tshift_ns*units.ns)
+        vr_shift = lmn.Signal(ss, wave=qdsigr.wave, name='Q_{rs} \otimes E_{rs} + %dns'%tshift_ns)
+        
+        diff_sigs = [qdsigs, qdsigr, vr_shift]
+        ndiff_sigs = len(diff_sigs)
+        fig, axes = plot_wave_diffs(diff_sigs, xlim=zoom_kwds['tlim'], marker='.',
+                                    per = [dict(markersize=ndiff_sigs-ind,
+                                                color=colors[ind]) for ind in range(ndiff_sigs)])
+        newpage(fig, 'fig-v-diff', f'voltage response ({detector_name} plane {plane} impact {impact})')
+ 
+        
 
     if org_output:
         with open(org_output, "w") as oo:
