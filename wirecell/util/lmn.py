@@ -84,6 +84,7 @@ class Sampling:
     def __str__(self):
         return f'N={self.N} T={self.T}'
 
+
 @dataclasses.dataclass
 class Signal:
     '''
@@ -129,7 +130,10 @@ class Signal:
             self.spec = numpy.fft.fft(self.wave)
 
     def __str__(self):
-        return f'{self.name} {self.sampling}'
+        return f'"{self.name}" {self.sampling}'
+
+    def __repr__(self):
+        return f'{self.sampling} "{self.name}"'
 
     @property
     def time_energy(self):
@@ -260,29 +264,38 @@ def resize(sig, duration, pad=0, name=None):
         wave[ss.N:] = pad
 
     rs = Sampling(ss.T, Nr)
-    return Signal(rs, wave=wave, name = name or sig.name)
-    
+    return Signal(rs, wave=wave, name=name or sig.name)
+
+
+def rational_deltan(Ts, Tr, eps=1e-6):
+    '''
+    Return the delta-n value for LMN rationality
+    '''
+    dT = Ts - Tr
+    return dT/egcd(Tr, dT, eps=eps)
+
 
 def rational_size(Ts, Tr, eps=1e-6):
     '''
-    Return a minimum size allowing LMN resampling from period Ts to Tr to be rational.
+    Return a minimum size allowing LMN resampling from period Ts to Tr to
+    be rational.
     '''
     dT = Ts - Tr
-
     n = dT/egcd(Tr, dT, eps=eps)
     rn = round(n)
-    print(f"delta-n = {n}")
 
     err = abs(n - rn)
     if err > eps:
-        raise ValueError(f'no GCD for {Tr=}, {Ts=} within error: {err} > {eps}')
+        raise ValueError(f'no GCD for {Tr=}, '
+                         f'{Ts=} within error: {err} > {eps}')
 
     Ns = rn * Tr / dT
     rNs = round(Ns)
     err = abs(rNs - Ns)
     if err > eps:
-        raise ValueError(f'rationality not met for {Tr=}, {Ts=} within error: {err} > {eps}')
-    
+        raise ValueError(f'rationality not met for {Tr=}, '
+                         f'{Ts=} within error: {err} > {eps}')
+
     return rNs
 
 
@@ -356,12 +369,12 @@ def condition(signal, Tr, eps=1e-6, name=None):
 
 def resample(signal, Nr, name=None):
     '''
-    Return a new signal of same duration that is resampled to have number of samples Nr.
+    Return a new signal of same duration that is resampled
+    to have number of samples Nr.
 
     '''
     Ns = signal.sampling.N
     resampling = signal.sampling.resampling(Nr)
-    Tr = resampling.T
 
     S = signal.spec
     R = numpy.zeros(Nr, dtype=S.dtype)
@@ -453,3 +466,51 @@ def convolve(s1, s2, mode='full', name=None):
         raise ValueError("can not convolve signals if differing sample period")
     wave = numpy.convolve(s1.wave, s2.wave, mode)
     return Signal(Sampling(T=s1.sampling.T, N=wave.size), wave=wave, name=name)
+
+
+# Not exactly lmn, but in DepoTransform we must do a convolution and a
+# downsample of the FR in a fast sampling and ER in a slow sampling and there
+# is an lmn'esque trick to do that efficiently.
+#
+def convolution_downsample_size(Ta, Na, Tb, Nb):
+    '''
+    Simultaneous convolution downsample sizes for two signals (n1,n2).
+
+    Eg. nominal FR and er: Ta=100ns, Na=625, Tb=500ns, Nb=200
+    gives (1625, 325) giving R=Ta/Tb=Nb/Na=5.
+    '''
+    duration = Ta*Na + Tb*Nb
+    Nea, Neb = duration/Ta, duration/Tb
+    eps = 0.0001
+    if abs(Nea - int(Nea)) > eps or abs(Neb - int(Neb)) > eps:
+        raise ValueError(f'sampling periods not integer ratio: {Ta/Tb}')
+    return int(Nea), int(Neb)
+
+
+def convolve_downsample(sa, sb, name=None):
+    '''
+    Convolve the two signals and downsample to the slower
+    '''
+    if sa.sampling.T > sb.sampling.T:
+        sa, sb = sb, sa
+
+    aa = sa.sampling            # eg T=100ns
+    bb = sb.sampling            # eg T=500ns
+
+    # "total" duration must be evenly divisible by both T's!
+    duration = math.ceil(aa.duration/bb.T)*bb.T + bb.duration
+    sae = resize(sa, duration)
+    sbe = resize(sb, duration)
+    print(f'{duration=} = {sa.sampling.duration} + {sb.sampling.duration}')
+    print(f'{sa.sampling.duration/sb.sampling.T} '
+          f'{sb.sampling.duration/sa.sampling.T}')
+    print(f'{sa=}\n{sb=}\n{sae=}\n{sbe=}')
+    R = sa.sampling.T / sb.sampling.T
+    Nrf = R*sae.sampling.N
+    Nr = int(Nrf)
+    print(f'{R=} {Nr=} {Nrf=}')
+    saed = resample(sae, Nr)
+    print(f'{saed=}')
+    sced = Signal(sbe.sampling, spec=saed.spec * sbe.spec,
+                  name=name or f'{sa.name} (x) {sb.name}')
+    return sced
