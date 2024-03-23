@@ -533,6 +533,62 @@ def bee_blobs(output, geom, rse, sampling, speed, t0, x0, density, cluster_files
         os.makedirs(out_dir)
     json.dump(dat, open(output,'w', encoding="utf8"))
 
+@cli.command("bee-flashes")
+@click.option('-o', '--outdir', default="./", help="The output dir for Bee JSON files")
+@click.argument("input", nargs=-1)
+def bee_flashes(outdir, input):
+    '''
+    Produce a Bee JSON file from a flash ITensorSet file.
+    '''
+    if outdir is None:
+        raise click.BadParameter("no outdir provided")
+
+    import os
+    def output_json_to_file(json_str, output_dir, id):
+        os.makedirs(os.path.join(output_dir, id), exist_ok=True)
+        filename = os.path.join(output_dir, id, f"{id}-op.json")
+        with open(filename, 'w') as f:
+            f.write(json_str)
+
+    import json
+    def create_json_object(opt_t, op_peTotal, op_pes, cluster_id, id):
+        data = {
+            "op_t": opt_t.tolist(),
+            "op_peTotal": op_peTotal.tolist(),
+            "op_pes": op_pes.tolist(),
+            "op_l1_t": [[] for i in range(len(opt_t))],
+            "op_l1_pe": [[] for i in range(len(opt_t))],
+            "op_pes_pred": op_pes.tolist(),
+            "cluster_id": cluster_id,
+            "op_nomatching_cluster_ids": [],
+            "runNo": 0,
+            "subRunNo": 0,
+            "eventNo": id,
+            "geom": "sbnd",
+        }
+        return json.dumps(data)
+
+    from wirecell.util import ario
+    for flf in input:
+        # print(f'flf: {flf}')
+        arf = ario.load(flf, False)
+        for key in arf.keys():
+            # print(key)
+            import re
+            match = re.match(r'opflash_tensor_(\d+)_0_array', key)
+            if match:
+                dat = arf[key]
+                sorted_indices = numpy.argsort(dat[:, 0])
+                dat = dat[sorted_indices]
+                id = match.group(1)
+                op_t = dat[:, 0]
+                op_pes = dat[:, 1:] # TODO: need to figure out the mapping
+                op_peTotal = numpy.sum(op_pes, axis=1)
+                op_cluster_ids = [[int(i)] for i in range(len(op_t))] # TODO: place holder
+                print(f'id: {id} dat: {dat.shape} op_t: {op_t.shape} op_pes: {op_pes.shape}')
+                json_str = create_json_object(op_t, op_peTotal, op_pes, op_cluster_ids, id)
+                output_json_to_file(json_str, outdir, id)
+                
 
 def divine_planes(nch):
     '''

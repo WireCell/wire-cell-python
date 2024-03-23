@@ -1356,6 +1356,34 @@ def resolve(path, kind, name):
         sys.stderr.write(f'and {kind=}\n')
     raise ValueError('bad fields')
 
+
+@cli.command("framels")
+@click.option("-o", "--output", default="/dev/stdout", help="Output filename")
+@click.argument("framefile")
+def framels(output, framefile):
+    '''
+    Print information about a frame file
+    '''
+    f = numpy.load(framefile)
+
+    # fixme: make more flexible as for order.
+
+    assert f.files[0].startswith("frame_")
+    fr = f[f.files[0]]
+    _,tag,ident = f.files[0].split("_")
+
+    assert f.files[1].startswith("channels_")
+    ch = f[f.files[1]]
+
+    assert f.files[2].startswith("tickinfo_")
+    ti = f[f.files[2]]
+
+    summary = dict(tag=tag, ident=int(ident),
+                   shape=fr.shape,
+                   chmin=int(numpy.min(ch)), chmax=int(numpy.max(ch)),
+                   t0=ti[0], tick=ti[1], tbin=int(ti[2]))
+    open(output,"w").write(json.dumps(summary, indent=4) + "\n")
+
 def main():
     cli(obj=dict())
 
