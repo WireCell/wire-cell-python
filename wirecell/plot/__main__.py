@@ -345,9 +345,11 @@ def digitzer(output, jsiofile, **kwds):
               help="limit y-axis range in raw numbers, default is auto range")
 @click.option("-f", "--frange", default=None, type=str,
               help="limit frequency range, eg '0,100*kHz'")
+@click.option("--drawstyle", default="steps-mid", type=str,
+              help="draw style to use")
 @image_output
 @click.argument("frame_files", nargs=-1)
-def channels(output, channel, trange, frange, yrange, frame_files, **kwds):
+def channels(output, channel, trange, frange, yrange, drawstyle, frame_files, **kwds):
     '''
     Plot channels from multiple frame files.
 
@@ -378,8 +380,13 @@ def channels(output, channel, trange, frange, yrange, frame_files, **kwds):
 
     frames = {ff: list(load_frames(ff)) for ff in frame_files}
 
-    drawstyle = 'steps-mid'
-
+    progressive = False
+    if drawstyle == "progressive":
+        progressive = True
+        drawstyle = None
+    if not drawstyle:
+        drawstyle = None
+    
     with output as out:
 
         for chan in channels:
@@ -389,19 +396,19 @@ def channels(output, channel, trange, frange, yrange, frame_files, **kwds):
 
             for ind, (fname, frs) in enumerate(frames.items()):
                 stem = Path(fname).stem
-                # linewidth = len(frames) - ind
-                linewidth = 1
+                if progressive:
+                    linewidth = len(frames) - ind
+                else:
+                    linewidth = 1
 
                 for fr in frs:
 
                     wave = fr.waves(chan)
                     axes[0].set_title("waveforms")
-                    print(f'{linewidth=}')
                     axes[0].plot(fr.times/units.us, wave, linewidth=linewidth, drawstyle=drawstyle)
                     if trange:
                         axes[0].set_xlim(trange[0]/units.us, trange[1]/units.us)
                     if yrange:
-                        print(yrange)
                         axes[0].set_ylim(*yrange)
                     else:
                         plottools.rescaley(axes[0], fr.times/units.us, wave,
@@ -419,7 +426,6 @@ def channels(output, channel, trange, frange, yrange, frame_files, **kwds):
                         axes[1].set_xlim(0, fr.freqs_MHz[fr.nticks//2])
                     axes[1].set_xlabel("frequency [MHz]")
                     axes[1].legend(loc='upper right')
-                    print(fr.nticks, fr.period/units.ns, fr.duration/units.us)
 
 
             if not out.single:

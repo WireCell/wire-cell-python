@@ -1,4 +1,5 @@
 import numpy
+from math import floor
 import matplotlib.pyplot as plt
 from wirecell import units
 from wirecell.util import lmn
@@ -37,6 +38,45 @@ def fr_arr(fr, plane=0):
             ret[imp] = path.current
             imp += 1
     return ret
+
+
+def spectrum_resize(spec, newsize, norm):
+    '''
+    Replicate the function of this name from PIR.
+    '''
+    oldsize = spec.size
+    if oldsize == newsize:
+        return spec
+    oldhalf = int(1 + floor(oldsize / 2))
+    newhalf = int(1 + floor(newsize / 2))
+
+    half = min(oldhalf, newhalf)
+    ret = numpy.zeros(newsize, dtype=spec.dtype)
+    ret[:half] = spec[:half]
+    ret = norm * lmn.hermitian_mirror(ret);
+    return ret
+
+def wct_pir_resample(sig, tick, short_length, name=None):
+    '''
+    Replicate the resampling done in PIR.
+    '''
+    rawresp_tick = sig.sampling.T
+    rawresp_ntick = sig.sampling.N
+    wave = numpy.array(sig.wave);
+    wave.resize( int(short_length * tick / rawresp_tick ) )
+
+    # unlike WCT PIR, we keep this an interpolation instead of directly jumping
+    # from FR to T*FR.  And, note the norm uses original size as the
+    # wave.resize() adds no power.
+    norm = short_length/rawresp_ntick
+    spec = spectrum_resize(numpy.fft.fft(wave), short_length, norm)
+
+    ret = lmn.Signal(lmn.Sampling(T=tick, N=short_length), spec=spec,
+                     name=name or sig.name);
+    print(f'{sig} {ret}')
+    return ret
+    
+
 
 
 from wirecell.sigproc.response import electronics
