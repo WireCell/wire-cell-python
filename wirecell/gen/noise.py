@@ -8,26 +8,27 @@ diagnostic plots using this module.
 
 import numpy
 from math import sqrt, pi, ceil, floor
+from wirecell.lmn import hermitian_mirror
 
 def rayleigh(x,sigma=1):
     s2 = sigma**2
     return (x/s2)*numpy.exp(-0.5*x**2/s2)
 
-def hermitian_mirror(spec):
-    hm = numpy.array(spec)
+# def hermitian_mirror(spec):
+#     hm = numpy.array(spec)
 
-    # nyquist bin index if size is even, else bin just below Nyquist edge.
-    halfsize = hm.size//2
+#     # nyquist bin index if size is even, else bin just below Nyquist edge.
+#     halfsize = hm.size//2
 
-    # zero freq must be real
-    hm[0] = numpy.abs(hm[0])
-    hm[1:halfsize] = hm[1:halfsize]
-    if 0 == hm.size%2:          # even with Nyquist bin
-        hm[halfsize] = numpy.abs(hm[halfsize])
-        hm[halfsize+1:] = numpy.conjugate(hm[halfsize-1:0:-1])
-    else:
-        hm[halfsize+1:] = numpy.conjugate(hm[halfsize:0:-1])
-    return hm
+#     # zero freq must be real
+#     hm[0] = numpy.abs(hm[0])
+#     hm[1:halfsize] = hm[1:halfsize]
+#     if 0 == hm.size%2:          # even with Nyquist bin
+#         hm[halfsize] = numpy.abs(hm[halfsize])
+#         hm[halfsize+1:] = numpy.conjugate(hm[halfsize-1:0:-1])
+#     else:
+#         hm[halfsize+1:] = numpy.conjugate(hm[halfsize:0:-1])
+#     return hm
 
 def fictional(freqs, rel=0.1):
     r = rayleigh(freqs, freqs[-1]*rel)
