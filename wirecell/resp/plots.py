@@ -88,7 +88,7 @@ def plot_signals(sigs, tlim=None, flim=None, tunits="us", funits="MHz",
             lwidth = linewidth[ind % nsigs]
         else:
             lwidth = linewidth
-        pargs.update(label = label(sig), color=colors[ind], linewidth=lwidth)
+        pargs.update(label=label(sig), color=colors[ind], linewidth=lwidth)
 
         ss = sig.sampling
         wave = sig.wave / iunits_v
@@ -268,7 +268,8 @@ def multiply_period(current, name=None):
     '''
     ss = current.sampling
     charge = current.wave * ss.T
-    return lmn.Signal(ss, wave=charge, name=name)
+    return lmn.Signal(ss, wave=charge,
+                      name=name or f'T \\cdot {current.name}')
 
 import wirecell.sigproc.response.persist as per
 from wirecell.util.fileio import wirecell_path

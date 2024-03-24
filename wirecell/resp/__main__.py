@@ -50,6 +50,7 @@ def gf2npz(output, origin, speed, dataset):
     arrs = dsdict2arrays(ds, speed, origin)
     numpy.savez(output, **arrs)
 
+
 @cli.command("gf-info")
 @click.argument("dataset")
 def gf_info(dataset):
@@ -65,11 +66,11 @@ def gf_info(dataset):
 
 @cli.command("condition")
 @click.option("-P", "--period", default=None, type=str,
-              help="Override the sampling period given in the frfile, eg '100*ns'")
-# @click.option("-e", "--error", default=1e-6,
-#               help="Precision by which integer and rationality conditions are judged")
+              help="Override the sampling period given in the frfile, "
+              "eg '100*ns'")
 @click.option("-r", "--rolloff", default=None, type=float,
-              help="Add a roll-off to the spectrum starting at given frequency in units of Nyquist frequency.")
+              help="Add a roll-off to the spectrum starting at given "
+              "frequency in units of Nyquist frequency.")
 @click.option("-o", "--output", default="/dev/stdout",
               help="File in which to write the result")
 @click.argument("frfile")
@@ -80,7 +81,7 @@ def condition(period, rolloff, output, frfile):
     This will write a new FR file the various transformations.
 
     -P|--period will force set a new sampling period (with no resampling)
-    
+
     '''
     import wirecell.sigproc.response.persist as per
     import wirecell.resp.resample as res
@@ -92,14 +93,13 @@ def condition(period, rolloff, output, frfile):
         fr.period = unitify(period)
     if rolloff:
         fr = res.rolloff(fr, rolloff)
-
-
-
     per.dump(output, fr)
+
 
 @cli.command("resample")
 @click.option("-t", "--tick", default=None, type=str,
-              help="Resample the field response to have this sample period with units, eg '64*ns'")
+              help='Resample the field response to have this sample '
+              'period with units, eg "64*ns"')
 @click.option("-e", "--error", default=1e-6,
               help="Allowed error in LMN rationality condition.")
 @click.option("-p", "--pad", default="zero",
@@ -109,7 +109,8 @@ def condition(period, rolloff, output, frfile):
               help="File in which to write the result")
 @click.argument("frfile")
 def resample(tick, error, pad, output, frfile):
-    '''Resample the FR.
+    '''
+    Resample the FR.
 
     The initial sampling period Ts (fr.period)) and the resampled period Tr
     (--tick) must satisfy the LMN rationality condition.
@@ -125,7 +126,6 @@ def resample(tick, error, pad, output, frfile):
     - LMN resampling paper
 
     '''
-
     import wirecell.sigproc.response.persist as per
     import wirecell.resp.resample as res
 

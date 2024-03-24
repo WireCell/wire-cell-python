@@ -9,29 +9,32 @@ import numpy
 from wirecell import units
 
 from wirecell.util.cli import context, log
+from wirecell.util.functions import unitify
+
 
 @context("sigproc")
 def cli(ctx):
     '''
-    Wire Cell Signal Processing Features
+    Wire Cell Signal Processing
     '''
     pass
 
+
 @cli.command("fr2npz")
-@click.option("-g", "--gain", default=0.0, type=float,
-                  help="Set gain in mV/fC.")
-@click.option("-s", "--shaping", default=0.0, type=float,
-                  help="Set shaping time in us.")
+@click.option("-g", "--gain", default=None, type=str,
+              help="Set electronics gain, eg '14*mV/fC'.")
+@click.option("-s", "--shaping", default=None, type=str,
+              help="Set electronics shaping time, eg '2*us'.")
 @click.argument("json-file")
 @click.argument("npz-file")
 def fr2npz(gain, shaping, json_file, npz_file):
     '''
     Convert field response file to numpy (.json or .json.bz2 to .npz)
 
-    If gain and shaping are non zero then convolve each field response
-    function with the corresponding electronics response function.
+    If gain and shaping are given then both must be given and convolve each
+    path response with the corresponding electronics response.
 
-    Result holds a number of arrays and scalar values.
+    Result holds various arrays and scalar values.
 
     Arrays:
 
@@ -70,23 +73,25 @@ def fr2npz(gain, shaping, json_file, npz_file):
         - speed :: in mm/ns of the nominal electron drift speed used
           in the Garfield calculation.
 
-        - gain : the passed in gain
+        - gain : the gain in WCT system of units, if given
 
-        - shaping :: the passed in shaping time
-
+        - shaping :: the shaping in WCT system of units, if given
     '''
     import wirecell.sigproc.response.persist as per
     import wirecell.sigproc.response.arrays as arrs
 
     fr = per.load(json_file)
+    print(type(fr))
     # when json_file really names a detector, that detector may have more than
     # one field response file - as in uboone.  Here, we only support the first.
     if isinstance(fr, list):
-        fr = fr[0]              
-    gain = units.mV/units.fC
-    shaping *= units.us
-    dat = arrs.fr2arrays(fr, gain, shaping)
-    numpy.savez(npz_file, **dat)
+        fr = fr[0]
+    if gain is None or shaping is None:
+        dat = arrs.fr2arrays(fr)
+    else:
+        dat = arrs.fr2arrays(fr, unitify(gain), unitify(shaping))
+
+    numpy.savez_compressed(npz_file, **dat)
 
 
 @cli.command("frzero")
@@ -308,7 +313,8 @@ def plot_garfield_track_response(ctx, gain, shaping, tick, tick_padding, electro
 @click.argument("responsefile2")
 @click.argument("outfile")
 @click.pass_context
-def plot_response_compare_waveforms(ctx, plane, irange, trange, responsefile1, responsefile2, outfile):
+def plot_response_compare_waveforms(ctx, plane, irange, trange,
+                                    responsefile1, responsefile2, outfile):
     '''
     Plot common response waveforms from two sets.
     '''

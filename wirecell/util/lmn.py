@@ -169,7 +169,8 @@ class Signal:
         '''
         Return new signal with wave amplitude this factor of self. 
         '''
-        return Signal(self.sampling, wave=self.wave*factor, name=name or self.name)
+        return Signal(self.sampling, wave=self.wave*factor,
+                      name=name or self.name)
 
     def resize(self, Ns, time_padding='linear', name=None):
         '''
@@ -421,8 +422,8 @@ def decimate(sig, dN, name=None):
     '''
     wave = sig.wave.copy()
     wave = wave[::dN]
-    return Signal(Sampling(T=dN*sig.sampling.T, N=wave.size), wave=wave, name=name or sig.name)
-
+    return Signal(Sampling(T=dN*sig.sampling.T, N=wave.size), wave=wave,
+                  name=name or sig.name)
 
 
 def interpolate(sig, Tr, time_padding="zero", eps=1e-6, name=None):
@@ -433,7 +434,7 @@ def interpolate(sig, Tr, time_padding="zero", eps=1e-6, name=None):
     '''
 
     rat = rational(sig, Tr, time_padding=time_padding, eps=eps)
-    # debug(f'interpolate: rationalize {sig.sampling} -> {rat.sampling}')
+    debug(f'interpolate: rationalize {sig.sampling} -> {rat.sampling}')
 
     Nr = rat.sampling.duration / Tr
     if abs(Nr - round(Nr)) > eps:
@@ -441,7 +442,7 @@ def interpolate(sig, Tr, time_padding="zero", eps=1e-6, name=None):
     Nr = round(Nr)
 
     res = resample(rat, Nr)
-    # debug(f'interpolate: resample {rat.sampling} -> {res.sampling}')
+    debug(f'interpolate: resample {rat.sampling} -> {res.sampling}')
 
     # rez = resize(res, sig.sampling.duration)
     rez = res
