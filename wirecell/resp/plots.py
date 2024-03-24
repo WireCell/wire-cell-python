@@ -56,13 +56,14 @@ def spectrum_resize(spec, newsize, norm):
     ret = norm * lmn.hermitian_mirror(ret);
     return ret
 
+
 def wct_pir_resample(sig, tick, short_length, name=None):
     '''
     Replicate the resampling done in PIR.
     '''
     rawresp_tick = sig.sampling.T
     rawresp_ntick = sig.sampling.N
-    wave = numpy.array(sig.wave);
+    wave = numpy.array(sig.wave)
     wave.resize( int(short_length * tick / rawresp_tick ) )
 
     # unlike WCT PIR, we keep this an interpolation instead of directly jumping
@@ -72,10 +73,10 @@ def wct_pir_resample(sig, tick, short_length, name=None):
     spec = spectrum_resize(numpy.fft.fft(wave), short_length, norm)
 
     ret = lmn.Signal(lmn.Sampling(T=tick, N=short_length), spec=spec,
-                     name=name or sig.name);
-    print(f'{sig} {ret}')
+                     name=name or sig.name)
+    # print(f'{sig=} {ret=}')
     return ret
-    
+
 
 
 
@@ -88,12 +89,14 @@ def eresp(ss, name="coldelec", gain=14*units.mV/units.fC, shaping=2*units.us):
     eresp = electronics(times, gain, shaping)
     return lmn.Signal(ss, wave = eresp, name=name)
 
+
 def label(sig):
     '''
     Return a legend label for signal.
     '''
     ss = sig.sampling
     return f'${sig.name},\ N={ss.N},\ T={ss.T/units.ns:.0f}\ ns$'
+
 
 def plot_signals(sigs, tlim=None, flim=None, tunits="us", funits="MHz",
                  iunits="femtoampere", ilim=None,
@@ -322,3 +325,48 @@ def load_fr(detector):
     if isinstance(got, list):
         return got[0]
     return got
+
+
+def plot_paths(rplane,
+               tlim=(55*units.us, 70*units.us), flim=(0, 1*units.MHz),
+               pixels=True):
+    '''
+    Plot path response signals in one plane
+    '''
+    tustr = "us"
+    fustr = "MHz"
+    tuval = getattr(units, tustr)
+    fuval = getattr(units, fustr)
+
+    fig, axes = plt.subplots(ncols=2, nrows=2, sharex='col')
+
+    npaths = len(rplane)
+    imps = numpy.linspace(0, npaths, npaths, endpoint=False)
+    ss = rplane[0].sampling
+    t_lrtb = (0, ss.duration/tuval, 0, npaths)
+    f_lrtb = (0, ss.F/fuval, 0, npaths)
+
+    wave = lmn.sigs2arr(rplane, "wave")
+    spec = numpy.abs(lmn.sigs2arr(rplane, "spec"))
+
+    tix, fix = axes[0]
+    # pcolormesh is slower than imshow
+    if pixels:
+        kwds = dict(aspect='auto', interpolation='none')
+        tix.imshow(wave, extent=t_lrtb, cmap="seismic", **kwds)
+        fix.imshow(spec, extent=f_lrtb, **kwds)
+    else:
+        kwds = dict()
+        tt_mg, ti_mg = numpy.meshgrid(ss.times/tuval, imps)
+        ff_mg, fi_mg = numpy.meshgrid(ss.freqs/fuval, imps)
+        tix.pcolormesh(tt_mg, ti_mg, wave, cmap="seismic", **kwds)
+        fix.pcolormesh(ff_mg, fi_mg, spec, **kwds)
+    tix.set_xlim(tlim[0]/tuval, tlim[1]/tuval)
+    fix.set_xlim(flim[0]/fuval, flim[1]/fuval)
+
+    tpx, fpx = axes[1]
+    for irow, sig in enumerate(rplane):
+        tpx.plot(ss.times/tuval, sig.wave)
+        fpx.plot(ss.freqs/fuval, numpy.abs(sig.spec))
+
+    return fig, axes

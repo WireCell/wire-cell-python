@@ -41,18 +41,18 @@ def pr2array(pr, nimperwire = 6, nbinsperwire = 10):
             p1 = pr.paths[ibin0 + ind+0].pitchpos
             p2 = pr.paths[ibin0 + ind+1].pitchpos
             pm = 0.5*(p1+p2)
-            
-            obin = iwire * nbinsperwire + ind;
+
+            obin = iwire * nbinsperwire + ind
 
             res[obin] = m
             pitches[obin] = pm
 
     res = res + numpy.flipud(res)
     pitches = pitches - numpy.flip(pitches)
-        
+
     # for path in pr.paths:
     #     print ("%.3f mm"%(path.pitchpos/units.mm))
-    return res,pitches
+    return res, pitches
 
 
 def toarray(fr, nimperwire=6, nbinsperwire=10):
@@ -162,7 +162,7 @@ def coldelec(fra, fr, gain, shaping):
     # for ind, pr in enumerate(fr.planes):
     #     fra['resp%d' % pr.planeid] = responses[ind]
 
-    return fra;
+    return fra
 
 
 def fr2arrays(fr, gain=None, shaping=None):

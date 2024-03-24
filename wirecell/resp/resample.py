@@ -43,6 +43,7 @@ def resample(fr, Tr, Ts=None, **kwds):
                                     plane.pitch))
     return FieldResponse(planes, fr.axis, fr.origin, fr.tstart, Tr, fr.speed)
 
+
 def rolloff(fr, fstart=0.9):
     '''
     Return an FR with a linear roll-off applied.

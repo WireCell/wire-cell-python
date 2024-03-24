@@ -596,6 +596,103 @@ def lmn_fr_plots(impact, plane, period,
             oo.write('\n')
 
 
+@cli.command("lmn-pdsp-plots")
+@click.argument("output")
+def lmn_pdsp_plots(output):
+    '''
+    Generate PDF file with plots illustrating LMN on PDSP 
+    '''
+    from wirecell.util import lmn
+    import wirecell.resp.resample as res
+    from wirecell.resp.plots import load_fr, eresp, plot_paths, multiply_period
+    from wirecell.resp.util import fr2sigs
+    from wirecell.util.plottools import pages
+
+    FRs = [load_fr("pdsp")]
+    FRs[0].period = 100*units.ns  # fix inaccuracies
+    FRs.append(res.resample(FRs[0], 64*units.ns))
+
+    names = ["top", "bot"]
+    ss_fast = [lmn.Sampling(T=fr.period,
+                            N=fr.planes[0].paths[0].current.size)
+                 for fr in FRs]
+    er_fast = [eresp(ss, name="ER_{%s}" % name)
+               for ss, name in zip(ss_fast, names)]
+    fr_fast = [fr2sigs(fr) for fr in FRs]
+
+    def visit_lol(lol, func):
+        if isinstance(lol, list):
+            return [visit_lol(one, func) for one in lol]
+        return func(lol)
+
+    qr_fast = [visit_lol(frs,
+                         lambda sig: multiply_period(lmn.convolve(sig, er)))
+               for er, frs in zip(er_fast, fr_fast)]
+
+    downsample_factors = (5, 8)
+    qr_slow = [visit_lol(one, lambda sig:
+                         lmn.interpolate(sig, sig.sampling.T*dsf))
+               for one, dsf in zip(qr_fast, downsample_factors)]
+
+    Tslow = qr_slow[0][0][0].sampling.T
+    ss_slow = [qr[0][0].sampling for qr in qr_slow]
+    qr_slow_rs = visit_lol(qr_slow[1], lambda sig:
+                           lmn.interpolate(sig, Tslow))
+    qr_slow.append(qr_slow_rs)
+    names.append('res')
+    
+
+    # ss_slow = [dr[0][0].sampling for dr in dr_slow]
+    # for one in ss_slow:
+    #     print('slow',one)
+
+    # dr_slow_rs = visit_lol(dr_slow[1], lambda sig:
+    #                        lmn.interpolate(sig, ss_slow[0].T))
+    # dr_slow.append(dr_slow_rs)
+    # names.append('res')
+
+    # qr_slow = visit_lol(dr_slow, lambda sig: multiply_period(sig))
+
+    # qr_diff = [
+    #     visit_lol(list(zip(pa,pb)), lambda sigs:
+    #               lmn.Signal(sigs[0].sampling,
+    #                          wave=sigs[0].wave-sigs[1].wave[:ss_slow[0].N]))
+    #            for pa, pb in zip(qr_slow[0], qr_slow[-1])]
+
+    with pages(output) as out:
+        def page(name):
+            print(name)
+            plt.suptitle(name)
+            plt.tight_layout()
+            out.savefig()
+            plt.close()
+
+        for iplane, letter in enumerate("UVW"):
+
+            def trio(kind, responses):
+                indices = [0,1]
+                if len(responses) == 3:
+                    indices = [2,0,1]
+                for ind in indices:
+                    name = names[ind]
+                    rs = responses[ind]
+                    rplane = rs[iplane]
+                    plot_paths(rplane)
+                    page(f'{letter} {name} ${kind}$ {rplane[0].sampling}')
+
+
+
+            trio('FR', fr_fast)
+            trio('T \cdot FR \circledast ER', qr_fast)
+            trio('T \cdot FR \circledast ER', qr_slow)
+            # trio('FRxER', dr_slow)
+            # trio('T.FRxER', qr_slow)
+
+            # plot_paths(qr_diff[iplane])
+            # page(f'T.FRxER diff {letter}')
+
+
+
 def main():
     cli(obj=dict())
 

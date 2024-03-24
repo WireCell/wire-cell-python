@@ -247,6 +247,13 @@ class Signal:
                       name=name or self.name)
 
 
+def sigs2arr(sigs, which='wave'):
+    '''
+    Given list of consistent sigs, return 2D array of wave or spec
+    '''
+    return numpy.vstack([getattr(sig, which) for sig in sigs])
+
+
 def bezout(a, b, eps=1e-6):
     '''Greated common divisor and Bezout coefficients.
 
@@ -558,3 +565,4 @@ def convolve_downsample(sa, sb, name=None):
     sced = Signal(sbe.sampling, spec=saed.spec * sbe.spec,
                   name=name or f'{sa.name} (x) {sb.name}')
     return sced
+
