@@ -6,6 +6,8 @@ import re
 import sys
 import click
 import numpy
+from collections import defaultdict
+
 from wirecell import units
 
 from wirecell.util.cli import context, log
@@ -96,35 +98,64 @@ def fr2npz(gain, shaping, json_file, npz_file):
 
 @cli.command("frzero")
 @click.option("-n", "--number", default=0,
-              help="Number of strip to keep, default keeps just zero strip")              
+              help="Number of strip to keep, default the zero strip")
 @click.option("--index", default=0,
-              help="The FR to use in case a detector has multiple (default=0)")              
+              help="The FR to use in case a detector has multiple (default=0)")
+@click.option("--uniform", default=None, type=int,
+              help="Set to a number to set all imps that imp (default=None)")
 @click.option("-o", "--output",
               default="/dev/stdout",
               help="Output WCT file (.json or .json.bz2, def: stdout)")
-@click.argument("infile")
+@click.argument("fields")
 @click.pass_context
-def frzero(ctx, number, index, output, infile):
+def frzero(ctx, number, index, uniform, output, fields):
     '''
-    Given a WCT FR file, make a new one with off-center wires zeroed.
+    Emit FR with wire regions zeroed.
+
+    Remaining non-zero may optionally be made uniform.
+
+    Note, the number for --uniform=N is order dependent and usually 0 at the
+    wire region boundary and 5 at the center of the region.
+
+    The "fields" is a canonical detector name or a FR file.
     '''
     import wirecell.sigproc.response.persist as per
-    import wirecell.sigproc.response.arrays as arrs
-    fr = per.load(infile)
+
+    fr = per.load(fields)
     if isinstance(fr, list):
         fr = fr[index]
+
     for pr in fr.planes:
+
+        # lookup from wire number to its imps
+        w2i = defaultdict(list)
+        if uniform is not None:
+            for path in pr.paths:
+                wire = int(path.pitchpos / pr.pitch)
+                w2i[wire].append(path)
+
         for path in pr.paths:
+            assert isinstance(path.current, numpy.ndarray)
 
             wire = int(path.pitchpos / pr.pitch)
+
             if abs(wire) <= number:
-                log.debug(f'keep wire: {wire}, pitch = {path.pitchpos} / {pr.pitch}')
+                if uniform is  None:
+                    log.debug(f'keep plane {pr.planeid} wire: {wire}, '
+                              f'pitch = {path.pitchpos} / {pr.pitch}')
+                    continue
+
+                pu = w2i[wire][uniform]
+                path.current = pu.current
+                log.debug(f'keep plane {pr.planeid} wire: {wire}, '
+                          f'pitch = {path.pitchpos} / {pr.pitch} '
+                          f'with path at {pu.pitchpos}')
                 continue
 
-            nc = len(path.current)
-            for ind in range(nc):
-                path.current[ind] = 0;
+            path.current = numpy.zeros_like(path.current)
+
     per.dump(output, fr)
+
 
 @cli.command("response-info")
 @click.argument("json-file")
