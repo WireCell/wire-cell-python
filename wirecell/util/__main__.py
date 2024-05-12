@@ -20,6 +20,38 @@ def cli(ctx):
     '''
     pass
 
+
+@cli.command("convdown")
+@click.option("-n", "--sampling-number", default=None, type=int,
+              help="Original number of samples.")
+@click.option("-t", "--sampling-period", default=None, type=str,
+              help="Original sample period,eg '100*ns'")
+@click.option("-N", "--resampling-number", default=None, type=int,
+              help="Resampled number of samples.")
+@click.option("-T", "--resampling-period", default=None, type=str,
+              help="Resampled sample period, eg '64*ns'")
+@click.option("-e", "--error", default=1e-6,
+              help="Precision by which integer and "
+              "rationality conditions are judged")
+def cmd_convdown(sampling_number, sampling_period, resampling_period, resampling_number, error):
+    '''
+    Calculate numbers for "simultaneous convolution and downsample" method.
+
+    Eg:
+
+        $ wirecell-util convdown -n 625 -t '100*ns' -N 200 -T "500*ns"
+        (Ta=100.0 ns, Na=625) -> 1625, (Tb=500.0 ns, Nb=200) -> 325
+
+    '''
+    from wirecell.util import lmn
+    Ta = unitify(sampling_period)
+    Na = sampling_number
+    Tb = unitify(resampling_period)
+    Nb = resampling_number
+    Nea, Neb = lmn.convolution_downsample_size(Ta, Na, Tb, Nb)
+    print(f'(Ta={Ta/units.ns:.1f} ns, {Na=}) -> {Nea}, (Tb={Tb/units.ns:.1f} ns, {Nb=}) -> {Neb}')
+
+
 @cli.command("lmn")
 @click.option("-n", "--sampling-number", default=None, type=int,
               help="Original number of samples.")
@@ -28,7 +60,8 @@ def cli(ctx):
 @click.option("-T", "--resampling-period", default=None, type=str,
               help="Resampled sample period, eg '64*ns'")
 @click.option("-e", "--error", default=1e-6,
-              help="Precision by which integer and rationality conditions are judged")
+              help="Precision by which integer and "
+              "rationality conditions are judged")
 def cmd_lmn(sampling_number, sampling_period, resampling_period, error):
     '''Print various LMN parameters for a given resampling.
 
@@ -44,8 +77,12 @@ def cmd_lmn(sampling_number, sampling_period, resampling_period, error):
     from wirecell.util import lmn
     print(f'initial sampling: {Ns=} {Ts=}')
 
+    gcd = lmn.egcd(Tr, Ts-Tr)
+    print(f'egcd({Ts=}, {Tr=}): {gcd}')
+    dn = lmn.rational_deltan(Ts, Tr)
+    print(f'minimum delta-n: {dn}')
     nrat = lmn.rational_size(Ts, Tr, error)
-    print(f'rationality factor: {nrat}')
+    print(f'minimum size: {nrat}')
 
     nrag = Ns % nrat
     if nrag:
@@ -57,19 +94,20 @@ def cmd_lmn(sampling_number, sampling_period, resampling_period, error):
         Ns_rational = Ns
 
     Nr_target = Ns_rational*Ts/Tr
-    assert abs(Nr_target - round(Nr_target)) < error # assured by rational_size()
+    assert abs(Nr_target - round(Nr_target)) < error
     Nr_target = round(Nr_target)
     print(f'resampling target: {Nr_target=} {Tr=}')
 
     ndiff = Nr_target - Ns_rational
-    print(f'final resampling: {Ns_rational=}, {Ts=} -> {Nr_target=}, {Tr=} diff of {ndiff}')
-
+    print(f'final resampling: {Ns_rational=}, {Ts=} '
+          f'-> {Nr_target=}, {Tr=} diff of {ndiff}')
 
     Nr_wanted = Ns*Ts/Tr
     Nr = math.ceil(Nr_wanted)
     if abs(Nr_wanted - Nr) > error:
-        print(f'--> warning: noninteger {Nr_wanted=} for {Tr=}.  Duration will change from {Ns*Ts} to {Nr*Tr} due to rounding.')
-    print(f'requested resampling target: {Nr=} {Tr=}')
+        print('--> note: noninteger nominal target size:'
+              f' {Nr_wanted} for {Ns=} {Ts=} {Tr=}.')
+    print(f'resampling target size: {Nr=} {Tr=}')
 
     ntrunc = Nr - Nr_target
     if ntrunc < 0:

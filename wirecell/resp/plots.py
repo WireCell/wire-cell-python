@@ -1,4 +1,5 @@
 import numpy
+from math import floor
 import matplotlib.pyplot as plt
 from wirecell import units
 from wirecell.util import lmn
@@ -39,6 +40,46 @@ def fr_arr(fr, plane=0):
     return ret
 
 
+def spectrum_resize(spec, newsize, norm):
+    '''
+    Replicate the function of this name from PIR.
+    '''
+    oldsize = spec.size
+    if oldsize == newsize:
+        return spec
+    oldhalf = int(1 + floor(oldsize / 2))
+    newhalf = int(1 + floor(newsize / 2))
+
+    half = min(oldhalf, newhalf)
+    ret = numpy.zeros(newsize, dtype=spec.dtype)
+    ret[:half] = spec[:half]
+    ret = norm * lmn.hermitian_mirror(ret);
+    return ret
+
+
+def wct_pir_resample(sig, tick, short_length, name=None):
+    '''
+    Replicate the resampling done in PIR.
+    '''
+    rawresp_tick = sig.sampling.T
+    rawresp_ntick = sig.sampling.N
+    wave = numpy.array(sig.wave)
+    wave.resize( int(short_length * tick / rawresp_tick ) )
+
+    # unlike WCT PIR, we keep this an interpolation instead of directly jumping
+    # from FR to T*FR.  And, note the norm uses original size as the
+    # wave.resize() adds no power.
+    norm = short_length/rawresp_ntick
+    spec = spectrum_resize(numpy.fft.fft(wave), short_length, norm)
+
+    ret = lmn.Signal(lmn.Sampling(T=tick, N=short_length), spec=spec,
+                     name=name or sig.name)
+    # print(f'{sig=} {ret=}')
+    return ret
+
+
+
+
 from wirecell.sigproc.response import electronics
 def eresp(ss, name="coldelec", gain=14*units.mV/units.fC, shaping=2*units.us):
     '''
@@ -48,12 +89,14 @@ def eresp(ss, name="coldelec", gain=14*units.mV/units.fC, shaping=2*units.us):
     eresp = electronics(times, gain, shaping)
     return lmn.Signal(ss, wave = eresp, name=name)
 
+
 def label(sig):
     '''
     Return a legend label for signal.
     '''
     ss = sig.sampling
     return f'${sig.name},\ N={ss.N},\ T={ss.T/units.ns:.0f}\ ns$'
+
 
 def plot_signals(sigs, tlim=None, flim=None, tunits="us", funits="MHz",
                  iunits="femtoampere", ilim=None,
@@ -88,7 +131,7 @@ def plot_signals(sigs, tlim=None, flim=None, tunits="us", funits="MHz",
             lwidth = linewidth[ind % nsigs]
         else:
             lwidth = linewidth
-        pargs.update(label = label(sig), color=colors[ind], linewidth=lwidth)
+        pargs.update(label=label(sig), color=colors[ind], linewidth=lwidth)
 
         ss = sig.sampling
         wave = sig.wave / iunits_v
@@ -268,7 +311,8 @@ def multiply_period(current, name=None):
     '''
     ss = current.sampling
     charge = current.wave * ss.T
-    return lmn.Signal(ss, wave=charge, name=name)
+    return lmn.Signal(ss, wave=charge,
+                      name=name or f'T \\cdot {current.name}')
 
 import wirecell.sigproc.response.persist as per
 from wirecell.util.fileio import wirecell_path
@@ -281,3 +325,48 @@ def load_fr(detector):
     if isinstance(got, list):
         return got[0]
     return got
+
+
+def plot_paths(rplane,
+               tlim=(55*units.us, 70*units.us), flim=(0, 1*units.MHz),
+               pixels=True):
+    '''
+    Plot path response signals in one plane
+    '''
+    tustr = "us"
+    fustr = "MHz"
+    tuval = getattr(units, tustr)
+    fuval = getattr(units, fustr)
+
+    fig, axes = plt.subplots(ncols=2, nrows=2, sharex='col')
+
+    npaths = len(rplane)
+    imps = numpy.linspace(0, npaths, npaths, endpoint=False)
+    ss = rplane[0].sampling
+    t_lrtb = (0, ss.duration/tuval, 0, npaths)
+    f_lrtb = (0, ss.F/fuval, 0, npaths)
+
+    wave = lmn.sigs2arr(rplane, "wave")
+    spec = numpy.abs(lmn.sigs2arr(rplane, "spec"))
+
+    tix, fix = axes[0]
+    # pcolormesh is slower than imshow
+    if pixels:
+        kwds = dict(aspect='auto', interpolation='none')
+        tix.imshow(wave, extent=t_lrtb, cmap="seismic", **kwds)
+        fix.imshow(spec, extent=f_lrtb, **kwds)
+    else:
+        kwds = dict()
+        tt_mg, ti_mg = numpy.meshgrid(ss.times/tuval, imps)
+        ff_mg, fi_mg = numpy.meshgrid(ss.freqs/fuval, imps)
+        tix.pcolormesh(tt_mg, ti_mg, wave, cmap="seismic", **kwds)
+        fix.pcolormesh(ff_mg, fi_mg, spec, **kwds)
+    tix.set_xlim(tlim[0]/tuval, tlim[1]/tuval)
+    fix.set_xlim(flim[0]/fuval, flim[1]/fuval)
+
+    tpx, fpx = axes[1]
+    for irow, sig in enumerate(rplane):
+        tpx.plot(ss.times/tuval, sig.wave)
+        fpx.plot(ss.freqs/fuval, numpy.abs(sig.spec))
+
+    return fig, axes

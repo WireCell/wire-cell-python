@@ -12,6 +12,28 @@ import dataclasses
 import matplotlib.pyplot as plt
 from wirecell.util.cli import debug
 
+def hermitian_mirror(spec):
+    '''
+    Return a Hermitian-symmetric version of spec.
+
+    The spec should be full size and the first half is Hermitian-reflected to
+    the second half, respecting the zero and Nyquist bin (if exists).
+    '''
+    hm = numpy.array(spec)
+
+    # nyquist bin index if size is even, else bin just below Nyquist edge.
+    halfsize = hm.size//2
+
+    # zero freq must be real
+    hm[0] = numpy.abs(hm[0])
+    hm[1:halfsize] = hm[1:halfsize]
+    if 0 == hm.size%2:          # even with Nyquist bin
+        hm[halfsize] = numpy.abs(hm[halfsize])
+        hm[halfsize+1:] = numpy.conjugate(hm[halfsize-1:0:-1])
+    else:
+        hm[halfsize+1:] = numpy.conjugate(hm[halfsize:0:-1])
+    return hm
+
 @dataclasses.dataclass
 class Sampling:
     '''
@@ -84,6 +106,7 @@ class Sampling:
     def __str__(self):
         return f'N={self.N} T={self.T}'
 
+
 @dataclasses.dataclass
 class Signal:
     '''
@@ -129,7 +152,10 @@ class Signal:
             self.spec = numpy.fft.fft(self.wave)
 
     def __str__(self):
-        return f'{self.name} {self.sampling}'
+        return f'"{self.name}" {self.sampling}'
+
+    def __repr__(self):
+        return f'{self.sampling} "{self.name}"'
 
     @property
     def time_energy(self):
@@ -165,7 +191,8 @@ class Signal:
         '''
         Return new signal with wave amplitude this factor of self. 
         '''
-        return Signal(self.sampling, wave=self.wave*factor, name=name or self.name)
+        return Signal(self.sampling, wave=self.wave*factor,
+                      name=name or self.name)
 
     def resize(self, Ns, time_padding='linear', name=None):
         '''
@@ -201,6 +228,31 @@ class Signal:
         sig = Signal(ss, wave=cur, name=name or self.name)
         return sig
 
+    def frequency_multiply(self, other, name=None):
+        '''
+        Multiplication in frequency space.
+        '''
+        if isinstance(other, Signal):
+            other = other.spec
+        return Signal(self.sampling, spec = self.spec * other,
+                      name=name or self.name)
+
+    def interval_multiply(self, other, name=None):
+        '''
+        Multiplication in interval space.
+        '''
+        if isinstance(other, Signal):
+            other = other.wave
+        return Signal(self.sampling, wave = self.wave * other,
+                      name=name or self.name)
+
+
+def sigs2arr(sigs, which='wave'):
+    '''
+    Given list of consistent sigs, return 2D array of wave or spec
+    '''
+    return numpy.vstack([getattr(sig, which) for sig in sigs])
+
 
 def bezout(a, b, eps=1e-6):
     '''Greated common divisor and Bezout coefficients.
@@ -216,9 +268,9 @@ def bezout(a, b, eps=1e-6):
         if a < eps:
             return (b, 0, 1)
         else:
-            print(f'{a=} {b=}')
+            # print(f'{a=} {b=}')
             g, x, y = step(b % a, a)
-            print(f'{g=} {a=} {b=} {x=} {y=}')
+            # print(f'{g=} {a=} {b=} {x=} {y=}')
             return (g, y - (b // a) * x, x)
     return step(a,b)
 
@@ -260,29 +312,38 @@ def resize(sig, duration, pad=0, name=None):
         wave[ss.N:] = pad
 
     rs = Sampling(ss.T, Nr)
-    return Signal(rs, wave=wave, name = name or sig.name)
-    
+    return Signal(rs, wave=wave, name=name or sig.name)
+
+
+def rational_deltan(Ts, Tr, eps=1e-6):
+    '''
+    Return the delta-n value for LMN rationality
+    '''
+    dT = Ts - Tr
+    return dT/egcd(Tr, dT, eps=eps)
+
 
 def rational_size(Ts, Tr, eps=1e-6):
     '''
-    Return a minimum size allowing LMN resampling from period Ts to Tr to be rational.
+    Return a minimum size allowing LMN resampling from period Ts to Tr to
+    be rational.
     '''
     dT = Ts - Tr
-
     n = dT/egcd(Tr, dT, eps=eps)
     rn = round(n)
-    print(f"delta-n = {n}")
 
     err = abs(n - rn)
     if err > eps:
-        raise ValueError(f'no GCD for {Tr=}, {Ts=} within error: {err} > {eps}')
+        raise ValueError(f'no GCD for {Tr=}, '
+                         f'{Ts=} within error: {err} > {eps}')
 
     Ns = rn * Tr / dT
     rNs = round(Ns)
     err = abs(rNs - Ns)
     if err > eps:
-        raise ValueError(f'rationality not met for {Tr=}, {Ts=} within error: {err} > {eps}')
-    
+        raise ValueError(f'rationality not met for {Tr=}, '
+                         f'{Ts=} within error: {err} > {eps}')
+
     return rNs
 
 
@@ -356,12 +417,12 @@ def condition(signal, Tr, eps=1e-6, name=None):
 
 def resample(signal, Nr, name=None):
     '''
-    Return a new signal of same duration that is resampled to have number of samples Nr.
+    Return a new signal of same duration that is resampled
+    to have number of samples Nr.
 
     '''
     Ns = signal.sampling.N
     resampling = signal.sampling.resampling(Nr)
-    Tr = resampling.T
 
     S = signal.spec
     R = numpy.zeros(Nr, dtype=S.dtype)
@@ -408,8 +469,8 @@ def decimate(sig, dN, name=None):
     '''
     wave = sig.wave.copy()
     wave = wave[::dN]
-    return Signal(Sampling(T=dN*sig.sampling.T, N=wave.size), wave=wave, name=name or sig.name)
-
+    return Signal(Sampling(T=dN*sig.sampling.T, N=wave.size), wave=wave,
+                  name=name or sig.name)
 
 
 def interpolate(sig, Tr, time_padding="zero", eps=1e-6, name=None):
@@ -420,7 +481,7 @@ def interpolate(sig, Tr, time_padding="zero", eps=1e-6, name=None):
     '''
 
     rat = rational(sig, Tr, time_padding=time_padding, eps=eps)
-    # debug(f'interpolate: rationalize {sig.sampling} -> {rat.sampling}')
+    debug(f'interpolate: rationalize {sig.sampling} -> {rat.sampling}')
 
     Nr = rat.sampling.duration / Tr
     if abs(Nr - round(Nr)) > eps:
@@ -428,7 +489,7 @@ def interpolate(sig, Tr, time_padding="zero", eps=1e-6, name=None):
     Nr = round(Nr)
 
     res = resample(rat, Nr)
-    # debug(f'interpolate: resample {rat.sampling} -> {res.sampling}')
+    debug(f'interpolate: resample {rat.sampling} -> {res.sampling}')
 
     # rez = resize(res, sig.sampling.duration)
     rez = res
@@ -444,12 +505,64 @@ def interpolate(sig, Tr, time_padding="zero", eps=1e-6, name=None):
 
 def convolve(s1, s2, mode='full', name=None):
     '''
-    Return new signal that is the convolution of the two.
+    Return new signal that is the linear convolution of the s1 and s2.
 
-    Mode is as taken by numpy.convolve which provides the kernel.
-
+    Linear convolution is assured by extending both signals to the sum of their
+    individual size by padding with zeros.  Note, this is one more than the
+    absolute minimum required.
     '''
     if s1.sampling.T != s2.sampling.T:
         raise ValueError("can not convolve signals if differing sample period")
+
     wave = numpy.convolve(s1.wave, s2.wave, mode)
-    return Signal(Sampling(T=s1.sampling.T, N=wave.size), wave=wave, name=name)
+    return Signal(Sampling(T=s1.sampling.T, N=wave.size), wave=wave,
+                  name=name or f'{s1.name} \otimes {s2.name}')
+
+
+# Not exactly lmn, but in DepoTransform we must do a convolution and a
+# downsample of the FR in a fast sampling and ER in a slow sampling and there
+# is an lmn'esque trick to do that efficiently.
+#
+def convolution_downsample_size(Ta, Na, Tb, Nb):
+    '''
+    Simultaneous convolution downsample sizes for two signals (n1,n2).
+
+    Eg. nominal FR and er: Ta=100ns, Na=625, Tb=500ns, Nb=200
+    gives (1625, 325) giving R=Ta/Tb=Nb/Na=5.
+    '''
+    duration = Ta*Na + Tb*Nb
+    Nea, Neb = duration/Ta, duration/Tb
+    eps = 0.0001
+    if abs(Nea - int(Nea)) > eps or abs(Neb - int(Neb)) > eps:
+        raise ValueError(f'sampling periods not integer ratio: {Ta/Tb}')
+    return int(Nea), int(Neb)
+
+
+def convolve_downsample(sa, sb, name=None):
+    '''
+    Convolve the two signals and downsample to the slower
+    '''
+    if sa.sampling.T > sb.sampling.T:
+        sa, sb = sb, sa
+
+    aa = sa.sampling            # eg T=100ns
+    bb = sb.sampling            # eg T=500ns
+
+    # "total" duration must be evenly divisible by both T's!
+    duration = math.ceil(aa.duration/bb.T)*bb.T + bb.duration
+    sae = resize(sa, duration)
+    sbe = resize(sb, duration)
+    # print(f'{duration=} = {sa.sampling.duration} + {sb.sampling.duration}')
+    # print(f'{sa.sampling.duration/sb.sampling.T} '
+    #       f'{sb.sampling.duration/sa.sampling.T}')
+    # print(f'{sa=}\n{sb=}\n{sae=}\n{sbe=}')
+    R = sa.sampling.T / sb.sampling.T
+    Nrf = R*sae.sampling.N
+    Nr = int(Nrf)
+    # print(f'{R=} {Nr=} {Nrf=}')
+    saed = resample(sae, Nr)
+    # print(f'{saed=}')
+    sced = Signal(sbe.sampling, spec=saed.spec * sbe.spec,
+                  name=name or f'{sa.name} (x) {sb.name}')
+    return sced
+

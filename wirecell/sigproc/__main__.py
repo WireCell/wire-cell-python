@@ -6,32 +6,37 @@ import re
 import sys
 import click
 import numpy
+from collections import defaultdict
+
 from wirecell import units
 
 from wirecell.util.cli import context, log
+from wirecell.util.functions import unitify
+
 
 @context("sigproc")
 def cli(ctx):
     '''
-    Wire Cell Signal Processing Features
+    Wire Cell Signal Processing
     '''
     pass
 
+
 @cli.command("fr2npz")
-@click.option("-g", "--gain", default=0.0, type=float,
-                  help="Set gain in mV/fC.")
-@click.option("-s", "--shaping", default=0.0, type=float,
-                  help="Set shaping time in us.")
+@click.option("-g", "--gain", default=None, type=str,
+              help="Set electronics gain, eg '14*mV/fC'.")
+@click.option("-s", "--shaping", default=None, type=str,
+              help="Set electronics shaping time, eg '2*us'.")
 @click.argument("json-file")
 @click.argument("npz-file")
 def fr2npz(gain, shaping, json_file, npz_file):
     '''
     Convert field response file to numpy (.json or .json.bz2 to .npz)
 
-    If gain and shaping are non zero then convolve each field response
-    function with the corresponding electronics response function.
+    If gain and shaping are given then both must be given and convolve each
+    path response with the corresponding electronics response.
 
-    Result holds a number of arrays and scalar values.
+    Result holds various arrays and scalar values.
 
     Arrays:
 
@@ -70,56 +75,87 @@ def fr2npz(gain, shaping, json_file, npz_file):
         - speed :: in mm/ns of the nominal electron drift speed used
           in the Garfield calculation.
 
-        - gain : the passed in gain
+        - gain : the gain in WCT system of units, if given
 
-        - shaping :: the passed in shaping time
-
+        - shaping :: the shaping in WCT system of units, if given
     '''
     import wirecell.sigproc.response.persist as per
     import wirecell.sigproc.response.arrays as arrs
 
     fr = per.load(json_file)
+    print(type(fr))
     # when json_file really names a detector, that detector may have more than
     # one field response file - as in uboone.  Here, we only support the first.
     if isinstance(fr, list):
-        fr = fr[0]              
-    gain = units.mV/units.fC
-    shaping *= units.us
-    dat = arrs.fr2arrays(fr, gain, shaping)
-    numpy.savez(npz_file, **dat)
+        fr = fr[0]
+    if gain is None or shaping is None:
+        dat = arrs.fr2arrays(fr)
+    else:
+        dat = arrs.fr2arrays(fr, unitify(gain), unitify(shaping))
+
+    numpy.savez_compressed(npz_file, **dat)
 
 
 @cli.command("frzero")
 @click.option("-n", "--number", default=0,
-              help="Number of strip to keep, default keeps just zero strip")              
+              help="Number of strip to keep, default the zero strip")
 @click.option("--index", default=0,
-              help="The FR to use in case a detector has multiple (default=0)")              
+              help="The FR to use in case a detector has multiple (default=0)")
+@click.option("--uniform", default=None, type=int,
+              help="Set to a number to set all imps that imp (default=None)")
 @click.option("-o", "--output",
               default="/dev/stdout",
               help="Output WCT file (.json or .json.bz2, def: stdout)")
-@click.argument("infile")
+@click.argument("fields")
 @click.pass_context
-def frzero(ctx, number, index, output, infile):
+def frzero(ctx, number, index, uniform, output, fields):
     '''
-    Given a WCT FR file, make a new one with off-center wires zeroed.
+    Emit FR with wire regions zeroed.
+
+    Remaining non-zero may optionally be made uniform.
+
+    Note, the number for --uniform=N is order dependent and usually 0 at the
+    wire region boundary and 5 at the center of the region.
+
+    The "fields" is a canonical detector name or a FR file.
     '''
     import wirecell.sigproc.response.persist as per
-    import wirecell.sigproc.response.arrays as arrs
-    fr = per.load(infile)
+
+    fr = per.load(fields)
     if isinstance(fr, list):
         fr = fr[index]
+
     for pr in fr.planes:
+
+        # lookup from wire number to its imps
+        w2i = defaultdict(list)
+        if uniform is not None:
+            for path in pr.paths:
+                wire = int(path.pitchpos / pr.pitch)
+                w2i[wire].append(path)
+
         for path in pr.paths:
+            assert isinstance(path.current, numpy.ndarray)
 
             wire = int(path.pitchpos / pr.pitch)
+
             if abs(wire) <= number:
-                log.debug(f'keep wire: {wire}, pitch = {path.pitchpos} / {pr.pitch}')
+                if uniform is  None:
+                    log.debug(f'keep plane {pr.planeid} wire: {wire}, '
+                              f'pitch = {path.pitchpos} / {pr.pitch}')
+                    continue
+
+                pu = w2i[wire][uniform]
+                path.current = pu.current
+                log.debug(f'keep plane {pr.planeid} wire: {wire}, '
+                          f'pitch = {path.pitchpos} / {pr.pitch} '
+                          f'with path at {pu.pitchpos}')
                 continue
 
-            nc = len(path.current)
-            for ind in range(nc):
-                path.current[ind] = 0;
+            path.current = numpy.zeros_like(path.current)
+
     per.dump(output, fr)
+
 
 @cli.command("response-info")
 @click.argument("json-file")
@@ -308,7 +344,8 @@ def plot_garfield_track_response(ctx, gain, shaping, tick, tick_padding, electro
 @click.argument("responsefile2")
 @click.argument("outfile")
 @click.pass_context
-def plot_response_compare_waveforms(ctx, plane, irange, trange, responsefile1, responsefile2, outfile):
+def plot_response_compare_waveforms(ctx, plane, irange, trange,
+                                    responsefile1, responsefile2, outfile):
     '''
     Plot common response waveforms from two sets.
     '''
