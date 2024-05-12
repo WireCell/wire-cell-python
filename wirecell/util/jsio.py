@@ -180,14 +180,14 @@ def dumps(obj, indent=2):
     return json.dumps(obj, indent=indent)
 
 
-def dump(f, obj, index=2):
+def dump(f, obj, indent=2):
     '''
     Save object obj to file name or file object of f.
     '''
     btext = dumps(obj, indent=indent).encode()
     f = Path(f)
 
-    if isinstance(f, str):
+    if isinstance(f.name, str):
         if f.name.endswith(".json"):
             open(f, 'wb').write(btext)
             return
@@ -199,8 +199,8 @@ def dump(f, obj, index=2):
             import gzip
             gzip.open(f, "wb").write(btext)
             return
-        raise RuntimeError("unknown file format: %s" % filename)
-    f.write(btext);
+        raise RuntimeError("unknown file format: %s" % f.name)
+    raise RuntimeError("unexpected Path")
 
 
 def scalar_typify(val):
