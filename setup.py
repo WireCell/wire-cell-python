@@ -42,6 +42,7 @@ setup(
             'wirecell-aux = wirecell.aux.__main__:main',
             'wirecell-test = wirecell.test.__main__:main',
             'wirecell-ls4gan = wirecell.ls4gan.__main__:main',
+            'wirecell-dnn = wirecell.dnn.__main__:main',
         ]
     )
 )
