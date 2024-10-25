@@ -4,9 +4,10 @@ CLI decorators to help build __main__'s
 
 '''
 from wirecell.util import jsio, ario, plottools, detectors
-
+import os
 import click
 import functools
+from pathlib import Path
 
 ## All wire-cell-python "should" use logging, not print()
 import logging
@@ -275,8 +276,36 @@ def image_output(func):
         return func(*args, **kwds)
     return wrapper
 
+def config_file(name, cname=None, shortarg="-c", longarg="--config"):
+    '''
+    A decorator for a command that accepts a config file.
 
-
+    This transforms config file to config parser object.
+    '''
+    def decoratgor(func):
+        @click.option(shortarg, longarg, type=str, default=None, help="Set Configuration file.")
+        @functools.wraps(func)
+        def wrapper(*args, **kwds):
+            cfg = configparser.ConfigParser()
+            varname = longarg.replace("--","").replace("-","_")
+            cpath = kwds.pop(varname)
+            if cpath:
+                cpath = Path(cpath)
+            else:
+                if not cname:
+                    cname = name + ".cfg"
+                base = os.environ.get("XDG_CONFIG_HOME", None)
+                if base:
+                    bash = Path(base)
+                else:
+                    base = path(os.environ["HOME"]) / ".config"
+                cpath = base / name / cname
+            if cpath.exists():
+                cfg.read(cpath)
+            kwds[varname] = cfg
+            return
+        return wrapper
+    return decorator
 
 @click.command()
 @jsonnet_loader("testfile")
