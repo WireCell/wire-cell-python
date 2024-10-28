@@ -1,0 +1,61 @@
+#+title: DNNROI support
+
+* Input data
+
+The full file set provide two subsets: "rec" giving reconstructed signal
+information (final and some intermediate) and "tru" providing target ROI
+classifications.
+
+Input data is basic "frame file" schema in HDF5.  Paths like:
+
+#+begin_example
+/<EID>/<TYPE>_<TAG><N>
+/100/{channels,frame,tickinfo}_{tag}0
+#+end_example
+
+EID is "event" identifier number.
+
+Array types:
+
+- ~channels~ 1D array of *electronic* (not image) channel ID numbers of rows of ~frame~.  
+- ~frame~ 2D per-channel rows of waveform, eg shape (6000, 2488) for PDVD
+- ~tickinfo~ trio of reference time, sample period and, starting tbin for the ~frame~.
+
+Tags name the output of an intermediate or final signal process stage.  In "rec" files you may find these tags:
+- ~break_roi_1st~
+- ~break_roi_2nd~
+- ~cleanup_roi~
+- ~decon_charge~
+- ~extend_roi~
+- ~gauss~
+- ~loose_lf~
+- ~mp2_roi~
+- ~mp3_roi~
+- ~shrink_roi~
+- ~tight_lf~
+  
+In "tru" files you may find these tags:
+- ~ductor~
+
+The final ~N~ marks the APA from which the data came.
+
+* Data transforms
+
+Both "rec" and "tru" share an initial transform:
+- load arrays from file matching tags for given EID
+- stack images along axis 2
+- transpose images (chan,tick) to (tick,chan)
+
+
+Every "rec" sample has additional processing:
+- rebin across both image dimensions via ~mean()~
+- normalize
+- crop
+- cyclic transpose to make first index the image channel.
+
+Every "tru" sample has additional processing:
+- squeeze out empty image channel index
+- rebin as for "rec"
+- crop as for "rec"
+- threshold to set value 0 or 1.
+
