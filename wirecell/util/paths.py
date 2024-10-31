@@ -3,6 +3,7 @@
 Deal with WCT related paths
 '''
 import os
+from glob import glob
 from pathlib import Path
 
 def flatten(lst):
@@ -32,6 +33,7 @@ def listify(*lst, delim=":"):
 
     return flatten(map(listify_one, lst))
 
+
 def resolve(path, *pathlist):
     '''
     Return absolute path of path as a Path object
@@ -52,3 +54,13 @@ def resolve(path, *pathlist):
         if maybe.exists():
             return maybe
     raise FileNotFoundError(f'failed to resolve {path.name}.  Check WIRECELL_PATH?')
+
+
+def unglob(globs):
+    '''
+    Given a list of glob, return flat list of paths
+    '''
+    out = list()
+    for one in globs:
+        out += glob(one)
+    return out

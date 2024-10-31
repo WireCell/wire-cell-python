@@ -1,15 +1,12 @@
 #!/usr/bin/env python
 '''
-The Ronneberger, Fischer and Brox U-Net
-
-Unlike several other implementations using the name "U-Net" that one runs
-across, this one tries to exactly replicate what is in the paper.
-
-Do NOT attempt to "improve" this model except where it may deviate from what is
-described in the paper.
+The Ronneberger, Fischer and Brox U-Net by default.
 
 https://arxiv.org/abs/1505.04597
 https://lmb.informatik.uni-freiburg.de/people/ronneber/u-net/u-net-architecture.png
+
+Unlike several other implementations using the name "U-Net" that one runs
+across, this one tries to exactly replicate what is in the paper, by default.
 
 The following labels are used to identify units of the network and refers to the
 u-net-architecture.png figure.
@@ -35,8 +32,13 @@ u-net-architecture.png figure.
 - umerge :: "up merge" (gray+green arrows), concatenation of the skip result
   with the usamp result and provides input to an dconv on the upward leg.
 
-The default produces U-Net.  However, the model is parameterized by the number
-of skip connections.  U-Net has four.
+The default configuration produces U-Net.  The following optional extensions,
+off by default, are supported:
+
+- insert two BatchNorm2d in double convolution unit (dconv).
+- use other than 4 skip connection levels.
+- use non-square images data.
+
 '''
 
 
@@ -73,10 +75,9 @@ def up_in_size(orig_size, skip_level, nlevels = 4):
     return size
 
 
-
-def dimensions(in_channels = 1, in_size = 572, nskips = 4):
+def dimension(in_channels = 1, in_size = 572, nskips = 4):
     '''
-    Calculate image channel and pixel dimensions for elements of the U-Net.
+    Calculate 1D image channel and pixel dimensions for elements of the U-Net.
 
     - size :: the size of both input image dimensions (572 for U-Net paper).
 
@@ -122,35 +123,55 @@ def dimensions(in_channels = 1, in_size = 572, nskips = 4):
     return (chans_in, chans_out, size_in, size_out)
 
 
+def dimensions(in_channels = 1, in_shape = (572,572), nskips = 4):
+    '''
+    N-D version of dimension() where sizes are shapes.
+    '''
+    dims = [dimension(in_channels, in_size, nskips) for in_size in in_shape]
+    in_chans = dims[0][0]
+    out_chans = dims[0][1]
+    in_shapes = tuple(zip(*[d[2] for d in dims]))
+    out_shapes = tuple(zip(*[d[2] for d in dims]))
+    return in_chans, out_chans, in_shapes, out_shapes
+
+
 def skip_dimensions(dims):
     '''
     Reformat the output of dimensions() to the same form but for the skip
     connections in order of skip level.
     '''
-    (chans_in, chans_out, size_in, size_out) = dims
+    (chans_in, chans_out, shape_in, shape_out) = dims
 
     nskips = (len(chans_in)-1)//2
 
     schans_in = chans_out[:nskips]
     schans_out = schans_in      # skips preserve channel dim
 
-    ssize_in = size_out[:nskips]
-    ssize_out = size_in[-nskips:]
-    ssize_out.reverse()
-    return (schans_in, schans_out, ssize_in, ssize_out)
+    sshape_in = shape_out[:nskips]
+    sshape_out = list(shape_in[-nskips:])
+    sshape_out.reverse()
+    sshape_out = tuple(sshape_out)
+    return (schans_in, schans_out, sshape_in, sshape_out)
 
 
-
-def dconv(in_channels, out_channels, kernel_size = 3, padding = 0):
+def dconv(in_channels, out_channels, kernel_size = 3, padding = 0,
+          batch_norm=False):
     '''
     The double "conv 3x3, ReLU" unit.
     '''
-    return nn.Sequential(
+    parts = [
         nn.Conv2d(in_channels, out_channels, kernel_size, padding=padding),
         nn.ReLU(inplace=True),
         nn.Conv2d(out_channels, out_channels, kernel_size, padding=padding),
         nn.ReLU(inplace=True)
-    )
+    ]
+
+    if batch_norm:
+        parts.insert(3, nn.BatchNorm2d(out_ch))
+        parts.insert(1, nn.BatchNorm2d(out_ch))
+
+    return nn.Sequential(*parts)
+
 
 def dsamp():
     '''
@@ -167,27 +188,29 @@ def usamp(in_ch):
     # return nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
 
 
-def build_grid(source_size, target_size, batch_size = 1):
-    '''
-    Map output pixels to input pixels for cropping by grid_sample().
+# def build_grid(source_size, target_size, batch_size = 1):
+#     '''
+#     Map output pixels to input pixels for cropping by grid_sample().
 
-    This assumes square images of given size.
-    '''
-    # simplified version of what is given in
-    # https://discuss.pytorch.org/t/cropping-a-minibatch-of-images-each-image-a-bit-differently/12247
-    k = float(target_size)/float(source_size)
-    direct = torch.linspace(-k,k,target_size).unsqueeze(0).repeat(target_size,1).unsqueeze(-1)
-    grid = torch.cat([direct,direct.transpose(1,0)],dim=2).unsqueeze(0)
-    return grid.repeat(batch_size, 1, 1, 1)
+#     This assumes square images of given size.
+#     '''
+#     # simplified version of what is given in
+#     # https://discuss.pytorch.org/t/cropping-a-minibatch-of-images-each-image-a-bit-differently/12247
+#     k = float(target_size)/float(source_size)
+#     direct = torch.linspace(-k,k,target_size).unsqueeze(0).repeat(target_size,1).unsqueeze(-1)
+#     grid = torch.cat([direct,direct.transpose(1,0)],dim=2).unsqueeze(0)
+#     return grid.repeat(batch_size, 1, 1, 1)
 
 class skip(nn.Module):
     '''
     The "skip connection" providing a core cropping.
     '''
-    def __init__(self, source_size, target_size, batch_size=1):
+    def __init__(self, source_shape, target_shape, batch_size=1):
         super().__init__()
-        margin = (source_size - target_size)//2
-        self.crop = slice(margin, margin+target_size)
+        self.crop = []
+        for ssize, tsize in zip(source_shape, target_shape):
+            margin = (ssize - tsize)//2
+            self.crop.append (slice(margin, margin+tsize))
 
         # A fancier way to do it which, but why?
         # self.register_buffer('g', build_grid(source_size, target_size, batch_size))
@@ -198,7 +221,7 @@ class skip(nn.Module):
         # print(f'grid: {self.g.shape} {self.g.dtype} {self.g.device}')
         # print(f'data: {x.shape} {x.dtype} {x.device}')
         # return grid_sample(x, self.g, align_corners=True, mode='nearest')
-        return x[:,:,self.crop,self.crop]
+        return x[:,:,self.crop[0],self.crop[1]]
 
 
 class umerge(nn.Module):
@@ -221,14 +244,16 @@ class umerge(nn.Module):
 
 class UNet(nn.Module):
     '''
-    U-Net model from the paper.
+    U-Net model exactly as from the paper by default.
     '''
 
-    def __init__(self, n_channels=3, n_classes=6, in_size=572, batch_size=1, nskips=4):
+    def __init__(self, n_channels=3, n_classes=6, in_shape=(572,572),
+                 batch_size=1, nskips=4,
+                 batch_norm=False):
         super().__init__()
                 
         self.nskips = nskips
-        dims = dimensions(n_channels, in_size, nskips)
+        dims = dimensions(n_channels, in_shape, nskips)
 
         # The major elements of the U
         chans_in, chans_out, _, _ = dims
