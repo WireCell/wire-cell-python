@@ -23,19 +23,23 @@ from torch import optim
 import torch.nn as nn
 
 class Classifier:
-    def __init__(self, net, optclass = optim.SGD, **optkwds):
+    def __init__(self, net, tracker=None, optclass = optim.SGD, **optkwds):
         self.net = net              # model
         self.optimizer = optclass(net.parameters(), **optkwds)
+        self.tracker = tracker or Tracker()
 
     def epoch(self, data, criterion=nn.BCELoss()):
         '''
-        One train over the batches of the data, return list of losses at each batch.
+        Train over the batches of the data, return list of losses at each batch.
         '''
         epoch_losses = list()
         for features, labels in data:
+
             self.optimizer.zero_grad()
 
-            prediction = self.net(src)
+            prediction = self.net(features)
+            print(f'{features.shape=} {labels.shape=} {prediction.shape=}')
+
             loss = criterion(prediction, labels)
             loss.backward()
             self.optimizer.step()

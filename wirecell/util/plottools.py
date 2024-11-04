@@ -119,9 +119,32 @@ class NameSingleton(object):
 
 
 
-def pages(name, format=None):
+def pages(name, format=None, single=False):
+    '''
+    Return an instance of something like a PdfPages for the given format.
+
+    Use like:
+
+    >>> with pages(filename) as out:
+    >>>    # make a matplotlib figure
+    >>>    out.savefig()
+
+    True multi-page formats (PDF) produce file with the given name.
+
+    When a format that does not support pages (PNG) is requested then a page
+    number is inserted into the file name.  The file name may be given with a
+    '%d' template to explicitly describe how the page number should be set.
+    Otherwise, the page number is appended to the base file name just before the
+    file name extension.
+
+    However, if "single" is True, then this numbering is not performed and each
+    call to pages.savefig() will overwrite the file.
+    '''
+
     if name.endswith(".pdf") or format=="pdf":
         return PdfPages(name)
+    if single:
+        return NameSingleton(name, format)
     return NameSequence(name)
 
 

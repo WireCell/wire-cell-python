@@ -59,3 +59,75 @@ Every "tru" sample has additional processing:
 - crop as for "rec"
 - threshold to set value 0 or 1.
 
+* Network
+
+The DNNROI network is examined and compared to U-Net.
+
+** Dimensions 
+
+The dimensions of output tensors from major units of the DNNROI network:
+ 
+
+ | dir    | level | unit     |   ch | hpx | wpx |
+ |--------+-------+----------+------+-----+-----|
+ | in     |       | input    |    3 | 476 | 600 |
+ | down   |     0 | dconv    |   64 | 476 | 600 |
+ | down   |     0 | pool     |   64 | 238 | 300 |
+ | down   |     1 | dconv    |  128 | 238 | 300 |
+ | down   |     1 | pool     |  128 | 119 | 150 |
+ | down   |     2 | dconv    |  256 | 119 | 150 |
+ | down   |     2 | pool     |  256 |  59 |  75 |
+ | down   |     3 | dconv    |  512 |  59 |  75 |
+ | down   |     3 | pool     |  512 |  29 |  37 |
+ | bottom |     4 | dconv    |  512 |  29 |  37 |
+ | up     |     3 | upsample |  512 |  58 |  74 |
+ | up     |     3 | pad      |  512 |  59 |  75 |
+ | up     |     3 | cat      | 1024 |  59 |  75 |
+ | up     |     3 | dconv    |  256 |  59 |  75 |
+ | up     |     2 | upsample |  256 | 118 | 150 |
+ | up     |     2 | pad      |  256 | 119 | 150 |
+ | up     |     2 | cat      |  512 | 119 | 150 |
+ | up     |     2 | dconv    |  128 | 119 | 150 |
+ | up     |     1 | upsample |  128 | 238 | 300 |
+ | up     |     1 | pad      |  128 | 238 | 300 |
+ | up     |     1 | cat      |  256 | 238 | 300 |
+ | up     |     1 | dconv    |   64 | 238 | 300 |
+ | up     |     0 | upsample |   64 | 476 | 600 |
+ | up     |     0 | pad      |   64 | 476 | 600 |
+ | up     |     0 | cat      |  128 | 476 | 600 |
+ | up     |     0 | dconv    |   64 | 476 | 600 |
+ | out    |       | conv     |    1 | 476 | 600 |
+ | out    |       | sigmoid  |    1 | 476 | 600 |
+ 
+
+** Deviations from U-Net
+
+The DNNROI network architecture takes inspiration from U-Net but deviates in many details from what is described in the U-Net paper.  In general, U-Net is more regular in image channel dimension while DNNROI is more regular in image pixel dimensions.  To achieve this and other goals, DNNROI inserts and swaps certain operations.  The following is a summary of the differences.
+
+The main unit that makes up the "U" shape is the "double convolution" (dconv).
+It is this general unit that is most modified in DNNROI from U-Net.  These
+modifications vary depending on whether the dconv is in downward, bottom or
+upward legs of the "U".
+
+- DNNROI inserts a batch normalization between each pair of 2D convolution and ReLU.
+
+- The U-net dconv reduces pixel dimension by 4 while DNNROI zero-pads after each
+  2D convlution and the pixel dimension sizes remains unchanged.
+
+- After the initial inflation to size 64, both U-Net and DNNROI dconv on the
+  downward leg doubles the  channel dimension.  U-Net dconv on the "bottom"
+  of the "U" also doubles this dimension while DNNROI does not.
+
+- On the upward leg, U-Net dconv uniformly halves the channel dimension size.
+  DNNROI quarters this dimension for the first three upward steps and halves it
+  for the final step.
+
+Changes in other units:
+
+- DNNROI uses bilinear interpolated upsampling while U-Net uses ~ConvTranspose2d~.
+
+- As a consequence, DNNROI zero-pads the pixel dimensions after upsampling when an odd target size is required.  The image size of 572 pixels used in the U-Net paper avoids encountering odd upsampling target sizes (relying on the 4 pixel loss in U-Net dconv). 
+
+- DNNROI applies a final sigmoid to U-Net's output segmentation map.
+
+- The U-Net skip transfers a core crop of the array whereas DNNROI preserves the entire array across the skip connection.  This is enabled by DNNROI applying padding in dconv units.  As a consequence, U-Net skip operation depends on the "natural" sizes of the upward U leg while DNNROI's upward U leg sizes depends on the "natural" sizes of the downward U leg.

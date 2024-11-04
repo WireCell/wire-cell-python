@@ -5,9 +5,6 @@ The Ronneberger, Fischer and Brox U-Net by default.
 https://arxiv.org/abs/1505.04597
 https://lmb.informatik.uni-freiburg.de/people/ronneber/u-net/u-net-architecture.png
 
-Unlike several other implementations using the name "U-Net" that one runs
-across, this one tries to exactly replicate what is in the paper, by default.
-
 The following labels are used to identify units of the network and refers to the
 u-net-architecture.png figure.
 
@@ -24,134 +21,27 @@ u-net-architecture.png figure.
 - usamp :: "up sampling" (green arrow), the "up-conv 2x2" that input from dconv
   result and output to umerge.
 
-- skip :: "skip connection" (gray arrow), the center crop of dconv output and
-  provides input to umerge.  A "skip level" counts the skips from 0 starting at
-  the top of the U.  The "bottom" can be considered a skip level for purposes of
-  calculating the output size of its dconv.
+- skip :: "skip connection" (gray arrow), this simply shunts the output from a
+  dconv on the downward leg to one input of a umerge.
 
 - umerge :: "up merge" (gray+green arrows), concatenation of the skip result
-  with the usamp result and provides input to an dconv on the upward leg.
+  with the up samping result and provides input to an dconv on the upward leg.
 
 The default configuration produces U-Net.  The following optional extensions,
 off by default, are supported:
 
-- insert two BatchNorm2d in double convolution unit (dconv).
-- use other than 4 skip connection levels.
-- use non-square images data.
+- batch_norm=True :: insert two BatchNorm2d in double convolution unit (dconv).
+- bilinear=True :: use bilinear interpolation instead of ConvTranspose2d in up-conv
+- padding=True :: zero-pad in dconv so image input size is retained and in umerge is needed to match arrays from skip and below connections.
+- nskips=N :: use a different number of skip connection levels besides 4.
+- use non-square images.
 
 '''
 
 
 import torch
 import torch.nn as nn
-from torch.nn.functional import grid_sample
-
-
-def down_out_size(orig_size, skip_level):
-    '''
-    Return the output size from a down unit at a given skip level.
-
-    Skip level counts from 0 transfer "over" the U via skip connection or bottom.
-
-    '''
-    size = orig_size
-    for dskip in range(skip_level + 1):
-        if dskip:
-            size = size // 2
-        size = size - 4
-    return size
-
-def up_in_size(orig_size, skip_level, nlevels = 4):
-    '''
-    Return the input size to an up unit (output of a skip) at a given skip level.
-
-    The nlevels counts the number of skip connections across the U.
-    '''
-    size = down_out_size(orig_size, nlevels)
-    for uskip in range( nlevels - skip_level):
-        if uskip:
-            size = size - 4
-        size = size * 2
-    return size
-
-
-def dimension(in_channels = 1, in_size = 572, nskips = 4):
-    '''
-    Calculate 1D image channel and pixel dimensions for elements of the U-Net.
-
-    - size :: the size of both input image dimensions (572 for U-Net paper).
-
-    - nskips :: the number of skip connections (4 for U-Net paper)
-
-    This returns four lists of size 2*nskips+1.  Each element of a list
-    corresponds to one major "dconv" unit as we go along the U: nskips "down",
-    one "bottom" and nskips "up".  The lists are:
-
-    - number of input channels
-    - number of output channels
-    - input size
-    - output size
-
-    The [nskips] element refers to the bottom dconv.
-
-    See skip_dimensions() to form similar lists from the output of this function
-    for the skip connections.
-
-    Note, the output segmentation map is excluded.  The final element in the
-    lists refers to the top up dconv.
-    '''
-    chans_down_in = [in_channels] + [2**(6+n) for n in range(nskips)]  # includes bottom
-    chans_down_out = [2**(6+n) for n in range(nskips+1)]
-    chans_up_in = list(chans_down_out[1:])
-    chans_up_in.reverse()
-    chans_in = chans_down_in + chans_up_in
-    chans_up_out = chans_down_in[1:]
-    chans_up_out.reverse()
-    chans_out = chans_down_out + chans_up_out
-
-    size_in = [in_size]
-    size_out = []
-    for skip in range(nskips):
-        siz = size_in[-1] - 4   # dconv reduction
-        size_out.append(siz)
-        size_in.append(siz // 2)  # max pool reduction
-    size_out.append(size_in[-1] - 4)  # bottom out
-    for rskip in range(nskips):
-        size_in.append(size_out[-1] * 2)  # up conv
-        size_out.append(size_in[-1] - 4)  # dconv reduction
-
-    return (chans_in, chans_out, size_in, size_out)
-
-
-def dimensions(in_channels = 1, in_shape = (572,572), nskips = 4):
-    '''
-    N-D version of dimension() where sizes are shapes.
-    '''
-    dims = [dimension(in_channels, in_size, nskips) for in_size in in_shape]
-    in_chans = dims[0][0]
-    out_chans = dims[0][1]
-    in_shapes = tuple(zip(*[d[2] for d in dims]))
-    out_shapes = tuple(zip(*[d[2] for d in dims]))
-    return in_chans, out_chans, in_shapes, out_shapes
-
-
-def skip_dimensions(dims):
-    '''
-    Reformat the output of dimensions() to the same form but for the skip
-    connections in order of skip level.
-    '''
-    (chans_in, chans_out, shape_in, shape_out) = dims
-
-    nskips = (len(chans_in)-1)//2
-
-    schans_in = chans_out[:nskips]
-    schans_out = schans_in      # skips preserve channel dim
-
-    sshape_in = shape_out[:nskips]
-    sshape_out = list(shape_in[-nskips:])
-    sshape_out.reverse()
-    sshape_out = tuple(sshape_out)
-    return (schans_in, schans_out, sshape_in, sshape_out)
+from torch.nn.functional import pad as nnpad
 
 
 def dconv(in_channels, out_channels, kernel_size = 3, padding = 0,
@@ -167,8 +57,8 @@ def dconv(in_channels, out_channels, kernel_size = 3, padding = 0,
     ]
 
     if batch_norm:
-        parts.insert(3, nn.BatchNorm2d(out_ch))
-        parts.insert(1, nn.BatchNorm2d(out_ch))
+        parts.insert(3, nn.BatchNorm2d(out_channels))
+        parts.insert(1, nn.BatchNorm2d(out_channels))
 
     return nn.Sequential(*parts)
 
@@ -180,138 +70,155 @@ def dsamp():
     return nn.MaxPool2d(2)
 
 
-def usamp(in_ch):
-    '''
-    The "up sampling".
-    '''
-    return nn.ConvTranspose2d(in_ch//2, in_ch//2, 2, stride=2)
-    # return nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
-
-
-# def build_grid(source_size, target_size, batch_size = 1):
-#     '''
-#     Map output pixels to input pixels for cropping by grid_sample().
-
-#     This assumes square images of given size.
-#     '''
-#     # simplified version of what is given in
-#     # https://discuss.pytorch.org/t/cropping-a-minibatch-of-images-each-image-a-bit-differently/12247
-#     k = float(target_size)/float(source_size)
-#     direct = torch.linspace(-k,k,target_size).unsqueeze(0).repeat(target_size,1).unsqueeze(-1)
-#     grid = torch.cat([direct,direct.transpose(1,0)],dim=2).unsqueeze(0)
-#     return grid.repeat(batch_size, 1, 1, 1)
-
-class skip(nn.Module):
-    '''
-    The "skip connection" providing a core cropping.
-    '''
-    def __init__(self, source_shape, target_shape, batch_size=1):
-        super().__init__()
-        self.crop = []
-        for ssize, tsize in zip(source_shape, target_shape):
-            margin = (ssize - tsize)//2
-            self.crop.append (slice(margin, margin+tsize))
-
-        # A fancier way to do it which, but why?
-        # self.register_buffer('g', build_grid(source_size, target_size, batch_size))
-        # grid should have shape: (nbatch, nrows, ncols, 2)
-
-    def forward(self, x):
-        # x must be (nbatch, nchannel, nrows, ncols)
-        # print(f'grid: {self.g.shape} {self.g.dtype} {self.g.device}')
-        # print(f'data: {x.shape} {x.dtype} {x.device}')
-        # return grid_sample(x, self.g, align_corners=True, mode='nearest')
-        return x[:,:,self.crop[0],self.crop[1]]
-
-
 class umerge(nn.Module):
     '''
     The "upsample merge" of the outputs from a skip and a dconv.
+
+    The "up" array is upsampled and then appended to the "over" array.
+
+    Both options have large repercussion on upstream nodes:
+
+    If bilinear, the number of channels in the upsampled array is unchanged else
+    it is halved.  
+
+    If padded, the upsampled array pixel dimensions will be padded to match
+    those of the "over" array.
     '''
-    def __init__(self, nchannels):
+    def __init__(self, nchannels, bilinear=False, padding=False):
         '''
         Give number of channels in the input to the upsampling port.
         '''
         super().__init__()
-        self._nchannels = nchannels
-        self.upsamp = nn.ConvTranspose2d(nchannels, nchannels//2, 2, stride=2)
+        self.padding = padding
+        self.pads = None
+        self.slices = None
+        if bilinear:
+            self.upsamp = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+        else:
+            self.upsamp = nn.ConvTranspose2d(nchannels, nchannels//2, 2, stride=2)
 
     def forward(self, over, up):
         up = self.upsamp(up)
+
+        if self.padding:
+            # when not cropping we must pad special to match when target is odd size
+            if self.pads is None:
+                pad = list()
+                for dim in [-1, -2]:
+                    diff = over.shape[dim] - up.shape[dim]
+                    half = diff // 2
+                    pad += [half, diff-half]
+                self.pads = tuple(pad)
+            up = nnpad(up, self.pads)
+        else:
+            if self.slices is None:
+                slices = [slice(None),] * len(up.shape)  # select all by default
+                for dim in [-2,-1]:
+                    hi = over.shape[dim]
+                    lo = up.shape[dim]
+                    if lo == hi:
+                        continue
+                    beg = (hi - lo) // 2
+                    end = beg + lo
+                    slices[dim] = slice(beg,end)
+                print(f'{slices=}\n{over.shape=} {up.shape=}')
+                self.slices = tuple(slices)
+            over = over[self.slices]
+            print(f'{over.shape=}')
+
         cat = torch.cat((over, up), dim=1)
+        print(f'{cat.shape=}')
         return cat
+
+
+def make_dconv(ich, factor, padding=False, batch_norm=False):
+    n_padding = 1 if padding else 0
+    och = ich
+    if ich < 64:
+        och = 64  # special first case
+    elif factor != 1:
+        och = int(ich*factor)
+    print(f'dconv {ich=} {och=} {factor=} {padding=} {batch_norm=}')
+    node = dconv(ich, och, padding=n_padding, batch_norm=batch_norm)
+    return node, och
+
+def make_dsamp(ich):
+    return dsamp(), ich
+
+def make_umerge(ich, bilinear=False, padding=False):
+    '''
+    ich is number of channels from the skip
+    '''
+    # Assume umerge halves the number of channels from the input below.
+    och = ich * 2
+    return umerge(2*ich, bilinear=bilinear, padding=padding), och
+
 
 
 class UNet(nn.Module):
     '''
     U-Net model exactly as from the paper by default.
     '''
-
     def __init__(self, n_channels=3, n_classes=6, in_shape=(572,572),
-                 batch_size=1, nskips=4,
-                 batch_norm=False):
+                 nskips=4,
+                 batch_norm=False, bilinear=False, padding=False):
         super().__init__()
                 
-        self.nskips = nskips
-        dims = dimensions(n_channels, in_shape, nskips)
+        nch = n_channels
 
-        # The major elements of the U
-        chans_in, chans_out, _, _ = dims
+        self.downleg = list()       # nodes in downward U leg
+        skip_nchannels = list()      # for making skips
+        for iskip in range(nskips):  # go down the U making dconv and dsamp
 
-        # Note; we use setattr to make sure PyTorch summary finds the submodules.
+            dc_node, nch = make_dconv(nch, factor=2, padding=padding, batch_norm=batch_norm)
+            setattr(self, f'down_dconv_{iskip}', dc_node)
+            skip_nchannels.append(nch)
 
-        # The downward leg of the U.
-        for ind in range(nskips):
-            setattr(self, f'downleg_{ind}', dconv(chans_in[ind], chans_out[ind]))
+            ds_node, nch = make_dsamp(nch)
+            setattr(self, f'down_dsamp_{iskip}', ds_node)
 
-        # The bottom of the U
-        self.bottom = dconv(chans_in[nskips], chans_out[nskips])
+            self.downleg.append((dc_node, ds_node))
 
-        # The upward leg of the U.
-        for count, ind in enumerate(range(nskips+1, 2*nskips+1)):
-            setattr(self, f'upleg_{count}', dconv(chans_in[ind], chans_out[ind]))
+        factor = 1 if padding else 2
+        self.bottom, nch = make_dconv(nch, factor=factor, padding=padding, batch_norm=batch_norm)
 
-        # The skip connections get applied top-down
-        schans_in, schans_out, ssize_in, ssize_out = skip_dimensions(dims)
-        for ind, ss in enumerate(zip(ssize_in, ssize_out)):
-            setattr(self, f'skip_{ind}', skip(*ss, batch_size=batch_size))
+        # self.skips = list()
+        self.upleg = list()
+        for iskip in range(nskips-1, -1, -1):
 
-        # And the merges are applied bottom-up.
-        # We bake in the rule that upsample input has 2x the number of channels as the skip output.
-        umerges = [umerge(2*nc) for nc in schans_out]
-        umerges.reverse()
-        for ind, um in enumerate(umerges):
-            setattr(self, f'umerge_{ind}', um);
+            nch = skip_nchannels[iskip]
+            m_node, nch = make_umerge(nch, bilinear=bilinear, padding=padding)
+            setattr(self, f'up_umerge_{iskip}', m_node)
 
-        # Downsampler is data-independent and reused.
-        self.dsamp = dsamp()
+            factor = 0.25 if padding else 0.5
+            dc_node, nch = make_dconv(nch, factor=factor, padding=padding, batch_norm=batch_norm)
+            setattr(self, f'up_dconv_{iskip}', dc_node)
 
-        self.segmap = nn.Conv2d(chans_out[-1], n_classes, 1)
+            self.upleg.append((m_node, dc_node))  # bottom up order
+
+        self.segmap = nn.Conv2d(nch, n_classes, 1)
         
-    def getm(self, name, ind):
-        return getattr(self, f'{name}_{ind}')
         
     def forward(self, x):
+        dump(x, "in")
 
-        dskips = list()
-
-        for ind in range(self.nskips):
-            dl = self.getm("downleg", ind)
-            dout = dl(x)
-            x = self.dsamp(dout)
-            sm = self.getm("skip", ind)
-            dskip = sm(dout)
-            dskips.append( dskip )
-
+        overs = list()
+        for skip, (dc,ds) in enumerate(self.downleg):
+            x = dc(x)
+            dump(x, f"down dc {skip}")
+            overs.append(x)
+            x = ds(x)
+            dump(x, f"down ds {skip}")
+        overs.reverse()
         x = self.bottom(x)
-
-        dskips.reverse()        # bottom-up
-        for ind in range(self.nskips):
-            s = dskips[ind]
-            um = self.getm("umerge", ind)
-            x = um(s, x)
-            ul = self.getm("upleg", ind)
-            x = ul(x)
+        dump(x, "bottom")
+        for over, (m,d) in zip(overs, self.upleg):
+            x = m(over, x)
+            dump(x, "up merge")
+            x = d(x)
+            dump(x, "up dc")
             
         x = self.segmap(x)
         return x
+def dump(x, msg=""):
+    print(f'{x.shape} {msg}')

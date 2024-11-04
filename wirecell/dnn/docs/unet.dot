@@ -1,0 +1,20 @@
+digraph unet {
+
+    {rank=same in osm out}
+    {rank=same ddc0 udc0 }
+    {rank=same ddc1 udc1 }
+    {rank=same ddc2 udc2 }
+    {rank=same ddc3 udc3 }
+    {rank=same d0 u0}
+    {rank=same d1 u1}
+    {rank=same d2 u2}
+    {rank=same d3 u3}
+
+    in->ddc0->d0->ddc1->d1->ddc2->d2->ddc3->d3->bdc
+    bdc->u3->udc3->u2->udc2->u1->udc1->u0->udc0->osm
+    ddc0->u0
+    ddc1->u1
+    ddc2->u2
+    ddc3->u3
+    osm->out
+}
