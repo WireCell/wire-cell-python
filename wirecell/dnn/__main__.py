@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 
 import click
-
+import torch
+from pathlib import Path
 from wirecell.util.cli import context, log, jsonnet_loader
 from wirecell.util.paths import unglob, listify
 
@@ -19,37 +20,64 @@ def cli(ctx):
               help="Set configuration file")
 @click.option("-e", "--epochs", default=1, help="Number of epochs over which to train")
 @click.option("-b", "--batch", default=1, help="Batch size")
+@click.option("-d", "--device", default='cpu', help="The compute device")
+@click.option("--cache/--no-cache", is_flag=True, default=False, help="Cache data in memory")
+@click.option("--debug-torch/--no-debug-torch", is_flag=True, default=False, help="Debug torch-level problems")
+@click.option("-n", "--name", default='dnnroi', help="The application name (def=dnnroi)")
+@click.option("-l", "--load", default=None, help="File name providing the initial model state dict (def=None - construct fresh)")
+@click.option("-s", "--save", default=None, help="File name to save model state dict after training (def=None - results not saved)")
 @click.argument("files", nargs=-1)
 @click.pass_context
-def train(ctx, config, epochs, batch, files):
+def train(ctx, config, epochs, batch, device, cache, debug_torch,
+          name, load, save, files):
     '''
-    Train the DNNROI model.
+    Train a model.
     '''
-    # fixme: args to explicitly select use of "flow" tracking.
-    from wirecell.dnn.tracker import flow
+    if not files:
+        raise click.BadArgumentUsage("no files given")
+
+    if device == 'gpu': device = 'cuda'
+
+    if debug_torch:
+        torch.autograd.set_detect_anomaly(True)
 
     # fixme: make choice of dataset optional
-    from wirecell.dnn.apps import dnnroi as app
+    import wirecell.dnn.apps
+    from wirecell.dnn import io
 
+    app = getattr(wirecell.dnn.apps, name)
 
+    net = app.Network()
+    opt = app.Optimizer(net.parameters())
 
-    # fixme: this should all be moved under the app 
-    ds = app.Dataset(unglob(files))
-    imshape = ds[0][0].shape[-2:]
-    print(f'{imshape=}')
+    par = dict(epoch=0, loss=0)
+
+    if load:
+        if not Path(load).exists():
+            raise click.FileError(load, 'warning: DNN module load file does not exist')
+        par = io.load_checkpoint(load, net, opt)
+
+    ds = app.Dataset(files, cache=cache)
+    nsamples = len(ds)
+    if nsamples == 0:
+        raise click.BadArgumentUsage(f'no samples from {len(files)} files')
 
     from torch.utils.data import DataLoader
-    dl = DataLoader(ds, batch_size=batch, shuffle=True)
+    dl = DataLoader(ds, batch_size=batch, shuffle=True, pin_memory=True)
+ 
+    trainer = app.Trainer(net, device=device)
 
-    net = app.Network(imshape, batch_size=batch)
-    trainer = app.Trainer(net, tracker=flow)
-
+    checkpoint=2                # fixme make configurable
     for epoch in range(epochs):
-        loss = trainer.epoch(dl)
-        flow.log_metric("epoch_loss", dict(epoch=epoch, loss=loss))
+        losslist = trainer.epoch(dl)
+        loss = sum(losslist)
+        print(f'epoch {epoch} loss {loss}')
+        if save and epoch%checkpoint:
+            io.save_checkpoint(save, net, opt, epoch=par.get("epoch",0)+epoch, loss=loss)
+            
 
-    # log.info(config)
-
+    if save:
+        io.save_checkpoint(save, net, opt, epoch=par.get("epoch",0)+epoch, loss=loss)
 
 
 @cli.command('extract')

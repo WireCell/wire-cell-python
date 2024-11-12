@@ -22,27 +22,42 @@ Classifier training
 from torch import optim
 import torch.nn as nn
 
+def dump(name, data):
+    # print(f'{name:20s}: {data.shape} {data.dtype} {data.device}')
+    return
+
 class Classifier:
-    def __init__(self, net, tracker=None, optclass = optim.SGD, **optkwds):
+    def __init__(self, net, device='cpu', optclass = optim.SGD, **optkwds):
+        net.to(device)
+        self._device = device
         self.net = net              # model
         self.optimizer = optclass(net.parameters(), **optkwds)
-        self.tracker = tracker or Tracker()
 
-    def epoch(self, data, criterion=nn.BCELoss()):
+    def epoch(self, data, criterion=nn.BCELoss(), retain_graph=False):
         '''
         Train over the batches of the data, return list of losses at each batch.
         '''
+        self.net.train()
+
         epoch_losses = list()
         for features, labels in data:
 
-            self.optimizer.zero_grad()
+            features = features.to(self._device)
+            dump('features', features)
+            labels = labels.to(self._device)
+            dump('labels', labels)
 
             prediction = self.net(features)
-            print(f'{features.shape=} {labels.shape=} {prediction.shape=}')
+            dump('prediction', prediction)
 
             loss = criterion(prediction, labels)
-            loss.backward()
+
+            loss.backward(retain_graph=retain_graph)
             self.optimizer.step()
-            epoch_losses.append( loss.item() )
+            self.optimizer.zero_grad()
+
+            loss = loss.item()
+            epoch_losses.append(loss)
+
         return epoch_losses
 

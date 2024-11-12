@@ -121,13 +121,10 @@ class umerge(nn.Module):
                     beg = (hi - lo) // 2
                     end = beg + lo
                     slices[dim] = slice(beg,end)
-                print(f'{slices=}\n{over.shape=} {up.shape=}')
                 self.slices = tuple(slices)
             over = over[self.slices]
-            print(f'{over.shape=}')
 
         cat = torch.cat((over, up), dim=1)
-        print(f'{cat.shape=}')
         return cat
 
 
@@ -138,7 +135,6 @@ def make_dconv(ich, factor, padding=False, batch_norm=False):
         och = 64  # special first case
     elif factor != 1:
         och = int(ich*factor)
-    print(f'dconv {ich=} {och=} {factor=} {padding=} {batch_norm=}')
     node = dconv(ich, och, padding=n_padding, batch_norm=batch_norm)
     return node, och
 
@@ -159,6 +155,14 @@ class UNet(nn.Module):
     '''
     U-Net model exactly as from the paper by default.
     '''
+    def _add_node(self, name, node):
+        '''
+        Add a subgraph node as an attribute on self.
+        '''
+        assert not hasattr(self, name)
+        # print(f'node: {name} {node}')
+        setattr(self, name, node)
+
     def __init__(self, n_channels=3, n_classes=6, in_shape=(572,572),
                  nskips=4,
                  batch_norm=False, bilinear=False, padding=False):
@@ -166,59 +170,53 @@ class UNet(nn.Module):
                 
         nch = n_channels
 
-        self.downleg = list()       # nodes in downward U leg
+        self._downleg = list()       # nodes in downward U leg
         skip_nchannels = list()      # for making skips
         for iskip in range(nskips):  # go down the U making dconv and dsamp
 
             dc_node, nch = make_dconv(nch, factor=2, padding=padding, batch_norm=batch_norm)
-            setattr(self, f'down_dconv_{iskip}', dc_node)
+            self._add_node(f'down_dconv_{iskip}', dc_node)
             skip_nchannels.append(nch)
 
             ds_node, nch = make_dsamp(nch)
-            setattr(self, f'down_dsamp_{iskip}', ds_node)
+            self._add_node(f'down_dsamp_{iskip}', ds_node)
 
-            self.downleg.append((dc_node, ds_node))
+            self._downleg.append((dc_node, ds_node))
 
         factor = 1 if padding else 2
-        self.bottom, nch = make_dconv(nch, factor=factor, padding=padding, batch_norm=batch_norm)
+        bottom, nch = make_dconv(nch, factor=factor, padding=padding, batch_norm=batch_norm)
+        self._add_node("bottom", bottom)
 
         # self.skips = list()
-        self.upleg = list()
+        self._upleg = list()
         for iskip in range(nskips-1, -1, -1):
 
             nch = skip_nchannels[iskip]
             m_node, nch = make_umerge(nch, bilinear=bilinear, padding=padding)
-            setattr(self, f'up_umerge_{iskip}', m_node)
+            self._add_node(f'up_umerge_{iskip}', m_node)
 
             factor = 0.25 if padding else 0.5
             dc_node, nch = make_dconv(nch, factor=factor, padding=padding, batch_norm=batch_norm)
-            setattr(self, f'up_dconv_{iskip}', dc_node)
+            self._add_node(f'up_dconv_{iskip}', dc_node)
 
-            self.upleg.append((m_node, dc_node))  # bottom up order
+            self._upleg.append((m_node, dc_node))  # bottom up order
 
-        self.segmap = nn.Conv2d(nch, n_classes, 1)
+        segmap = nn.Conv2d(nch, n_classes, 1)
+        self._add_node("segmap", segmap)
         
         
     def forward(self, x):
-        dump(x, "in")
 
         overs = list()
-        for skip, (dc,ds) in enumerate(self.downleg):
+        for skip, (dc,ds) in enumerate(self._downleg):
             x = dc(x)
-            dump(x, f"down dc {skip}")
             overs.append(x)
             x = ds(x)
-            dump(x, f"down ds {skip}")
         overs.reverse()
         x = self.bottom(x)
-        dump(x, "bottom")
-        for over, (m,d) in zip(overs, self.upleg):
+        for over, (m,d) in zip(overs, self._upleg):
             x = m(over, x)
-            dump(x, "up merge")
             x = d(x)
-            dump(x, "up dc")
             
         x = self.segmap(x)
         return x
-def dump(x, msg=""):
-    print(f'{x.shape} {msg}')

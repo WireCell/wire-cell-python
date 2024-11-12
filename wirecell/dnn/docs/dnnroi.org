@@ -131,3 +131,27 @@ Changes in other units:
 - DNNROI applies a final sigmoid to U-Net's output segmentation map.
 
 - The U-Net skip transfers a core crop of the array whereas DNNROI preserves the entire array across the skip connection.  This is enabled by DNNROI applying padding in dconv units.  As a consequence, U-Net skip operation depends on the "natural" sizes of the upward U leg while DNNROI's upward U leg sizes depends on the "natural" sizes of the downward U leg.
+
+
+* Performance
+
+Test hyu's 10+10 VD HDF5 files on wcgpu0, (32 CPU core, RTX 4090).  Check
+"typical" CPU and GPU utilization and memory usage via watching ~top~ and
+~nvidia-smi~".  Time is wall clock.
+
+
+| device | epochs | cache | CPU util | GPU util | CPU mem | GPU mem | time |
+|--------+--------+-------+----------+----------+---------+---------+------|
+| GPU    |      1 | false |     600% | 5%       | 1.7 GB  | 2.1 GB  | 42s  |
+| GPU    |      4 | true  |    1000% | 80%      | 2.1 GB  | 2.1 GB  | 46s  |
+| CPU    |      1 | false |    2200% | n/a      | 2.4 GB  | n/a     | 60s  |
+| CPU    |      4 | true  |    3200% | n/a      | 3.0 GB  | n/a     | 180s |
+
+
+Cache holds post transformed arrays is in CPU memory and only is reused with
+more than one epoch.  When cache is on, the data is preloaded before training.
+
+
+* Other things
+
+light

@@ -5,6 +5,7 @@ The dataset transforms relevant to DNNROI
 
 from dataclasses import dataclass
 from typing import Type, Tuple
+import torch                    # for float32 dtype
 
 
 @dataclass
@@ -59,13 +60,13 @@ class Rec:
         - params :: a Params
 
         '''
-        self.params = params or self.default_params
+        self._params = params or self.default_params
 
     def crop(self, x):
-        return x[:, self.params.elech.crop, self.params.ticks.crop]
+        return x[:, self._params.elech.crop, self._params.ticks.crop]
 
     def rebin(self, x):
-        ne, nt = self.params.elech.rebin, self.params.ticks.rebin,
+        ne, nt = self._params.elech.rebin, self._params.ticks.rebin,
         sh = (x.shape[0],                    # 0
               x.shape[1] // ne,              # 1
               ne,                            # 2
@@ -76,7 +77,7 @@ class Rec:
     def transform(self, x):
         x = self.crop(x)
         x = self.rebin(x)
-        x = x/self.params.norm
+        x = x/self._params.norm
         return x
 
 
@@ -111,6 +112,6 @@ class Tru(Rec):
 
     def __call__(self, x):
         x = self.transform(x)
-        return (x > self.threshold).to(float)
+        return (x > self.threshold).to(torch.float32)
 
 
