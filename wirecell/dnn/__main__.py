@@ -18,17 +18,33 @@ def cli(ctx):
 @click.option("-c", "--config",
               type=click.Path(),
               help="Set configuration file")
-@click.option("-e", "--epochs", default=1, help="Number of epochs over which to train")
-@click.option("-b", "--batch", default=1, help="Batch size")
-@click.option("-d", "--device", default='cpu', help="The compute device")
-@click.option("--cache/--no-cache", is_flag=True, default=False, help="Cache data in memory")
-@click.option("--debug-torch/--no-debug-torch", is_flag=True, default=False, help="Debug torch-level problems")
-@click.option("-n", "--name", default='dnnroi', help="The application name (def=dnnroi)")
-@click.option("-l", "--load", default=None, help="File name providing the initial model state dict (def=None - construct fresh)")
-@click.option("-s", "--save", default=None, help="File name to save model state dict after training (def=None - results not saved)")
+@click.option("-e", "--epochs", default=1,
+              help="Number of epochs over which to train.  "
+              "This is a relative count if the training starts with a -l/--load'ed state.")
+@click.option("-b", "--batch", default=1, 
+              help="Batch size")
+@click.option("-d", "--device", default='cpu', 
+              help="The compute device")
+@click.option("--cache/--no-cache", is_flag=True, default=False,
+              help="Cache data in memory")
+@click.option("--debug-torch/--no-debug-torch", is_flag=True, default=False,
+              help="Debug torch-level problems")
+@click.option("--checkpoint-save", default=None,
+              help="Checkpoint path.  "
+              "An {epoch} pattern can be given to use the absolute epoch number")
+@click.option("--checkpoint-modulus", default=1,
+              help="Checkpoint modulus.  "
+              "If checkpoint path is given, the training is checkpointed ever this many epochs..")
+@click.option("-n", "--name", default='dnnroi',
+              help="The application name (def=dnnroi)")
+@click.option("-l", "--load", default=None,
+              help="File name providing the initial model state dict (def=None - construct fresh)")
+@click.option("-s", "--save", default=None,
+              help="File name to save model state dict after training (def=None - results not saved)")
 @click.argument("files", nargs=-1)
 @click.pass_context
 def train(ctx, config, epochs, batch, device, cache, debug_torch,
+          checkpoint_save, checkpoint_modulus,
           name, load, save, files):
     '''
     Train a model.
@@ -37,6 +53,7 @@ def train(ctx, config, epochs, batch, device, cache, debug_torch,
         raise click.BadArgumentUsage("no files given")
 
     if device == 'gpu': device = 'cuda'
+    log.info(f'using device {device}')
 
     if debug_torch:
         torch.autograd.set_detect_anomaly(True)
@@ -57,6 +74,9 @@ def train(ctx, config, epochs, batch, device, cache, debug_torch,
             raise click.FileError(load, 'warning: DNN module load file does not exist')
         par = io.load_checkpoint(load, net, opt)
 
+    tot_epoch = par["epoch"]
+    del par
+
     ds = app.Dataset(files, cache=cache)
     nsamples = len(ds)
     if nsamples == 0:
@@ -71,13 +91,17 @@ def train(ctx, config, epochs, batch, device, cache, debug_torch,
     for epoch in range(epochs):
         losslist = trainer.epoch(dl)
         loss = sum(losslist)
-        print(f'epoch {epoch} loss {loss}')
-        if save and epoch%checkpoint:
-            io.save_checkpoint(save, net, opt, epoch=par.get("epoch",0)+epoch, loss=loss)
-            
+        log.debug(f'epoch {tot_epoch} loss {loss}')
+
+        if checkpoint_save:
+            if tot_epoch%checkpoint_modulus == 0:
+                cpath = checkpoint_save.format(epoch=tot_epoch)
+                io.save_checkpoint(cpath, net, opt, 
+                                   epoch=tot_epoch, loss=loss)
+        tot_epoch += 1
 
     if save:
-        io.save_checkpoint(save, net, opt, epoch=par.get("epoch",0)+epoch, loss=loss)
+        io.save_checkpoint(save, net, opt, epoch=tot_epoch, loss=loss)
 
 
 @cli.command('extract')
@@ -99,7 +123,7 @@ def extract(ctx, output, sample, datapaths):
     from wirecell.dnn.apps import dnnroi as app
     ds = app.Dataset(datapaths)
 
-    print(f'dataset has {len(ds)} entries from {len(datapaths)} data paths')
+    log.info(f'dataset has {len(ds)} entries from {len(datapaths)} data paths')
 
     # fixme: support npz and hdf and move this into an io module.
     import io
@@ -179,12 +203,12 @@ def vizmod(shape, channels, classes, batch, skips, padding, bilinear, batchnorm,
     if model == "list":
         for one in dir(models):
             if one[0].isupper():
-                print(one)
+                log.info(one)
         return
 
     Mod = getattr(models, model)
 
-    print(f'{channels=} {classes=} {imshape=} {skips=} {batchnorm=} {bilinear=} {padding=}')
+    log.info(f'{channels=} {classes=} {imshape=} {skips=} {batchnorm=} {bilinear=} {padding=}')
 
     mod = Mod(channels, classes, imshape, nskips=skips,
               batch_norm=batchnorm, bilinear=bilinear, padding=padding)
