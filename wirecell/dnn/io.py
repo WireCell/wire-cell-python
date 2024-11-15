@@ -20,6 +20,10 @@ def save_checkpoint(path, model, optimizer, **kwds):
     torch.save(kwds, path)
 
 
+def load_checkpoint_raw(path):
+    return torch.load(path, weights_only=True)
+    
+
 def load_checkpoint(path, model, optimizer):
     '''
     Load a checkpoint.
@@ -27,7 +31,8 @@ def load_checkpoint(path, model, optimizer):
     The model and optimizer state dicts are updated and a dict of any additional
     parameters is returned.
     '''
-    cp = torch.load(path, weights_only=True)
+    cp = load_checkpoint_raw(path)
     model.load_state_dict(cp.pop("model_state_dict"))
     optimizer.load_state_dict(cp.pop("optimizer_state_dict"))
     return cp
+

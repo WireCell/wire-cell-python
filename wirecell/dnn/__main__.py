@@ -7,6 +7,9 @@ from wirecell.util.cli import context, log, jsonnet_loader
 from wirecell.util.paths import unglob, listify
 
 
+from wirecell import dnn
+
+
 @context("dnn")
 def cli(ctx):
     '''
@@ -41,16 +44,20 @@ def cli(ctx):
               help="File name providing the initial model state dict (def=None - construct fresh)")
 @click.option("-s", "--save", default=None,
               help="File name to save model state dict after training (def=None - results not saved)")
-@click.argument("files", nargs=-1)
+@click.option("--eval-files", multiple=True, type=str, # fixme: remove this in favor of a single file set and a train/eval partitioning
+              help="File path or globs as comma separated list to use for evaluation dataset")
+@click.argument("train_files", nargs=-1)
 @click.pass_context
 def train(ctx, config, epochs, batch, device, cache, debug_torch,
           checkpoint_save, checkpoint_modulus,
-          name, load, save, files):
+          name, load, save, eval_files, train_files):
     '''
     Train a model.
     '''
-    if not files:
-        raise click.BadArgumentUsage("no files given")
+    if not train_files:
+        raise click.BadArgumentUsage("no training files given")
+    train_files = unglob(listify(train_files))
+    log.info(f'training files: {train_files}')
 
     if device == 'gpu': device = 'cuda'
     log.info(f'using device {device}')
@@ -58,51 +65,109 @@ def train(ctx, config, epochs, batch, device, cache, debug_torch,
     if debug_torch:
         torch.autograd.set_detect_anomaly(True)
 
-    # fixme: make choice of dataset optional
-    import wirecell.dnn.apps
-    from wirecell.dnn import io
-
-    app = getattr(wirecell.dnn.apps, name)
+    app = getattr(dnn.apps, name)
 
     net = app.Network()
     opt = app.Optimizer(net.parameters())
+    crit = app.Criterion()
+    trainer = app.Trainer(net, opt, crit, device=device)
 
-    par = dict(epoch=0, loss=0)
-
+    history = dict()
     if load:
         if not Path(load).exists():
             raise click.FileError(load, 'warning: DNN module load file does not exist')
-        par = io.load_checkpoint(load, net, opt)
+        history = dnn.io.load_checkpoint(load, net, opt)
 
-    tot_epoch = par["epoch"]
-    del par
-
-    ds = app.Dataset(files, cache=cache)
-    nsamples = len(ds)
-    if nsamples == 0:
-        raise click.BadArgumentUsage(f'no samples from {len(files)} files')
+    train_ds = app.Dataset(train_files, cache=cache)
+    ntrain = len(train_ds)
+    if ntrain == 0:
+        raise click.BadArgumentUsage(f'no samples from {len(train_files)} files')
 
     from torch.utils.data import DataLoader
-    dl = DataLoader(ds, batch_size=batch, shuffle=True, pin_memory=True)
+    train_dl = DataLoader(train_ds, batch_size=batch, shuffle=True, pin_memory=True)
  
-    trainer = app.Trainer(net, device=device)
+    neval = 0
+    eval_dl = None
+    if eval_files:
+        eval_files = unglob(listify(eval_files, delim=","))
+        log.info(f'eval files: {eval_files}')
+        eval_ds = app.Dataset(eval_files, cache=cache)
+        neval = len(eval_ds)
+        eval_dl = DataLoader(train_ds, batch_size=batch, shuffle=False, pin_memory=True)
+    else:
+        log.info("no eval files")
 
-    checkpoint=2                # fixme make configurable
-    for epoch in range(epochs):
-        losslist = trainer.epoch(dl)
-        loss = sum(losslist)
-        log.debug(f'epoch {tot_epoch} loss {loss}')
+    # History
+    run_history = history.get("runs", dict())
+    this_run_number = 0
+    if run_history:
+        this_run_number = max(run_history.keys()) + 1
+    this_run = dict(
+        run = this_run_number,
+        train_files = train_files,
+        ntrain = ntrain,
+        eval_files = eval_files or [],
+        neval = neval,
+        nepochs = epochs,
+        batch = batch,
+        device = device,
+        cache = cache,
+        name = name,
+        load = load,
+    )
+    run_history[this_run_number] = this_run
+
+    epoch_history = history.get("epochs", dict())
+    first_epoch_number = 0
+    if epoch_history:
+        first_epoch_number = max(epoch_history.keys()) + 1
+
+    def saveit(path):
+        if not path:
+            return
+        dnn.io.save_checkpoint(path, net, opt, runs=run_history, epochs=epoch_history)
+
+    for this_epoch_number in range(first_epoch_number, first_epoch_number + epochs):
+        train_losses = trainer.epoch(train_dl)
+        train_loss = sum(train_losses)/ntrain
+
+        eval_losses = []
+        eval_loss = 0
+        if eval_dl:
+            eval_losses = trainer.evaluate(eval_dl)
+            eval_loss = sum(eval_losses) / neval
+
+        this_epoch = dict(
+            run=this_run_number,
+            epoch=this_epoch_number,
+            train_losses=train_losses,
+            train_loss=train_loss,
+            eval_losses=eval_losses,
+            eval_loss=eval_loss)
+        epoch_history[this_epoch_number] = this_epoch
+
+        log.info(f'run: {this_run_number} epoch: {this_epoch_number} loss: {train_loss} eval: {eval_loss}')
 
         if checkpoint_save:
-            if tot_epoch%checkpoint_modulus == 0:
-                cpath = checkpoint_save.format(epoch=tot_epoch)
-                io.save_checkpoint(cpath, net, opt, 
-                                   epoch=tot_epoch, loss=loss)
-        tot_epoch += 1
+            if this_epoch_number % checkpoint_modulus == 0:
+                parms = dict(this_run, **this_epoch)
+                cpath = checkpoint_save.format(**parms)
+                saveit(cpath)
+    saveit(save)
 
-    if save:
-        io.save_checkpoint(save, net, opt, epoch=tot_epoch, loss=loss)
 
+@cli.command('dump')
+@click.argument("checkpoint")
+@click.pass_context
+def dump(ctx, checkpoint):
+    '''
+    Dump info about a checkpoint file.
+    '''
+    state = dnn.io.load_checkpoint_raw(checkpoint)
+    for rnum, robj in state.get("runs",{}).items():
+        print('run: {run} ntrain: {ntrain} neval: {neval}'.format(**robj))
+    for enum, eobj in state.get("epochs",{}).items():
+        print('run: {run} epoch: {epoch} train: {train_loss} eval: {eval_loss}'.format(**eobj))
 
 @cli.command('extract')
 @click.option("-o", "--output", default='samples.npz',
@@ -120,7 +185,6 @@ def extract(ctx, output, sample, datapaths):
     samples = map(int,listify(*sample, delim=","))
 
     # fixme: make choice of dataset optional
-    from wirecell.dnn.apps import dnnroi as app
     ds = app.Dataset(datapaths)
 
     log.info(f'dataset has {len(ds)} entries from {len(datapaths)} data paths')

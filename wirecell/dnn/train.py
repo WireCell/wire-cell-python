@@ -19,7 +19,7 @@ Classifier training
     - optimizer.step()
 
 '''
-from torch import optim
+from torch import optim, no_grad
 import torch.nn as nn
 
 def dump(name, data):
@@ -27,13 +27,37 @@ def dump(name, data):
     return
 
 class Classifier:
-    def __init__(self, net, device='cpu', optclass = optim.SGD, **optkwds):
+    def __init__(self, net, optimizer, criterion = nn.BCELoss(), device='cpu'):
         net.to(device)
         self._device = device
         self.net = net              # model
-        self.optimizer = optclass(net.parameters(), **optkwds)
+        self.optimizer = optimizer
+        self.criterion = criterion
 
-    def epoch(self, data, criterion=nn.BCELoss(), retain_graph=False):
+    def loss(self, features, labels):
+
+        features = features.to(self._device)
+        dump('features', features)
+        labels = labels.to(self._device)
+        dump('labels', labels)
+
+        prediction = self.net(features)
+        dump('prediction', prediction)
+
+        loss = self.criterion(prediction, labels)
+        return loss
+
+    def evaluate(self, data):
+        losses = list()
+        with no_grad():
+            for features, labels in data:
+                loss = self.loss(features, labels)
+                loss = loss.item()
+                losses.append(loss)
+        return losses
+
+
+    def epoch(self, data, retain_graph=False):
         '''
         Train over the batches of the data, return list of losses at each batch.
         '''
@@ -42,15 +66,7 @@ class Classifier:
         epoch_losses = list()
         for features, labels in data:
 
-            features = features.to(self._device)
-            dump('features', features)
-            labels = labels.to(self._device)
-            dump('labels', labels)
-
-            prediction = self.net(features)
-            dump('prediction', prediction)
-
-            loss = criterion(prediction, labels)
+            loss = self.loss(features, labels)
 
             loss.backward(retain_graph=retain_graph)
             self.optimizer.step()
