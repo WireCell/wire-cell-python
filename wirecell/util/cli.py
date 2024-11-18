@@ -276,13 +276,81 @@ def image_output(func):
         return func(*args, **kwds)
     return wrapper
 
+def anyconfig_file(name, section=None, cname=None, fmt='ini', shortarg="-c", longarg="--config", defaults=None):
+    '''
+    A decorator for a command that accepts a config file.
+
+    This transforms a config file of a given format to a data object using the anyconfig module.
+
+    - section :: if given, name a top level config key and attempt to set any
+      kwds which are None to a value of an attribute of that section of the same
+      key name.
+
+    - name :: the application name, used to locate default XDG config path.
+    - cname :: config file name if not based on name
+    - fmt :: if default load fails, try again assuming this format
+    '''
+    import anyconfig
+    
+    def decorator(func):
+        @click.option(shortarg, longarg, type=str, default=None, help="Set Configuration file.")
+        @functools.wraps(func)
+        def wrapper(*args, **kwds):
+            varname = longarg.replace("--","").replace("-","_")
+            cpath = kwds.pop(varname)
+            if cpath:
+                cpath = Path(cpath)
+            else:
+                nonlocal cname
+                nonlocal fmt
+                if not cname:
+                    cname = name + '.' + fmt
+                base = os.environ.get("XDG_CONFIG_HOME", None)
+                if base:
+                    bash = Path(base)
+                else:
+                    base = Path(os.environ["HOME"]) / ".config"
+                cpath = base / name / cname
+            cfg = None
+            if cpath.exists():
+                try:
+                    cfg = anyconfig.load(cpath)
+                except anyconfig.UnknownFileTypeError:
+                    cfg = None
+                if cfg is None:
+                    cfg = anyconfig.load(cpath, ac_parser=fmt)
+
+            if cfg and section and cfg.get(section, None):
+                sec = cfg[section]
+                for key, val in kwds.items():
+                    if val is not None:
+                        continue
+                    val = sec.get(key, None)
+                    dval = defaults.get(key, None)
+                    if val is None:
+                        val = dval
+                    if val is None:
+                        continue
+                    if dval is not None:
+                        val = type(dval)(val)
+                    kwds[key] = val                    
+
+            kwds[varname] = cfg
+            return func(*args, **kwds)
+        return wrapper
+    return decorator
+    
+
 def config_file(name, cname=None, shortarg="-c", longarg="--config"):
     '''
     A decorator for a command that accepts a config file.
 
     This transforms config file to config parser object.
+
     '''
-    def decoratgor(func):
+    import configparser
+
+    def decorator(func):
         @click.option(shortarg, longarg, type=str, default=None, help="Set Configuration file.")
         @functools.wraps(func)
         def wrapper(*args, **kwds):
@@ -303,7 +371,7 @@ def config_file(name, cname=None, shortarg="-c", longarg="--config"):
             if cpath.exists():
                 cfg.read(cpath)
             kwds[varname] = cfg
-            return
+            return func(*args, **kwds)
         return wrapper
     return decorator
 
