@@ -12,6 +12,8 @@ from wirecell.dnn.data import hdf
 
 from .transforms import Rec as Rect, Tru as Trut, Params as TrParams
 
+import logging
+log = logging.getLogger("wirecell.dnn")
 
 class Rec(hdf.Single):
     '''
@@ -21,7 +23,7 @@ class Rec(hdf.Single):
     OmnibusSigProc in HDF5 "frame file" form.
     '''
 
-    file_re = r'.*g4-rec-r(\d+)\.h5'
+    file_re = r'.*g4-rec-[r]?(\d+)\.h5'
 
     path_res = tuple(
         r'/(\d+)/%s\d'%tag for tag in [
@@ -47,7 +49,7 @@ class Tru(hdf.Single):
     This consists of the target ROI
     '''
 
-    file_re = r'.*g4-tru-r(\d+)\.h5'
+    file_re = r'.*g4-tru-[r]?(\d+)\.h5'
 
     path_res = tuple(
         r'/(\d+)/%s\d'%tag for tag in ['frame_ductor']
@@ -66,13 +68,31 @@ class Tru(hdf.Single):
         super().__init__(dom, paths)
 
 
+
+
 class Dataset(hdf.Multi):
     '''
     The full DNNROI dataset is effectively zip(Rec,Tru).
     '''
-    def __init__(self, paths, threshold=0.5, cache=False):
-        # fixme: allow configuring the transforms.
-        super().__init__(Rec(paths, cache=cache),
-                         Tru(paths, threshold, cache=cache))
+    def __init__(self, paths, threshold=0.5, cache=False, config=None):
 
-    
+        log.debug(f'ddnroi dataset: {config=}')
+        config = config or dict()
+        def wash(key):
+            val = config.get(key, None)
+            if val is None:
+                return 
+            if isinstance(val, str) and val.startswith(('[','{')):
+                val = eval(val)         # yes, I know
+                log.debug(f'dnnroi dataset {key} = {val}')
+            return val
+
+
+        # fixme: allow configuring the transforms.
+        super().__init__(Rec(paths, cache=cache,
+                             file_re=wash('rec_file_re'),
+                             path_res=wash('rec_path_res')),
+                         Tru(paths, threshold, cache=cache,
+                             file_re=wash('tru_file_re'),
+                             path_res=wash('tru_path_res')))
+

@@ -2,8 +2,10 @@
 
 import click
 import torch
+from torch.utils.data import DataLoader
+
 from pathlib import Path
-from wirecell.util.cli import context, log, jsonnet_loader
+from wirecell.util.cli import context, log, jsonnet_loader, anyconfig_file
 from wirecell.util.paths import unglob, listify
 
 
@@ -17,16 +19,23 @@ def cli(ctx):
     '''
     pass
 
+@cli.command('dump-config')
+@anyconfig_file("wirecelldnn")
+@click.pass_context
+def dump_config(ctx, config):
+    print(config)
+
+    return
+
+
+train_defaults = dict(epochs=1, batch=1, device='cpu', name='dnnroi', train_ratio=0.8)
 @cli.command('train')
-@click.option("-c", "--config",
-              type=click.Path(),
-              help="Set configuration file")
-@click.option("-e", "--epochs", default=1,
+@click.option("-e", "--epochs", default=None, type=int,
               help="Number of epochs over which to train.  "
               "This is a relative count if the training starts with a -l/--load'ed state.")
-@click.option("-b", "--batch", default=1, 
+@click.option("-b", "--batch", default=None, type=int,
               help="Batch size")
-@click.option("-d", "--device", default='cpu', 
+@click.option("-d", "--device", default=None, type=str,
               help="The compute device")
 @click.option("--cache/--no-cache", is_flag=True, default=False,
               help="Cache data in memory")
@@ -38,33 +47,40 @@ def cli(ctx):
 @click.option("--checkpoint-modulus", default=1,
               help="Checkpoint modulus.  "
               "If checkpoint path is given, the training is checkpointed ever this many epochs..")
-@click.option("-n", "--name", default='dnnroi',
-              help="The application name (def=dnnroi)")
+@click.option("-a", "--app", default=None, type=str,
+              help="The application name")
 @click.option("-l", "--load", default=None,
               help="File name providing the initial model state dict (def=None - construct fresh)")
 @click.option("-s", "--save", default=None,
               help="File name to save model state dict after training (def=None - results not saved)")
-@click.option("--eval-files", multiple=True, type=str, # fixme: remove this in favor of a single file set and a train/eval partitioning
-              help="File path or globs as comma separated list to use for evaluation dataset")
-@click.argument("train_files", nargs=-1)
+@click.option("--train-ratio", default=None, type=float,
+              help="Fraction of samples to use for training (default=1.0, no evaluation loss calculated)")
+@anyconfig_file("wirecelldnn", section='train', defaults=train_defaults)
+@click.argument("files", nargs=-1)
 @click.pass_context
 def train(ctx, config, epochs, batch, device, cache, debug_torch,
           checkpoint_save, checkpoint_modulus,
-          name, load, save, eval_files, train_files):
+          app, load, save, train_ratio, files):
     '''
     Train a model.
     '''
-    if not train_files:
+
+    if not files:               # args not processed by anyconfig_files
+        try:
+            files = config['train']['files']
+        except KeyError:
+            files = None
+    if not files:
         raise click.BadArgumentUsage("no training files given")
-    train_files = unglob(listify(train_files))
-    log.info(f'training files: {train_files}')
+    files = unglob(listify(files))
+    log.info(f'training files: {files}')
 
     if device == 'gpu': device = 'cuda'
-    log.info(f'using device {device}')
 
     if debug_torch:
         torch.autograd.set_detect_anomaly(True)
 
+    name = app
     app = getattr(dnn.apps, name)
 
     net = app.Network()
@@ -78,24 +94,17 @@ def train(ctx, config, epochs, batch, device, cache, debug_torch,
             raise click.FileError(load, 'warning: DNN module load file does not exist')
         history = dnn.io.load_checkpoint(load, net, opt)
 
-    train_ds = app.Dataset(train_files, cache=cache)
-    ntrain = len(train_ds)
-    if ntrain == 0:
-        raise click.BadArgumentUsage(f'no samples from {len(train_files)} files')
+    ds = app.Dataset(files, cache=cache, config=config.get("dataset", None))
+    if len(ds) == 0:
+        raise click.BadArgumentUsage(f'no samples from {len(files)} files')
 
-    from torch.utils.data import DataLoader
-    train_dl = DataLoader(train_ds, batch_size=batch, shuffle=True, pin_memory=True)
- 
-    neval = 0
-    eval_dl = None
-    if eval_files:
-        eval_files = unglob(listify(eval_files, delim=","))
-        log.info(f'eval files: {eval_files}')
-        eval_ds = app.Dataset(eval_files, cache=cache)
-        neval = len(eval_ds)
-        eval_dl = DataLoader(train_ds, batch_size=batch, shuffle=False, pin_memory=True)
-    else:
-        log.info("no eval files")
+    tbatch,ebatch = batch,1
+
+    dses = dnn.data.train_eval_split(ds, train_ratio)
+    dles = [DataLoader(one, batch_size=bb, shuffle=True, pin_memory=True) for one,bb in zip(dses, [tbatch,ebatch])]
+            
+    ntrain = len(dses[0])
+    neval = len(dses[1])
 
     # History
     run_history = history.get("runs", dict())
@@ -104,9 +113,8 @@ def train(ctx, config, epochs, batch, device, cache, debug_torch,
         this_run_number = max(run_history.keys()) + 1
     this_run = dict(
         run = this_run_number,
-        train_files = train_files,
+        data_files = files,
         ntrain = ntrain,
-        eval_files = eval_files or [],
         neval = neval,
         nepochs = epochs,
         batch = batch,
@@ -128,13 +136,17 @@ def train(ctx, config, epochs, batch, device, cache, debug_torch,
         dnn.io.save_checkpoint(path, net, opt, runs=run_history, epochs=epoch_history)
 
     for this_epoch_number in range(first_epoch_number, first_epoch_number + epochs):
-        train_losses = trainer.epoch(train_dl)
-        train_loss = sum(train_losses)/ntrain
 
-        eval_losses = []
+        train_loss = 0
+        train_losses = []
+        if ntrain:
+            train_losses = trainer.epoch(dles[0])
+            train_loss = sum(train_losses)/ntrain
+
         eval_loss = 0
-        if eval_dl:
-            eval_losses = trainer.evaluate(eval_dl)
+        eval_losses = []
+        if neval:
+            eval_losses = trainer.evaluate(dles[1])
             eval_loss = sum(eval_losses) / neval
 
         this_epoch = dict(
@@ -146,7 +158,7 @@ def train(ctx, config, epochs, batch, device, cache, debug_torch,
             eval_loss=eval_loss)
         epoch_history[this_epoch_number] = this_epoch
 
-        log.info(f'run: {this_run_number} epoch: {this_epoch_number} loss: {train_loss} eval: {eval_loss}')
+        log.info(f'run: {this_run_number} epoch: {this_epoch_number} loss: {train_loss:.4e} [b={tbatch},n={ntrain}] eval: {eval_loss:.4e} [b={ebatch},n={neval}]')
 
         if checkpoint_save:
             if this_epoch_number % checkpoint_modulus == 0:
