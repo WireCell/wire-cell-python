@@ -32,6 +32,10 @@ as a system package and then making the ~venv~ with:
   $ python3 -m venv venv --system-site-packages
 #+end_example
 
+If you have trouble installing ~gojsonnet~ via ~pip~ consider replacing it
+to ~jsonnet~ in requirements/base.txt and setup.py. In addition, commenting
+out ~moo~ in setup.py might also help decouple with ~gojsonnet~
+
 * Use
 
 In fresh shells must repeat:
