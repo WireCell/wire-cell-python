@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import time
 import click
 import torch
 from torch.utils.data import DataLoader
@@ -94,9 +95,12 @@ def train(ctx, config, epochs, batch, device, cache, debug_torch,
             raise click.FileError(load, 'warning: DNN module load file does not exist')
         history = dnn.io.load_checkpoint(load, net, opt)
 
+    ds_dt = time.time()
     ds = app.Dataset(files, cache=cache, config=config.get("dataset", None))
     if len(ds) == 0:
         raise click.BadArgumentUsage(f'no samples from {len(files)} files')
+    ds_dt = time.time() - ds_dt
+    log.debug(f'Create dataset in {ds_dt:.3e} s')
 
     tbatch,ebatch = batch,1
 
@@ -139,9 +143,12 @@ def train(ctx, config, epochs, batch, device, cache, debug_torch,
 
         train_loss = 0
         train_losses = []
+        dt=0
         if ntrain:
+            dt = time.time()
             train_losses = trainer.epoch(dles[0])
             train_loss = sum(train_losses)/ntrain
+            dt = time.time() - dt
 
         eval_loss = 0
         eval_losses = []
@@ -158,7 +165,7 @@ def train(ctx, config, epochs, batch, device, cache, debug_torch,
             eval_loss=eval_loss)
         epoch_history[this_epoch_number] = this_epoch
 
-        log.info(f'run: {this_run_number} epoch: {this_epoch_number} loss: {train_loss:.4e} [b={tbatch},n={ntrain}] eval: {eval_loss:.4e} [b={ebatch},n={neval}]')
+        log.info(f'run: {this_run_number} epoch: {this_epoch_number} loss: {train_loss:.4e} [b={tbatch},n={ntrain}] eval: {eval_loss:.4e} [b={ebatch},n={neval}] {dt=:.3e} s')
 
         if checkpoint_save:
             if this_epoch_number % checkpoint_modulus == 0:

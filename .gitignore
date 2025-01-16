@@ -16,7 +16,6 @@ dist
 *.vti
 *.vtu
 *.json
-data
 ltximg
 .direnv
 .envrc
