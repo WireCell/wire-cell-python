@@ -1,6 +1,10 @@
 import json
 import math
 import numpy as np
+try:
+    from numpy.typing import ArrayLike
+except ImportError:
+    ArrayLike = np.ndarray[int, np.dtype[float]]
 import dataclasses
 from typing import Type
 from wirecell.util.wires import array as warray
@@ -159,18 +163,16 @@ def generate_line_track_depo_set(p0, p1, t0, eperstep, step_size, track_speed):
     return depo_sets, times, points, charges
 
 
-ArrayLike = np.ndarray[int, np.dtype[float]]
-
 @dataclasses.dataclass
 class TrackMetadata:
     '''
     The metadta about one track.
     '''
 
-    p0: ArrayLike = np.zeros((3,))
+    p0: ArrayLike = dataclasses.field(default_factory=lambda: np.zeros((3,)))
     'The starting 3-point of the track.'
 
-    p1: ArrayLike = np.zeros((3,))
+    p1: ArrayLike = dataclasses.field(default_factory=lambda: np.zeros((3,)))
     'The ending 3-point of the track.'
 
     t0: float = 0.0
@@ -179,10 +181,10 @@ class TrackMetadata:
     t1: float = 0.0
     'The the time at p1.'
 
-    R_wps: ArrayLike = np.zeros((3,3,3))
+    R_wps: ArrayLike = dataclasses.field(default_factory=lambda: np.zeros((3,3,3)))
     'The plane coordinate rotation matrices as 3(nplanes)x3x3 array.'
 
-    dir_glb: ArrayLike = np.zeros((3,))
+    dir_glb: ArrayLike = dataclasses.field(default_factory=lambda: np.zeros((3,)))
     'The 3-vector of the track direction in global coordinates.'
 
     theta_y_glb: float = 0
@@ -191,13 +193,13 @@ class TrackMetadata:
     theta_xz_glb: float = 0
     'The angle between global Z-axis and the projection of the direction vector into the X-Z plane.'
 
-    dir_wps: ArrayLike = np.zeros((3,3))
+    dir_wps: ArrayLike = dataclasses.field(default_factory=lambda: np.zeros((3,3)))
     'Three 3-vectors giving the track direction expressed in each wire-plane coordinate system.'
 
-    theta_y_wps: ArrayLike = np.zeros((3,))
+    theta_y_wps: ArrayLike = dataclasses.field(default_factory=lambda: np.zeros((3,)))
     'The angles between each of three wire-plane Y-axes and the direction vector.'
 
-    theta_xz_wps: ArrayLike = np.array((3,))
+    theta_xz_wps: ArrayLike = dataclasses.field(default_factory=lambda: np.zeros((3,)))
     'The angles, one for each wire plane coordinate system between their Z-axis and projection of the direction vector into their X-Z plane.'
 
     eperstep: float = 0
