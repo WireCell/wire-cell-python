@@ -165,7 +165,7 @@ class Peak1d:
     tot: float = 0.0
     '''The sum of waveform values over the peak.'''
 
-    mask: slice = slice(0,0)
+    mask: slice = dataclasses.field(default_factory=lambda: slice(0,0))
     '''A mask that captures the peak.'''
     
     A: float = 0.0
