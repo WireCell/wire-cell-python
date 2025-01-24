@@ -250,7 +250,7 @@ class Plateaus:
         'Array of indices (0-based counts)'
         return numpy.arange(self.number)
 
-    labeled: numpy.ndarray = numpy.zeros((0,0))
+    labeled: ArrayLike = dataclasses.field(default_factory=lambda: numpy.zeros((0,0)))
     '''
     The frame with labeled pixels for each object.
     '''
