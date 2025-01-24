@@ -13,6 +13,11 @@ from scipy.signal import find_peaks, peak_widths
 from scipy import ndimage
 from math import sqrt, pi
 
+try:
+    from numpy.typing import ArrayLike
+except ImportError:
+    ArrayLike = np.ndarray[int, np.dtype[float]]
+
 from wirecell.util.codec import dataclass_dictify
 from wirecell.util.bbox import union as union_bbox
 
@@ -83,7 +88,7 @@ class BaselineNoise:
     34% quantile above the median
     '''
 
-    cov : numpy.ndarray | None = None
+    cov: ArrayLike | None = dataclasses.field(default_factory=lambda: None)
     '''
     Covariance matrix of fit.  Non implies A,mu,sigma are statistical.
     '''
@@ -172,7 +177,7 @@ class Peak1d:
     sigma: float = 0.0
     '''The fit Gaussian sigma fit parameter.  See gauss().'''
 
-    cov: numpy.ndarray = numpy.zeros((0,))
+    cov: ArrayLike | None = dataclasses.field(default_factory=lambda: None)
     '''The covariance matrix of the fit.'''
 
 
@@ -255,17 +260,17 @@ class Plateaus:
     Bounding boxes of each object.
     '''
 
-    sums: numpy.ndarray = numpy.zeros((0,))
+    sums: ArrayLike = dataclasses.field(default_factory=lambda: numpy.zeros((0,)))
     '''
     The total value of each object.
     '''
 
-    counts: numpy.ndarray = numpy.zeros((0,))
+    counts: ArrayLike = dataclasses.field(default_factory=lambda: numpy.zeros((0,)))
     '''
     The number of pixels of each object.
     '''
 
-    coms: numpy.ndarray = numpy.zeros((0,0))
+    coms: ArrayLike = dataclasses.field(default_factory=lambda: numpy.zeros((0,0)))
     '''
     The center of mass of objects in pixel space.
     '''
