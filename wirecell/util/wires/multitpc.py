@@ -151,9 +151,11 @@ def load(filename, face_style):
         face_index = store.make("face", face, plane_indices)
         by_apa[apa].append(face_index)
 
+    apa_indices = list()
     for apa, face_indices in sorted(by_apa.items()):
-        store.make("anode", apa, face_indices)
-
+        apa_index = store.make("anode", apa, face_indices)
+        apa_indices.append(apa_index)
+    store.make("detector", 0, apa_indices)
     return store.schema()
         
 

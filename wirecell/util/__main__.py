@@ -162,9 +162,11 @@ def convert_multitpc_wires(ctx, face_style, input_file, output_file):
     (Optional) "--face-style" allows user to choose a different naming
     convention for numbering face. Currently, only "sbnd" is supported.
     '''
-    from wirecell.util.wires import multitpc, persist
+    from wirecell.util.wires import multitpc, persist, info
     store = multitpc.load(input_file, face_style=face_style)
-    persist.dump(output_file, store)
+    dstore = persist.todict(store)
+    persist.dump(output_file, dstore)
+
 
 @cli.command("convert-icarustpc-wires")
 @click.argument("input-file")
