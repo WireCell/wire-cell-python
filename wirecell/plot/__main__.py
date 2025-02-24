@@ -162,12 +162,10 @@ def comp1d(ctx, name, tier, frames, chmin, chmax, unit, xrange,
     else:
         frames = [f.strip() for f in frames.split(",")]
 
-    # too high and the pixel marker disappears.
-    opts=dict(dpi=150)
     if single:
-        out = plottools.NameSingleton(output, **opts)
+        out = plottools.NameSingleton(output, dpi=150)
     else:
-        out = plottools.pages(output, **opts)
+        out = plottools.pages(output)
 
     markers=[m.strip() for m in markers.split(' ')]
     plotter(datafiles, out,

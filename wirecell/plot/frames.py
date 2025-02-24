@@ -293,6 +293,8 @@ def comp1d(datafiles, out, name='wave', frames='orig',
         if interactive :
             plt.show()
         out.savefig(fig)
+    if not interactive and hasattr(out, "close"):
+        out.close()
 
 def channel_correlation(datafile, out, tier='orig', chmin=0, chmax=1, unit='ADC', interactive=False):
     '''

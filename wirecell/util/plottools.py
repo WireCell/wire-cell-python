@@ -119,7 +119,7 @@ class NameSingleton(object):
 
 
 
-def pages(name, format=None, single=False):
+def pages(name, format=None, single=False, **kwds):
     '''
     Return an instance of something like a PdfPages for the given format.
 
@@ -142,10 +142,10 @@ def pages(name, format=None, single=False):
     '''
 
     if name.endswith(".pdf") or format=="pdf":
-        return PdfPages(name)
+        return PdfPages(name, **kwds)
     if single:
         return NameSingleton(name, format)
-    return NameSequence(name)
+    return NameSequence(name, **kwds)
 
 
 def lg10(arr, eps = None, scale=None):
