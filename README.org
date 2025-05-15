@@ -33,6 +33,18 @@ uv tool install git+https://github.com/wirecell/wire-cell-python
 wirecell-util  --help
 #+end_example
 
+To later upgrade
+
+#+begin_example
+uv tool upgrade wirecell
+#+end_example
+
+Or to later uninstall
+
+#+begin_example
+uv tool uninstall wirecell
+#+end_example
+
 ** Developer
 
 #+begin_example
@@ -42,6 +54,13 @@ uv sync
 uv run wirecell-util --help
 #+end_example
 
+This will use a local virtualenv which does not require explicit activation when
+using ~uv run~.  Or, you may do the usual
+
+#+begin_example
+source .venv/bin/activate
+wirecell-util --help
+#+end_example
 
 * Command line interfaces
 
