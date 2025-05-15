@@ -20,10 +20,17 @@ It is recommended to use [[https://github.com/astral-sh/uv][uv]] for user and de
 
 ** User
 
-The package is not yet available in PyPI but the command line programs can be used like:
+You can use "uv run" to run the command line programs "live":
 
 #+begin_example
 uv run --with git+https://github.com/wirecell/wire-cell-python wirecell-util --help
+#+end_example
+
+Or to install as a "uv tool"
+
+#+begin_example
+uv tool install git+https://github.com/wirecell/wire-cell-python
+wirecell-util  --help
 #+end_example
 
 ** Developer
