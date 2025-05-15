@@ -1,5 +1,26 @@
 #+title: DNNROI support
 
+* Example usage
+
+Use online help:
+
+#+begin_example
+wirecell-dnn --help
+wirecell-dnn train --help
+#+end_example
+
+** Configuration file
+
+You may start by copying a file from [[file:../cfg/][../cfg/]] and modify to match your needs.  In particular you will need training files and a compatible "app" listed.
+
+** Train
+
+#+begin_example
+wirecell-dnn -L debug train -d cuda --cache -c wirecell/dnn/cfg/hyu-pdvd.cfg  -s hyu-pdvd.pt
+wirecell-dnn dump hyu-pdvd.pt 
+#+end_example
+
+
 * Input data
 
 The full file set provide two subsets: "rec" giving reconstructed signal
@@ -152,6 +173,7 @@ Cache holds post transformed arrays is in CPU memory and only is reused with
 more than one epoch.  When cache is on, the data is preloaded before training.
 
 
-* Other things
+* How to add new models
 
-light
+* How to add new apps
+
