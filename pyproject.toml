@@ -1,0 +1,59 @@
+[project]
+name = "wirecell"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.11"
+readme = {file = "README.org", content-type = "text/org"}
+authors = [
+    { name = "Brett Viren", email = "brett.viren@gmail.com" }
+]
+
+dependencies = [
+    "anyconfig>=0.14.0",
+    "click>=8.1.8",
+    "gojsonnet>=0.21.0",
+    "h5py>=3.13.0",
+    "jsonnet>=0.21.0",
+    "matplotlib>=3.9.4",
+    "networkx>=3.2.1",
+    "numpy>=2.0.2",
+    "scipy>=1.15.3",
+    "semver>=3.0.4",
+    "sqlalchemy>=2.0.41",
+]
+
+
+[project.scripts]
+wirecell-sigproc = "wirecell.sigproc.__main__:main"
+wirecell-util = "wirecell.util.__main__:main"
+wirecell-gen = "wirecell.gen.__main__:main"
+wirecell-pgraph = "wirecell.pgraph.__main__:main"
+wirecell-resp = "wirecell.resp.__main__:main"
+wirecell-plot = "wirecell.plot.__main__:main"
+wirecell-aux = "wirecell.aux.__main__:main"
+wirecell-ls4gan = "wirecell.ls4gan.__main__:main"
+wirecell-validate = "wirecell.validate.__main__:main"
+wirecell-img = "wirecell.img.__main__:main"
+wirecell-test = "wirecell.test.__main__:main"
+
+# needs torch
+wirecell-dnn = "wirecell.dnn.__main__:main"
+wirecell-pytorch = "wirecell.pytorch.__main__:main"
+
+[project.optional-dependencies]
+torch = [
+    "torch>=2.7.0",
+]
+
+# other dependencies to take care of gravio, gvanim, shapely, tvtk, mlflow, pygraphviz, ROOT, semver, 
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+# we have non-standard directory layout where the top module is right here and
+# not under src.
+[tool.setuptools]
+package-dir = {"" = "."}
+[tool.setuptools.packages.find]
+where = ["."]

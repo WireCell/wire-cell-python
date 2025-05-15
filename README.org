@@ -2,12 +2,13 @@
 
 * What's here.
 
-This package holds some Python modules that support Wire Cell Toolkit.
-Currently this is a stand-alone package that does not depend directly
-on the C++ packages of WCT.
+This package provides Python modules in the ~wirecell~ namespace as well as
+various ~wirecell-*~ command line programs.  These support the Wire Cell Toolkit
+but do not depend on it.  If this package is available during the WCT build
+process then some additonal unit tests can run using ~wirecell-*~ programs.
 
-Some of the functionality provided includes converters and generators
-of major WCT input data files including:
+Some of the functionality provided includes converters and generators of major
+WCT input data files including:
 
 - field response functions
 - wire geometry
@@ -15,50 +16,25 @@ of major WCT input data files including:
 
 * Installation
 
-#+BEGIN_EXAMPLE
-  $ python3 -m venv venv
-  $ source venv/bin/activate
-  $ cd wire-cell-python
-  $ pip install -r requirements/base.txt
-  $ pip install -r requirements/img.txt
-  $ pip install -r requirements/sigproc.txt
-  $ pip install -e .
-#+END_EXAMPLE
+It is recommended to use [[https://github.com/astral-sh/uv][uv]] for user and developer tasks.
 
-If you have trouble installing ~mayavi~ via ~pip~ consider installing it
-as a system package and then making the ~venv~ with:
+** User
+
+The package is not yet available in PyPI but the command line programs can be used like:
 
 #+begin_example
-  $ python3 -m venv venv --system-site-packages
+uv run --with git+https://github.com/wirecell/wire-cell-python wirecell-util --help
 #+end_example
 
-If you have trouble installing ~gojsonnet~ via ~pip~ consider replacing it
-to ~jsonnet~ in requirements/base.txt and setup.py. In addition, commenting
-out ~moo~ in setup.py might also help decouple with ~gojsonnet~
-
-* Use
-
-In fresh shells must repeat:
-
-#+BEGIN_EXAMPLE
-  $ source venv/bin/activate
-#+END_EXAMPLE
-
-* Others
-
-
-** ZIO
-
-The ZIO Python package can provide some functionality that WCT may
-make use of (flow/domo brokers).  It's installation is somewhat
-irregular so a script is provided to help.  It will also install the
-~wirecell~ Python module.
+** Developer
 
 #+begin_example
-  $ python3 -m venv venv
-  $ source venv/bin/activate
-  $ ./zioinst.sh
+git clone git@github.com:WireCell/wire-cell-python.git
+cd wire-cell-python
+uv sync
+uv run wirecell-util --help
 #+end_example
+
 
 * Command line interfaces
 
