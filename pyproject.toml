@@ -24,6 +24,8 @@ dependencies = [
 
 
 [project.scripts]
+wcpy = "wirecell.__main__:main"
+
 wirecell-sigproc = "wirecell.sigproc.__main__:main"
 wirecell-util = "wirecell.util.__main__:main"
 wirecell-gen = "wirecell.gen.__main__:main"
