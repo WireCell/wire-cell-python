@@ -62,6 +62,31 @@ source .venv/bin/activate
 wirecell-util --help
 #+end_example
 
+** Optional dependencies
+
+Some dependencies are optional and not installed by default.  In particular,
+PyTorch is a very large package and not generally required and so is kept
+optional.  In order to use optional functionality must add ~torch~ to the
+commands above:
+
+For "live" running:
+
+#+begin_example
+uv run --with torch --with git+https://github.com/wirecell/wire-cell-python wirecell-util --help
+#+end_example
+
+For "tool" based installation:
+
+#+begin_example
+uv tool install --with torch git+https://github.com/wirecell/wire-cell-python
+#+end_example
+
+For developers, the "sync" command needs additional info:
+
+#+begin_example
+uv sync --all-extras
+#+end_example
+
 * Command line interfaces
 
 Each main ~wirecell.<module>~ exposes most of its functionality via a
