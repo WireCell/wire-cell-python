@@ -407,8 +407,8 @@ def lmn_fr_plots(impact, plane, period,
     sigs_ds = lmn.interpolate(sigs, sim_tick, name="I_{ds}")
     sigs_dm = lmn.decimate(sigs, decimation, name="I_{dm}")
     ers_ss = eresp(sigs_ds.sampling, "E_{ss}")  # slow sample
-    dsigs_dsc = lmn.convolve(sigs_ds, ers_ss, name='I_{ds} \otimes E_{ss}')
-    dsigs_dmc = lmn.convolve(sigs_dm, ers_ss, name='I_{dm} \otimes E_{ss}')
+    dsigs_dsc = lmn.convolve(sigs_ds, ers_ss, name=r'I_{ds} \otimes E_{ss}')
+    dsigs_dmc = lmn.convolve(sigs_dm, ers_ss, name=r'I_{dm} \otimes E_{ss}')
     qdsigs_dsc = multiply_period(dsigs_dsc, name='V_{dsc}')
     qdsigs_dmc = multiply_period(dsigs_dmc, name='V_{dmc}')
     # convolve then downsample/decimate
@@ -528,16 +528,16 @@ def lmn_fr_plots(impact, plane, period,
 
         # FR in fast and slow
         fig,_ = plot_signals((sigs, sigs_ds, sigs_dm), iunits='femtoampere', **zoom_kwds)
-        newpage(fig, 'fig-fr-ds', 'FR(I) (downsample vs decimate) $\leftrightarrow$ convolve')
+        newpage(fig, 'fig-fr-ds', r'FR(I) (downsample vs decimate) $\leftrightarrow$ convolve')
 
         # DR: fast and down+conv and conv+down.
         fig,_ = plot_signals((qdsigs, qdsigs_dsc, qdsigs_cds, qdsigs_dmc, qdsigs_cdm),
                              iunits='mV', drawstyle='steps-mid', **conv_range)
-        newpage(fig, 'fig-v-dccd', '$V=T \cdot FR \otimes ER$ (downsample vs decimate) $\leftrightarrow$ convolve')
+        newpage(fig, 'fig-v-dccd', r'$V=T \cdot FR \otimes ER$ (downsample vs decimate) $\leftrightarrow$ convolve')
 
         shift_range = dict(flim=(0*units.MHz, 1.0*units.MHz))
         fig,_ = plot_shift((qdsigs_cds, qdsigs_dsc, qdsigs_cdm, qdsigs_dmc), **shift_range)
-        newpage(fig, 'fig-v-dccd-shift', 'V shift? (downsample vs decimate) $\leftrightarrow$ convolve')
+        newpage(fig, 'fig-v-dccd-shift', r'V shift? (downsample vs decimate) $\leftrightarrow$ convolve')
 
         # yet more checks
 
@@ -683,8 +683,8 @@ def lmn_pdsp_plots(output):
 
 
             trio('FR', fr_fast)
-            trio('T \cdot FR \circledast ER', qr_fast)
-            trio('T \cdot FR \circledast ER', qr_slow)
+            trio(r'T \cdot FR \circledast ER', qr_fast)
+            trio(r'T \cdot FR \circledast ER', qr_slow)
             # trio('FRxER', dr_slow)
             # trio('T.FRxER', qr_slow)
 
