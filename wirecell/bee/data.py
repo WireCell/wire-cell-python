@@ -10,7 +10,6 @@ documentation at:
 '''
 import json
 import numpy
-from scipy.spatial import KDTree
 from collections import defaultdict
 from pathlib import Path
 from wirecell.util import ario
@@ -32,6 +31,7 @@ class Cluster:
     def kd(self):
         val = getattr(self, "_kdtree", None)
         if val is None:
+            from scipy.spatial import KDTree
             self._kd = KDTree(self.points)
             return self._kd
         return val
@@ -96,13 +96,15 @@ def load_json(json_file):
     content = json.loads(open(json_file).read())
     return Grouping(index, algname, content)
 
-    
+
 def parse_pathname(path):
+
     path = Path(path)
     parts = path.stem.split('-', 1)
     if len(parts) != 2:
         raise ValueError(f'weird path: "{path}", got {parts}')
     return tuple(parts)
+
 
 def load_zip(zip_file):
     '''
