@@ -35,6 +35,7 @@ wirecell-ls4gan = "wirecell.ls4gan.__main__:main"
 wirecell-validate = "wirecell.validate.__main__:main"
 wirecell-img = "wirecell.img.__main__:main"
 wirecell-test = "wirecell.test.__main__:main"
+wirecell-bee = "wirecell.bee.__main__:main"
 
 # needs torch
 wirecell-dnn = "wirecell.dnn.__main__:main"
@@ -48,7 +49,7 @@ torch = [
 # other dependencies to take care of gravio, gvanim, shapely, tvtk, mlflow, pygraphviz, ROOT, semver, 
 
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools", "wheel", "pip"]
 build-backend = "setuptools.build_meta"
 
 # we have non-standard directory layout where the top module is right here and
