@@ -14,6 +14,7 @@ from scipy.spatial import KDTree
 from collections import defaultdict
 from pathlib import Path
 from wirecell.util import ario
+from wirecell.util.points import pca_eigen
 import logging
 log = logging.getLogger("wirecell.bee")
 
@@ -25,8 +26,23 @@ class Cluster:
         # cluster_id, real_cluster_id, q
         self.ident = ident
         self.points = points
-        self.kd = KDTree(self.points)
-        # fixme/todo: add PCAs, cop, coq
+        # fixme/todo: cop, coq
+
+    @property
+    def kd(self):
+        val = getattr(self, "_kdtree", None)
+        if val is None:
+            self._kd = KDTree(self.points)
+            return self._kd
+        return val
+
+    @property
+    def pca_eigen(self):
+        val = getattr(self, "_pca", None)
+        if val is None:
+            self._pca = pca_eigen(self.points)
+            return self._pca
+        return val
 
 
 class Grouping:

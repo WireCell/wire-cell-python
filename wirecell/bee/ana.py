@@ -5,9 +5,13 @@ Functions to analyze bee.data.
 
 def summarize_cluster(cls, tab=0, pad='  '):
     gap = pad*tab
+    gapp = pad*(tab+1)
 
     # fixme/todo: add PCAs, cop, coq
-    return f'{gap}Cluster: {cls.ident} {len(cls.points)}'
+    lines = [f'{gap}Cluster: {cls.ident} {len(cls.points)}']
+    for ind, (vec, val) in enumerate(zip(*cls.pca_eigen)):
+        lines.append(f'{gapp}pca {ind}: {val} {vec}')
+    return '\n'.join(lines)
 
 
 def summarize_grouping(grp, tab=0, pad='  '):
