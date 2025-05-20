@@ -7,8 +7,7 @@ paper.
 
 import dataclasses
 import numpy
-import matplotlib.pyplot as plt
-from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
+
 from wirecell import units
 from wirecell.util.peaks import (
     BaselineNoise,
@@ -113,6 +112,8 @@ def plot_frame(gs, fr, channel_ranges=None, which="splat", tit=""):
     '''
     Plot one Frame as 2D and 2x1D projections.
     '''
+    import matplotlib.pyplot as plt
+    from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
     tunits = units.us
 
     t0,tf,c0,cf = fr.extent
@@ -172,6 +173,8 @@ def plot_frames(spl, sig, channel_ranges, title=""):
     contiguous rows on the Frame.array.
 
     '''
+    import matplotlib.pyplot as plt
+    from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
     fig = plt.figure()
     pgs = GridSpec(1,2, figure=fig, width_ratios = [7,0.2])
     gs = GridSpecFromSubplotSpec(2, 1, pgs[0,0])
@@ -187,6 +190,8 @@ def plot_plane(spl_act, sig_act, nsigma=3.0, title=""):
     Plot splat and signal activity for one plane.
 
     '''
+    import matplotlib.pyplot as plt
+
     # bias of first w.r.t. second
     bias1 = relbias(sig_act, spl_act)
     bias2 = relbias(spl_act, sig_act)
@@ -282,6 +287,8 @@ def calc_metrics(spl_qch, sig_qch, nbins=50):
     return Metrics(neor, ineff, bln)
 
 def plot_metrics(splat_signal_activity_pairs, nbins=50, title="", letters="UVW"):
+    import matplotlib.pyplot as plt
+
     plt.clf()
     fig, axes = plt.subplots(nrows=2, ncols=3, sharey="row")
     for pln, (spl_qch, sig_qch) in enumerate(splat_signal_activity_pairs):

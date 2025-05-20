@@ -5,14 +5,10 @@ Main CLI to wirecell.aux.
 
 import json
 import click
-from wirecell.util import jsio, plottools
-import numpy
-import matplotlib.pyplot as plt
+from wirecell.util import jsio
 import tempfile
 from pathlib import Path
 import subprocess
-from wirecell.aux import idft, sysinfo
-from matplotlib.backends.backend_pdf import PdfPages
 
 from wirecell.util.cli import context, log
 @context("aux")
@@ -43,6 +39,9 @@ def run_idft(epsilon, verbosity, output, plugin, typename, config, command, arra
     """
     Perform DFT transforms with check_idft and numpy and compare.
     """
+    from wirecell.aux import idft
+    import numpy
+
     command = Path(command)
     if not command.exists():
         raise click.BadParameter(f'no such program: {command}')
@@ -179,8 +178,9 @@ def run_idft_bench(output, plugin, typename, config, program):
     '''
     Run the check_idft_bench, augmenting the results with host info
     '''
+    from wirecell.aux import sysinfo
 
-    data = sysinfo.asdict()
+    # data = sysinfo.asdict()
     opath = Path(output);
     with tempfile.TemporaryDirectory(prefix=opath.stem) as tdir:
         jfile = tdir + "/idft-bench.json" 
@@ -205,6 +205,9 @@ def plot_idft_bench(output, inputs):
     '''
     Make plots from one or more check_idft_bench output JSON files.
     '''
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_pdf import PdfPages
+
     dats = [idft.load(inp) for inp in inputs]
     with PdfPages(output) as pdf:
         for func_name in ["fwd1d", "fwd2d", "fwd1b0", "fwd1b1"]:

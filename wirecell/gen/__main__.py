@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 
-import math
 import json
 import click
-import numpy
 import functools
 
 from wirecell import units
 from wirecell.util.functions import unitify, unitify_parse
-from wirecell.util.cli import jsonnet_loader, context, log, frame_input, image_output
+from wirecell.util.cli import context, log, frame_input, image_output
 from wirecell.util.plottools import pages
 
 @context("gen")
@@ -147,6 +145,8 @@ def plot_test_boundaries(ctx, times, npz_file, pdf_file):
     '''
     from wirecell.gen import sim
     import matplotlib.pyplot as plt
+    import numpy
+
     f = numpy.load(npz_file);
 
     fnums = [int(k.split('_')[-1]) for k in f.keys() if k.startswith("frame")]
@@ -313,6 +313,7 @@ def depo_morse(length, step_size,
     from wirecell.util.wires.array import endpoints_from_schema, correct_endpoint_array
     from wirecell.util.wires.persist import load as load_wires
     from wirecell.gen.morse import generate
+    import numpy
 
 
     if output is None:
@@ -461,6 +462,7 @@ def depo_line(step_size, time, electron_density, first, last, sigma, track_speed
     Generate a single line of depos between endpoints given in global coordinates.
     '''
     from .depogen import lines
+    import numpy
 
     if output is None:
         raise click.BadParameter("no output file provided")
@@ -523,12 +525,13 @@ def depo_lines(electron_density, step_size, time, tracks, sets,
     '''
     Generate ideal line-source "tracks" of depos
     '''
+    import numpy.random
+    import numpy
 
     if output is None or not output.endswith(".npz"):
         raise click.BadParameter(f'unsupported file type: {output}')
 
     seed = list(map(int, seed.split(",")))
-    import numpy.random
     numpy.random.seed(seed)
 
     time = unitify_parse(time)
@@ -574,6 +577,8 @@ def depo_point(number, time, position, sigma, output):
     '''
     Generate a single point depo.
     '''
+    import numpy
+
     if output is None:
         raise click.BadParameter("no output file provided")
 
@@ -612,6 +617,7 @@ def depo_sphere(radius, electron_density, step_size,
     '''
     Generate ideal phere of depos
     '''
+    import numpy
 
     if output is None:
         raise click.BadParameter("no output file provided")
@@ -652,6 +658,7 @@ def frame_stats(array, plane_channels, ariofile, output, **kwds):
     Return (print) stats on the time distribution of a frame.
 
     '''
+    import numpy
 
     def calc_stats(x):
         n = int(x.size)

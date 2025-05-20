@@ -1,13 +1,8 @@
 from wirecell import units
-import matplotlib.pyplot as plt
 import numpy
 
-from collections import defaultdict
-
-from matplotlib.patches import Rectangle, Ellipse
-from matplotlib.collections import PatchCollection
-
 def subplots(nrows=1, ncols=1, **kwds):
+    import matplotlib.pyplot as plt
     return plt.subplots(nrows, ncols, tight_layout=True, **kwds)
 
 def blob_nodes(cgraph, filter = lambda b : True):
@@ -149,6 +144,9 @@ def plot_xz(depos, cgraph):
 def plot_outlines(depos, cgraph, lims=None, include=("depos","blobs")):
     '''Plot depos as ellipses and blobs as squares.
     '''
+    from matplotlib.patches import Rectangle, Ellipse
+    from matplotlib.collections import PatchCollection
+
     if include == "both" or "both" in include:
         include=("depos","blobs")
     print("including:",include)

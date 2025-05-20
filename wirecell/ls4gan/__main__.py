@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 
-import sys
-import math
-import json
 import click
-import numpy
 from pathlib import Path
 from collections import defaultdict
 from wirecell import units
@@ -72,6 +68,7 @@ def npz_to_wct(transpose, output, name, format, ranges, tinfo, baseline, scale, 
     - A file.npz:array_name with a 1D array of integers.
 
     """
+    import numpy
     output = Path(output)
     if output.suffix != '.npz':
         raise click.BadParameter(f'unsupported output file type: {output}')
@@ -161,6 +158,7 @@ def comp_metric(output, metric, format, ranges, baseline, tag, dtype, npzfile1, 
     output: metrics for 3 planes (m_u, m_v, m_w)
     """
     # print(f'processing {npzfile1} {npzfile2}')
+    import numpy
     
     def get_dense_array(npzfile, tag=tag, dtype=dtype):
         from wirecell.util import ario

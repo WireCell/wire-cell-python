@@ -7,8 +7,7 @@ import click
 from wirecell.util.fileio import load as source_loader
 from wirecell import units
 from wirecell.util.functions import unitify, unitify_parse
-import numpy
-import matplotlib.pyplot as plt
+
 import matplotlib as mpl
 mpl.rcParams['mathtext.fontset'] = 'cm'
 mpl.rcParams['mathtext.rm'] = 'serif'
@@ -37,6 +36,8 @@ def gf2npz(output, origin, speed, dataset):
     '''
     Convert a Garfield data set to a "WCT response NPZ" file.
     '''
+    import numpy
+
     if not all([speed, origin]):
         raise ValueError("You MUST give --speed and --origin")
 
@@ -138,6 +139,8 @@ def resample(tick, error, pad, output, frfile):
 
 
 def zero_centered_freqs_hz(N, T):
+    import numpy
+
     T_sec = T/units.s
 
     dF = 1/(N*T_sec)
@@ -173,6 +176,8 @@ def compare(ctx, prange, logy, irange, arange, gain, shaping, output, responsefi
 
     If gain/shaping are given convolve the ER.
     '''
+    import numpy
+    import matplotlib.pyplot as plt
     from wirecell.sigproc.response import electronics
     import wirecell.sigproc.response.persist as per
     import wirecell.sigproc.response.plots as plots
@@ -338,6 +343,7 @@ def lmn_fr_plots(impact, plane, period,
     '''
     Make plots for LMN FR presentation.
     '''
+    import matplotlib.pyplot as plt
 
     from wirecell.util import lmn
     from wirecell.resp.plots import (
@@ -602,6 +608,8 @@ def lmn_pdsp_plots(output):
     '''
     Generate PDF file with plots illustrating LMN on PDSP 
     '''
+    import matplotlib.pyplot as plt
+
     from wirecell.util import lmn
     import wirecell.resp.resample as res
     from wirecell.resp.plots import load_fr, eresp, plot_paths, multiply_period

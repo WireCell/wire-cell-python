@@ -9,8 +9,6 @@ import click
 import pathlib
 from collections import Counter
 
-import numpy
-import matplotlib.pyplot as plt
 
 from wirecell import units
 from wirecell.util.functions import unitify, unitify_parse
@@ -22,7 +20,6 @@ import functools
 import wirecell.gen.depos as deposmod
 from . import tap, converter
 
-from scipy.spatial.transform import Rotation
 from zipfile import ZipFile
 from zipfile import ZIP_DEFLATED as ZIP_COMPRESSION
 ### bzip2 is actually worse than deflate for depos!
@@ -540,6 +537,8 @@ def bee_flashes(outdir, input):
     '''
     Produce a Bee JSON file from a flash ITensorSet file.
     '''
+    import numpy
+
     if outdir is None:
         raise click.BadParameter("no outdir provided")
 
@@ -616,8 +615,10 @@ def activity(output, slices, slice_line, speed, t0, cluster_file):
     '''
     Plot activity from a cluster file.
     '''
+    import matplotlib.pyplot as plt
     from matplotlib.colors import LogNorm
     from . import tap, clusters, plots
+    import numpy
 
     speed = unitify(speed)
     t0 = unitify(t0)
@@ -706,6 +707,7 @@ def blob_activity_stats(output, format, amin, cluster_file):
 
     '''
     from . import tap, clusters, plots
+    import numpy
 
     gr = list(tap.load(cluster_file))[0] # fixme
     cm = clusters.ClusterMap(gr)
@@ -931,6 +933,9 @@ def transform_depos(forward, locate, move, rotate, output, depos):
 
     --locate '0,0,0' --move '1*m,2*cm,3*mm'
     '''
+    # import locally to speed up overall module loading time
+    from scipy.spatial.transform import Rotation
+    import numpy
 
     fp = ario.load(depos)
     indices = list()

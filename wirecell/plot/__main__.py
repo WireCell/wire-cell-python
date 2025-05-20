@@ -6,12 +6,9 @@ Main CLI to wirecell.plot.
 import click
 from wirecell.util import ario, plottools
 from wirecell.util.cli import log, context, jsonnet_loader, frame_input, image_output
-from wirecell.util import jsio
-from wirecell.util.functions import unitify, unitify_parse
+from wirecell.util.functions import unitify_parse
 from wirecell import units
 from pathlib import Path
-import numpy
-import matplotlib.pyplot as plt
 
 @context("plot")
 def cli(ctx):
@@ -35,6 +32,9 @@ def ntier_frames(cmap, output, files):
     Each file should a "frame file" (an ario stream of
     frame/channels/tickinfo arrays)
     '''
+    import matplotlib.pyplot as plt
+    import numpy
+
     if not files:
         raise click.BadParameter('no input files given')
 
@@ -212,6 +212,8 @@ def frame_diff(array1, tickinfo1, channels1,
     '''
     Take diff between two frames and write result as image
     '''
+    import numpy
+
     if tickinfo1[1] != tickinfo1[1]:
         click.BadParameter(f'ticks must match, got {tickinfo1[1]} != {tickinfo1[1]}')
     tick = float(tickinfo1[1])
@@ -306,6 +308,9 @@ def digitzer(output, jsiofile, **kwds):
 
     See gen/test/test_digitizer_pdsp.cxx
     '''
+    import matplotlib.pyplot as plt
+    import numpy
+
     fadc = numpy.array(jsiofile["adc"])
     adc = {
         "float": fadc,
@@ -355,6 +360,8 @@ def channels(output, channel, trange, frange, yrange, drawstyle, frame_files, **
 
     If --single put all on one plot, else per-channel plots are made
     '''
+    import matplotlib.pyplot as plt
+    import numpy
 
     from wirecell.util.frames import load as load_frames
 
@@ -452,6 +459,7 @@ def channels_shift(output, channel, trange, frange, yrange, frame_files, **kwds)
 
     If --single put all on one plot, else per-channel plots are made
     '''
+    import matplotlib.pyplot as plt
 
     from wirecell.util import lmn
     from wirecell.util.frames import load as load_frames

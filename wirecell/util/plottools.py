@@ -4,10 +4,6 @@ Some general purpose plotting helpers
 '''
 import os
 
-import numpy as np
-from matplotlib.backends.backend_pdf import PdfPages
-import matplotlib.pyplot as plt
-import numpy
 from pathlib import Path
 
 def rescaley(ax, x, y, rx, extra=0.1):
@@ -16,6 +12,7 @@ def rescaley(ax, x, y, rx, extra=0.1):
 
     The extra is an amount relative to the nominally resulting ylim to pad.
     '''
+    import numpy
     inview = numpy.where( (x > rx[0]) & (x < rx[1]) )[0]
     ymin = y[inview].min()
     ymax = y[inview].max()
@@ -67,6 +64,8 @@ class NameSequence(object):
         '''
         Act like PdfPages
         '''
+        import matplotlib.pyplot as plt
+
         opts = dict(self.opts, **kwds)
 
         fn = self()
@@ -104,6 +103,8 @@ class NameSingleton(object):
         '''
         Act like PdfPages
         '''
+        import matplotlib.pyplot as plt
+
         opts = dict(self.opts, **kwds)
 
         if self.called == 0:
@@ -142,6 +143,7 @@ def pages(name, format=None, single=False, **kwds):
     '''
 
     if name.endswith(".pdf") or format=="pdf":
+        from matplotlib.backends.backend_pdf import PdfPages
         return PdfPages(name, **kwds)
     if single:
         return NameSingleton(name, format)
@@ -159,6 +161,7 @@ def lg10(arr, eps = None, scale=None):
 
     If scale is not given then 1/eps is used.
     '''
+    import numpy
     if eps is None:
         eps = numpy.min(numpy.abs(arr))
 
@@ -178,6 +181,8 @@ def image(array, style="image", fig=None, **kwds):
     '''
     Plot array as image, no axes.  Return result of imshow()
     '''
+    import matplotlib.pyplot as plt
+
     if fig is None:
         fig = plt.figure(frameon=False)
 

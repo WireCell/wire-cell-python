@@ -5,8 +5,6 @@ import functools
 import dataclasses
 from collections import defaultdict
 
-import numpy
-import matplotlib.pyplot as plt
 
 from wirecell.util import ario, plottools
 from wirecell.util.functions import unitify_parse, unitify
@@ -105,6 +103,7 @@ def plot_ssss(channel_ranges, nsigma, nbins, splat, signal, output,
     '''
     Perform the simple splat / sim+signal process comparison test and make plots.
     '''
+    import numpy
 
     nminsig = 3                # sanity check
 
@@ -161,6 +160,7 @@ def ssss_metrics(channel_ranges, nsigma, nbins, splat, signal, output, params, *
 
     If a --params file is given it is merely attached at the "params" key.
     '''
+    import numpy
 
     metrics = list()
     for pln, ch in enumerate(channel_ranges):
@@ -205,6 +205,9 @@ def plot_metrics(output, coordinate_plane, title, files):
 
     Files are as produced by ssss-metrics and must include a "params" key.
     '''
+    import numpy
+
+    import matplotlib.pyplot as plt
 
     # collect metrics by plane and order by angles.
     byplane = [defaultdict(list),defaultdict(list),defaultdict(list)]

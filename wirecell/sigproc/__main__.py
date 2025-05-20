@@ -5,7 +5,6 @@ Export wirecell.sigproc functionality to a main Click program.
 import re
 import sys
 import click
-import numpy
 from collections import defaultdict
 
 from wirecell import units
@@ -81,6 +80,7 @@ def fr2npz(gain, shaping, json_file, npz_file):
     '''
     import wirecell.sigproc.response.persist as per
     import wirecell.sigproc.response.arrays as arrs
+    import numpy
 
     fr = per.load(json_file)
     print(type(fr))
@@ -120,6 +120,7 @@ def frzero(ctx, number, index, uniform, output, fields):
     The "fields" is a canonical detector name or a FR file.
     '''
     import wirecell.sigproc.response.persist as per
+    import numpy
 
     fr = per.load(fields)
     if isinstance(fr, list):
@@ -273,6 +274,7 @@ def plot_garfield_track_response(ctx, gain, shaping, tick, tick_padding, electro
     Note, defaults are chosen to reproduce the "ADC Waveform with 2D
     MicroBooNE Wire Plane Model" plot for the MicroBooNE noise paper.
     '''
+    import numpy
     import wirecell.sigproc.garfield as gar
     import wirecell.sigproc.response as res
     import wirecell.sigproc.plots as plots
@@ -351,6 +353,7 @@ def plot_response_compare_waveforms(ctx, plane, irange, trange,
     '''
     import wirecell.sigproc.response.persist as per
     import wirecell.sigproc.response.plots as plots
+    import numpy
 
     irange = list(map(int, irange.split(',')))
     trange = list(map(int, trange.split(',')))
@@ -645,6 +648,7 @@ def fwd(plots, output, detector):
     '''
     Simple exercise of ForWaRD
     '''
+    import numpy
 
     if plots:
         plots = [re.compile(p) for p in plots.split(",")]

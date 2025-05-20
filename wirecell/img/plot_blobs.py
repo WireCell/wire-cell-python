@@ -8,7 +8,6 @@ Exposed functions take a graph return a figure:
 
 '''
 from wirecell import units
-import matplotlib.pyplot as plt
 import numpy
 import logging
 log = logging.getLogger("wirecell.img")
@@ -16,6 +15,8 @@ log = logging.getLogger("wirecell.img")
 from .converter import get_slice
 
 def subplots(nrows=1, ncols=1):
+    import matplotlib.pyplot as plt
+
     return plt.subplots(nrows, ncols, tight_layout=True)
 
 def _plot_coord(gr, index, label, unit):

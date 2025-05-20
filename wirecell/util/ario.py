@@ -6,7 +6,6 @@ Read-only dict-like, sometimes efficient, random access to files.
 '''
 import io
 import json
-import numpy
 import pathlib
 import zipfile
 import tarfile
@@ -42,6 +41,8 @@ def transform(fname, data):
     if ext.lower() in ("json",):
         return json.loads(data)
     if ext.lower() in ("npy","numpy"):
+        import numpy
+
         bio = io.BytesIO()
         bio.write(data)
         bio.seek(0)

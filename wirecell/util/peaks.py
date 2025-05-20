@@ -8,9 +8,6 @@ import json
 from pathlib import Path
 import dataclasses
 from typing import List, Tuple
-from scipy.optimize import curve_fit
-from scipy.signal import find_peaks, peak_widths
-from scipy import ndimage
 from math import sqrt, pi
 
 try:
@@ -113,6 +110,8 @@ def baseline_noise(array, bins=200, vrange=100):
     - RuntimeError when the fit fails.
 
     '''
+    from scipy.optimize import curve_fit
+
     nsig = len(array)
     lo, med, hi = numpy.quantile(array, [0.5-0.34,0.5,0.5+0.34])
 
@@ -189,6 +188,8 @@ def find1d(wave, npeaks=None, threshold=0):
     - threshold :: the minimum value for a sample to be considered a peak.
 
     '''
+    from scipy.optimize import curve_fit
+    from scipy.signal import find_peaks, peak_widths
 
     # Find the peaks
     peaks = find_peaks(wave, height = threshold)[0]
@@ -300,6 +301,8 @@ def plateaus(frame, vthreshold=None):
     default to min + 0.001 * (max-min)
 
     '''
+    from scipy import ndimage
+
     if vthreshold is None:
         vmin = numpy.min(frame)
         vmax = numpy.max(frame)

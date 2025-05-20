@@ -1,4 +1,3 @@
-from torch.utils.data import random_split
 
 def train_eval_split(ds, train_ratio, **dlkwds):
     '''
@@ -11,6 +10,9 @@ def train_eval_split(ds, train_ratio, **dlkwds):
     Note, train dataset will be empty if ratio is 0.0, etc eval for 1.0.
 
     '''
+    # delay loading in the monster
+    from torch.utils.data import random_split
+
     # clamp
     train_ratio = sorted((0.0, train_ratio, 1.0))[1]
 

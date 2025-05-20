@@ -2,8 +2,6 @@
 
 import time
 import click
-import torch
-from torch.utils.data import DataLoader
 
 from pathlib import Path
 from wirecell.util.cli import context, log, jsonnet_loader, anyconfig_file
@@ -65,6 +63,9 @@ def train(ctx, config, epochs, batch, device, cache, debug_torch,
     '''
     Train a model.
     '''
+    # delay importing this monster
+    import torch
+    from torch.utils.data import DataLoader
 
     if not files:               # args not processed by anyconfig_files
         try:

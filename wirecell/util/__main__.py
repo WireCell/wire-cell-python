@@ -5,7 +5,6 @@ import sys
 import math
 import json
 import click
-import numpy
 from collections import defaultdict
 from wirecell import units
 from wirecell.util.functions import unitify, unitify_parse
@@ -225,6 +224,7 @@ def plot_wire_regions(ctx, wire_json_file, region_json_file, pdf_file):
     import matplotlib.pyplot as plt
     from matplotlib.patches import Polygon
     from matplotlib.collections import PatchCollection
+    import numpy
 
     store = wpersist.load(wire_json_file)
     regions = wpersist.load(region_json_file)
@@ -312,6 +312,8 @@ def wires_ordering(ctx, output, json_file):
 
     The result is for debugging and perhaps cryptic.
     '''
+    import numpy
+
     import matplotlib.pyplot as plt
     fig,axes = plt.subplots(nrows=2,ncols=1)
 
@@ -377,6 +379,8 @@ def wires_channels(ctx, output, json_file):
     '''
     Make PDF showing info on how wires vs channels.
     '''
+    import numpy
+
     import wirecell.util.wires.persist as wpersist
     import wirecell.util.wires.info as winfo
     import matplotlib.pyplot as plt
@@ -550,6 +554,8 @@ def make_map(ctx, detector, output_file):
     '''
     Generate a WCT channel map file giving numpy arrays.
     '''
+    import numpy
+
     schema = output_file[output_file.rfind(".")+1:]
     click.echo('writing schema: "%s"' % schema)
 
@@ -886,7 +892,7 @@ def npz_to_img(output, array,
     Make an image from an array in an numpy file.
     '''
     # fixme: expose options, aspect, pcolor, colobar, to cli
-
+    import numpy
     import matplotlib.pyplot as plt
 
     if not output:
@@ -945,6 +951,8 @@ def ls(filename):
     '''
     List contents of a WCT file (.npz, .zip or .tar[.gz])
     '''
+    import numpy
+
     from . import ario, tdm, cdm
     fp = ario.load(filename)
     if tdm.looks_like(fp):
@@ -975,6 +983,8 @@ def pc2pd(ident, prefix, points, attrs, pcfile, pdfile):
     Convert pointcloud in WCT TDM file format to VTK PolyData file.
 
     '''
+    import numpy
+
     if not pdfile.endswith(".vtp"):
         log.warning(f'output file name does not end in .vtp, paraview may complain')        
 
@@ -1144,6 +1154,7 @@ def npz_to_wct(transpose, output, name, format, tinfo, baseline, scale, dtype, c
 
     """
     from collections import OrderedDict
+    import numpy
 
     tinfo = unitify(tinfo)
     baseline = float(baseline)
@@ -1213,6 +1224,8 @@ def ario_cmp(filenames, ario1, ario2):
     Archives differ if any of their element file names differ or if
     matched file names have different content.
     '''
+    import numpy
+
     from . import ario
     a1 = ario.load(ario1)
     a2 = ario.load(ario2)
@@ -1298,6 +1311,7 @@ def resample(tick, output, framefile):
     Resample a frame file
     '''
     from . import ario, lmn
+    import numpy
 
     Tr = unitify(tick)
     print(f'resample to {Tr/units.ns}ns to {output}')
@@ -1305,8 +1319,8 @@ def resample(tick, output, framefile):
 
     fp = ario.load(framefile)
     f_names = [k for k in fp.keys() if k.startswith("frame_")]
-    c_names = [k for k in fp.keys() if k.startswith("channels_")]
-    t_names = [k for k in fp.keys() if k.startswith("tickinfo_")]
+    # c_names = [k for k in fp.keys() if k.startswith("channels_")]
+    # t_names = [k for k in fp.keys() if k.startswith("tickinfo_")]
 
     out = dict()
 
@@ -1397,6 +1411,7 @@ def framels(output, framefile):
     '''
     Print information about a frame file
     '''
+    import numpy
     f = numpy.load(framefile)
 
     # fixme: make more flexible as for order.

@@ -4,7 +4,6 @@ from wirecell import units
 from wirecell.util import ario
 
 import numpy
-import matplotlib.pyplot as plt
 
 import json
 import bz2
@@ -159,6 +158,8 @@ def _abc_hist(a, b, c, da, db, **kwds):
     '''
     Plot b vs a weighted by c in da x db bins.  Return axis
     '''
+    import matplotlib.pyplot as plt
+
     a = a/da
     b = b/db
 
@@ -248,7 +249,9 @@ def plot_qzt(depos, **kwds):
 
 def plot_t(depos, **kwds):
     'Plot t histogram weighted by q'
-    q = numpy.abs(depos["q"])
+    import matplotlib.pyplot as plt
+
+    # q = numpy.abs(depos["q"])
     t = depos["t"]
 
     fig, ax = plt.subplots(1,1, tight_layout=True)
@@ -258,7 +261,8 @@ def plot_t(depos, **kwds):
 
 def plot_x(depos, **kwds):
     'Plot x histogram weighted by q'
-    q = numpy.abs(depos["q"])
+    import matplotlib.pyplot as plt
+    # q = numpy.abs(depos["q"])
     x = depos["x"]
 
     fig, ax = plt.subplots(1,1, tight_layout=True)
@@ -270,6 +274,7 @@ def _plot_abc(title, a, b, c, atit, btit, ctit, cmap='viridis', **kwds):
     '''
     Plot b vs a colored by c.
     '''
+    import matplotlib.pyplot as plt
     cmap = plt.cm.get_cmap(cmap)
 
     # cmax = float(numpy.max(c))
