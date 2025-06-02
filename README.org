@@ -30,7 +30,7 @@ Or to install as a "uv tool"
 
 #+begin_example
 uv tool install git+https://github.com/wirecell/wire-cell-python
-wirecell-util  --help
+wcpy util  --help
 #+end_example
 
 To later upgrade
@@ -51,7 +51,7 @@ uv tool uninstall wirecell
 git clone git@github.com:WireCell/wire-cell-python.git
 cd wire-cell-python
 uv sync
-uv run wirecell-util --help
+uv run wcpy util --help
 #+end_example
 
 This will use a local virtualenv which does not require explicit activation when
@@ -59,7 +59,7 @@ using ~uv run~.  Or, you may do the usual
 
 #+begin_example
 source .venv/bin/activate
-wirecell-util --help
+wcpy util --help
 #+end_example
 
 ** Optional dependencies
@@ -72,7 +72,7 @@ commands above:
 For "live" running:
 
 #+begin_example
-uv run --with torch --with git+https://github.com/wirecell/wire-cell-python wirecell-util --help
+uv run --with torch --with git+https://github.com/wirecell/wire-cell-python wcpy util --help
 #+end_example
 
 For "tool" based installation:
@@ -87,33 +87,10 @@ For developers, the "sync" command needs additional info:
 uv sync --all-extras
 #+end_example
 
-* Command line interfaces
-
-Each main ~wirecell.<module>~ exposes most of its functionality via a
-command line interface named ~wirecell-<module>~.  For example:
-
-#+BEGIN_EXAMPLE
-  $ wirecell-sigproc --help
-  Usage: wirecell-sigproc [OPTIONS] COMMAND [ARGS]...
-
-    Wire Cell Signal Processing Features
-
-  Options:
-    --help  Show this message and exit.
-
-  Commands:
-    convert-garfield              Convert an archive of a Garfield fileset...
-    plot-garfield-track-response
-#+END_EXAMPLE
-
-If your shell supports it, see what commands are available with TAB
-completion:
-
-#+begin_example
-  $ wirecell-<TAB><TAB>
-#+end_example
 
 * Documentation
 
 In addition to the online ~-h/--help~ for main and sub commands, some
-notes on specific commands are in [[file:docs/]].
+notes on specific aspects are in [[file:docs/]].  Some in particular
+
+- [[file:docs/developer.org][Developer guidance]]

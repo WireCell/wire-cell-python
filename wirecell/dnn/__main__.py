@@ -66,6 +66,7 @@ def train(ctx, config, epochs, batch, device, cache, debug_torch,
     # delay importing this monster
     import torch
     from torch.utils.data import DataLoader
+    import wirecell.dnn.apps
 
     if not files:               # args not processed by anyconfig_files
         try:
@@ -83,7 +84,7 @@ def train(ctx, config, epochs, batch, device, cache, debug_torch,
         torch.autograd.set_detect_anomaly(True)
 
     name = app
-    app = getattr(dnn.apps, name)
+    app = getattr(wirecell.dnn.apps, name)
 
     net = app.Network()
     opt = app.Optimizer(net.parameters())
