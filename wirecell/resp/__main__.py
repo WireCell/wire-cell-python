@@ -7,18 +7,18 @@ import click
 from wirecell.util.fileio import load as source_loader
 from wirecell import units
 from wirecell.util.functions import unitify, unitify_parse
-
+from wirecell.util.cli import context
 import matplotlib as mpl
 mpl.rcParams['mathtext.fontset'] = 'cm'
 mpl.rcParams['mathtext.rm'] = 'serif'
 
 cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
 
-@click.group(**cmddef)
-@click.pass_context
+
+@context("aux")
 def cli(ctx):
     '''
-    wirecell-resp command line interface
+    Commands related to responses used by Wire-Cell Toolkit.
     '''
     ctx.ensure_object(dict)
 

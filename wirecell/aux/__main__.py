@@ -14,7 +14,7 @@ from wirecell.util.cli import context, log
 @context("aux")
 def cli(ctx):
     '''
-    wirecell-aux command line interface
+    Commands for Wire-Cell Toolkit's "aux" package.
     '''
     pass
 
