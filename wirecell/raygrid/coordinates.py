@@ -94,7 +94,11 @@ class Coordinates:
 
                 if il < im:
                     # Fill in both triangles in one go to exploit the symmetry of this:
-                    p = funcs.crossing(rl0, rm0)
+                    try:
+                        p = funcs.crossing(rl0, rm0)
+                    except ValueError:
+                        print(f'skipping parallel view pair: {il=} {im=}')
+                        continue
 
                     self.zero_crossings[il, im] = p
                     self.zero_crossings[im, il] = p
