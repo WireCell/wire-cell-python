@@ -36,17 +36,37 @@ class Coordinates:
         '''
         self.init(views)
     
-    def ray_crossing(self, p, q):
+    def ray_crossing(self, one, two):
         '''
-        Return the 2D crossing point for two ray grid coordinates given as
-        (view, ray) pairs of indices.
+        Return the 2D crossing point(s) ray grid coordinates "one" and
+        "two".  Each coordinate is given as a pair (view,ray) of indices.  These
+        may be scalar or batched array.
         '''
-        pass
+        view1, ray1 = one
+        view2, ray2 = two
+
+        r00 = self.zero_crossings[view1, view2]
+        w12 = self.ray_jump[view1, view2]
+        w21 = self.ray_jump[view2, view1]
+        return r00 + ray2 * w12 + ray1 * w21;
+
+    def pitch_location(self, one, two, view):
+        '''
+        Return the pitch location measured in the given view (an index) of
+        the crossing point of ray grid coordinates one and two.
+        '''
+        view1, ray1 = one
+        view2, ray2 = two
         
-            
-        
+        return self.b[view1, view2, view] \
+            + ray2 * self.a[view1, view2, view] \
+            + ray1 * self.a[view2, view1, view]
+
 
     def init(self, views):
+        '''
+        Initialize or reinitialize the coordinate system  
+        '''
         
         nviews = views.shape[0]
         # 1D (l) the magnitude of the pitch of view l.

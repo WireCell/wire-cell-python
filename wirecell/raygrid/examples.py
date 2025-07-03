@@ -38,34 +38,34 @@ def symmetric_views(width=100, height=100, pitch_mag=3,
     # /-wires
     view = 2
 
-    du = torch.tensor([math.cos(angle), math.sin(angle)])
-    pu = torch.tensor([-du[1], du[0]])
+    d = torch.tensor([math.cos(angle), math.sin(angle)])
+    p = torch.tensor([-d[1], d[0]])
 
-    pjumpu = 0.5 * pitch_mag * pu
-    mjumpu2 = torch.dot(pjumpu, pjumpu)
-    rays[view, 0, 0] = ul + why * mjumpu2 / torch.dot(why, pjumpu)
-    rays[view, 0, 1] = ul + zee * mjumpu2 / torch.dot(zee, pjumpu)
+    pjump = 0.5 * pitch_mag * p
+    mjump2 = torch.dot(pjump, pjump)
+    rays[view, 0, 0] = ul + why * mjump2 / torch.dot(why, pjump)
+    rays[view, 0, 1] = ul + zee * mjump2 / torch.dot(zee, pjump)
 
-    pjumpu = 1.5 * pitch_mag * pu
-    mjumpu2 = torch.dot(pjumpu, pjumpu)
-    rays[view, 1, 0] = ul + why * mjumpu2 / torch.dot(why, pjumpu)
-    rays[view, 1, 1] = ul + zee * mjumpu2 / torch.dot(zee, pjumpu)
+    pjump = 1.5 * pitch_mag * p
+    mjump2 = torch.dot(pjump, pjump)
+    rays[view, 1, 0] = ul + why * mjump2 / torch.dot(why, pjump)
+    rays[view, 1, 1] = ul + zee * mjump2 / torch.dot(zee, pjump)
     
     # \-wires
     view = 3
 
-    dv = torch.tensor([math.cos(angle), -math.sin(angle)])
-    pv = torch.tensor([-du[1], du[0]])
+    d = torch.tensor([math.cos(angle), -math.sin(angle)])
+    p = torch.tensor([-d[1], d[0]])
 
-    pjumpv = 0.5 * pitch_mag * pv
-    mjumpv2 = torch.dot(pjumpv, pjumpv)
-    rays[view, 0, 0] = ll + why * mjumpv2 / torch.dot(why, pjumpv)
-    rays[view, 0, 1] = ll + zee * mjumpv2 / torch.dot(zee, pjumpv)
+    pjump = 0.5 * pitch_mag * p
+    mjump2 = torch.dot(pjump, pjump)
+    rays[view, 0, 0] = ll + why * mjump2 / torch.dot(why, pjump)
+    rays[view, 0, 1] = ll + zee * mjump2 / torch.dot(zee, pjump)
 
-    pjumpv = 1.5 * pitch_mag * pv
-    mjumpv2 = torch.dot(pjumpv, pjumpv)
-    rays[view, 1, 0] = ll + why * mjumpv2 / torch.dot(why, pjumpv)
-    rays[view, 1, 1] = ll + zee * mjumpv2 / torch.dot(zee, pjumpv)
+    pjump = 1.5 * pitch_mag * p
+    mjump2 = torch.dot(pjump, pjump)
+    rays[view, 1, 0] = ll + why * mjump2 / torch.dot(why, pjump)
+    rays[view, 1, 1] = ll + zee * mjump2 / torch.dot(zee, pjump)
     
     # |-wires
     view = 4
