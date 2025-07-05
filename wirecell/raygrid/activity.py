@@ -15,7 +15,7 @@ def threshold_1d(activity, minimum=0.0):
     '''
     mask = activity > minimum
     mask = torch.cat((torch.tensor([False]), mask, torch.tensor([False])))
-    begs = ((mask[1:] == True) && (mask[:-1] == False)).nonzero().squeze()
-    ends = ((mask[:-1] == True) && (mask[1:] == False)).nonzero().squeze()
+    begs = ((mask[1:]  == True) & (mask[:-1] == False)).nonzero().squeze()
+    ends = ((mask[:-1] == True) & (mask[1:]  == False)).nonzero().squeze()
     return torch.vstack((begs, ends))
 

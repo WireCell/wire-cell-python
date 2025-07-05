@@ -1,81 +1,59 @@
 import math
 import torch
 
-def symmetric_views(width=100, height=100, pitch_mag=3,
+
+def symmetric_views(width=100., height=100., pitch_mag=3,
                     angle=math.radians(60.0)):
     '''
-    Return a "views" tensor for 3-plain detector with first two planes
-    symmetric about the 3rd.  First two views are horiz/vert bounds.
+    Return tensor suitable for giving to Coordinates().  Two wire directions
+    are symmetric about the 3rd with givne angle.  First two views are
+    horiz/vert bounds.
+
+    This function is all in 2D with a (x,y) coordinate system.  If we consider
+    looking in the direction of positive Z-axis then wire direction cross pitch
+    direction is Z direction.  The layer directions:
+
+    - pitch points toward U, wire points toward L (horiz bounds)
+    - pitch points toward R, wire points toward U (vert bounds)
+    - pitch points toward UL, wire points toward LL ("U" plane)
+    - pitch points toward UR, wire points toward UL ("V" plane)
+    - pitch points toward R, wire points toward U ("W" plane)
+
+    Note, this convention is not directly WCT's usual which puts drift on X axis
+    and may swap U/V depending on detector.
     '''
+    pitches = torch.zeros((5, 2, 2))
 
-    rays = torch.zeros((5, 2, 2, 2))
 
-    # We replicate the original C++ pairs, eliding 1st x-axis
-    why = torch.tensor([1.0,0.0])
-    zee = torch.tensor([0.0,1.0])
+    # horizontal ray bounds, pitch is vertical
+    pitches[0] = torch.tensor([[width/2.0, 0], [width/2.0, height]])
 
+    # vertical ray bounds, pitch is horizontal
+    pitches[1] = torch.tensor([[0, height/2.0], [width, height/2.0]])
+
+    
+    # corners
     ll = torch.tensor([0,0])
     lr = torch.tensor([0,width])
-    ul = torch.tensor([height,0])
-    ur = torch.tensor([height, width])
 
-    # horizontal bounds
-    view = 0
+    # /-wires as seen looking in negative-X direction
+    w = torch.tensor([math.cos(angle), -math.sin(angle)])
+    p = torch.tensor([-w[1], w[0]])
+    ## inverse: w = [p[1], -p[0]]
+    pitches[2] = torch.vstack([
+        lr + 0.5*pitch_mag*p,
+        lr + 1.5*pitch_mag*p
+    ])
 
-    rays[view, 0, 0] = ll
-    rays[view, 0, 1] = lr
-    rays[view, 1, 0] = ul
-    rays[view, 1, 1] = ur
-
-    # vertical bounds
-    view = 1
-
-    rays[view, 0, 0] = ll
-    rays[view, 0, 1] = ul
-    rays[view, 1, 0] = lr
-    rays[view, 1, 1] = ur
-
-    # /-wires
-    view = 2
-
-    d = torch.tensor([math.cos(angle), math.sin(angle)])
-    p = torch.tensor([-d[1], d[0]])
-
-    pjump = 0.5 * pitch_mag * p
-    mjump2 = torch.dot(pjump, pjump)
-    rays[view, 0, 0] = ul + why * mjump2 / torch.dot(why, pjump)
-    rays[view, 0, 1] = ul + zee * mjump2 / torch.dot(zee, pjump)
-
-    pjump = 1.5 * pitch_mag * p
-    mjump2 = torch.dot(pjump, pjump)
-    rays[view, 1, 0] = ul + why * mjump2 / torch.dot(why, pjump)
-    rays[view, 1, 1] = ul + zee * mjump2 / torch.dot(zee, pjump)
-    
     # \-wires
-    view = 3
+    w = torch.tensor([math.cos(angle), +math.sin(angle)])
+    p = torch.tensor([-w[1], w[0]])
+    pitches[3] = torch.vstack([
+        ll + 0.5*pitch_mag*p,
+        ll + 1.5*pitch_mag*p
+    ])
 
-    d = torch.tensor([math.cos(angle), -math.sin(angle)])
-    p = torch.tensor([-d[1], d[0]])
+    # |-wires        
+    pitches[4] = torch.tensor([[0, height/2.0], [pitch_mag, height/2.0]])
 
-    pjump = 0.5 * pitch_mag * p
-    mjump2 = torch.dot(pjump, pjump)
-    rays[view, 0, 0] = ll + why * mjump2 / torch.dot(why, pjump)
-    rays[view, 0, 1] = ll + zee * mjump2 / torch.dot(zee, pjump)
-
-    pjump = 1.5 * pitch_mag * p
-    mjump2 = torch.dot(pjump, pjump)
-    rays[view, 1, 0] = ll + why * mjump2 / torch.dot(why, pjump)
-    rays[view, 1, 1] = ll + zee * mjump2 / torch.dot(zee, pjump)
-    
-    # |-wires
-    view = 4
-
-    pw = zee
-    pjumpw = pitch_mag * pw
-
-    rays[view, 0, 0] = ll + 0.0 * pjumpw
-    rays[view, 0, 1] = ul + 0.0 * pjumpw
-    rays[view, 1, 0] = ll + 1.0 * pjumpw
-    rays[view, 1, 1] = ul + 1.0 * pjumpw
-    
-    return rays
+    return pitches

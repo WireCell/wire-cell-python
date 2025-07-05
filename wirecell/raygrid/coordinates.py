@@ -29,10 +29,13 @@ class Coordinates:
         '''
         Construct Ray Grid coordinates specified by views.
 
-        The views is a 4-D tensor of shape:
+        The views is a 3-D tensor of shape:
 
-            (N-views, 2 rays, 2 endpoints, 2 coordinates)
+            (N-views, 2 endpoints, 2 coordinates)
 
+        Each view is a pair of endpoints.  The first point marks the origin of
+        the view.  The relative vector from first to second point is in the
+        direction of the pitch.  The magnitude of the vector is the pitch.
         '''
         self.init(views)
     
@@ -63,41 +66,49 @@ class Coordinates:
             + ray1 * self.a[view2, view1, view]
 
 
-    def init(self, views):
+    def init(self, pitches):
         '''
         Initialize or reinitialize the coordinate system  
         '''
         
-        nviews = views.shape[0]
+        nviews = pitches.shape[0]
+
         # 1D (l) the magnitude of the pitch of view l.
-        self.pitch_mag = torch.zeros((nviews,))
+        pvrel = pitches[:,1,:] - pitches[:,0,:]
+        self.pitch_mag = torch.sqrt(pvrel[:,0]**2 + pvrel[:,1]**2)
+
         # 2D (l,c) the pitch direction 2D coordinates c of view l.
-        self.pitch_dir = torch.zeros((nviews, 2))
+        self.pitch_dir = pvrel / self.pitch_mag.reshape(5,1)
+
         # 2D (l,c) the 2D coordinates c of the origin point of view l
-        self.center = torch.zeros((nviews, 2))
+        self.center = pitches[:,0,:]
+
+        wiredir = torch.vstack((-self.pitch_dir[:,1], self.pitch_dir[:,0])).T
+        ray0 = torch.vstack((self.center - wiredir, self.center + wiredir)).reshape(2,-1,2)
+        ray1 = torch.vstack((ray0[0] + pvrel, ray0[1] + pvrel)).reshape(2,-1,2)
+
+
         # 3D (l,m,c) crossing point 2D coordinates c of "ray 0" of views l and
         # m.  
         self.zero_crossings = torch.zeros((nviews, nviews, 2))
+
         # 3D (l,m,c) difference vector coordinates c between two consecutive
         # m-view crossings along l ray direction.  between crossings of rays of
         # view m.  
         self.ray_jump = torch.zeros((nviews, nviews, 2))
+
         # The Ray Grid tensor representations.
         self.a = torch.zeros((nviews, nviews, nviews))
         self.b = torch.zeros((nviews, nviews, nviews))        
 
-        # Per-view things
-        for layer, (r0, r1) in enumerate(views):
-            rpv = funcs.pitch(r0, r1)
-
-            rpl = torch.norm(rpv)
-            self.pitch_mag[layer] = rpl
-            self.pitch_dir[layer] = rpv/rpl
-            self.center[layer] = 0.5 * (r0[0] + r0[1])
-
         # Cross-view things
-        for il, (rl0, rl1) in enumerate(views):
-            for im, (rm0, rm1) in enumerate(views):            
+        for il in range(nviews):
+            rl0 = ray0[:,il,:]
+            rl1 = ray1[:,il,:]
+
+            for im in range(nviews):
+                rm0 = ray0[:,im,:]
+                rm1 = ray1[:,im,:]
 
                 # Special case diagonal values
                 if il == im:
