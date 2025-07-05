@@ -174,6 +174,10 @@ def blob_edges(lo, hi, padded_active):
     mask[lo + 1 : hi + 1] = True
 
     edges = (padded_active & mask).int().diff()
+
+    if not torch.any(edges):
+        return
+
     return edges
     
 
@@ -394,8 +398,6 @@ def apply_view(coords, prior, active):
     inds = (los < his) & (los >=0) & (his > 0) & (los < n) & (his <= n)
     keep = prior.select(inds)
 
-    print(f'{prior.nblobs=} keep {len(inds)} == {keep.nblobs} blobs')
-
     #
     # Prepare to find new blobs
     # 
@@ -426,7 +428,8 @@ def apply_view(coords, prior, active):
         collect_crossings.append(crossings)
 
 
-        # Now determine inside.....
+    if not collect_blobs:
+        return 
 
     all_blobs = torch.cat(collect_blobs, dim=0)
     all_crossings = torch.cat(collect_crossings, dim=0)
