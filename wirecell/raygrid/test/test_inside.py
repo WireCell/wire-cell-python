@@ -1,3 +1,4 @@
+import torch
 from wirecell.raygrid.tiling import fresh_insides
 
 # by gemini

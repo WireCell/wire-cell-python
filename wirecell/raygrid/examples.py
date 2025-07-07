@@ -1,29 +1,33 @@
 import math
 import torch
+import numpy as np
+
 
 
 def symmetric_views(width=100., height=100., pitch_mag=3,
                     angle=math.radians(60.0)):
     '''
-    Return tensor suitable for giving to Coordinates().  Two wire directions
-    are symmetric about the 3rd with givne angle.  First two views are
-    horiz/vert bounds.
+    Return a (5,2,2) pitch ray tensor suitable for giving to Coordinates().
 
-    This function is all in 2D with a (x,y) coordinate system.  If we consider
-    looking in the direction of positive Z-axis then wire direction cross pitch
-    direction is Z direction.  The layer directions:
+    Angle is from y-axis to wire direction.
 
-    - pitch points toward U, wire points toward L (horiz bounds)
-    - pitch points toward R, wire points toward U (vert bounds)
-    - pitch points toward UL, wire points toward LL ("U" plane)
-    - pitch points toward UR, wire points toward UL ("V" plane)
-    - pitch points toward R, wire points toward U ("W" plane)
+    This function is equivalent to symmetric_raypairs() in WCT's
+    util/src/RayHelpers.cxx except it returns a pitch ray instead of a pair of
+    wire rays and it operates in 2D (x_rg, y_rg) instead of 3D (x_wc, y_wc,
+    z_wc).  The coordinates correspondence is:
 
-    Note, this convention is not directly WCT's usual which puts drift on X axis
-    and may swap U/V depending on detector.
+    y_rg == y_wc
+    x_rg == z_wc
+    z_rg == -x_wc
+
+    Note, z_rg is not used here but may be defined by right-hand-rule.  Also by
+    RHR, "pitch cross wire = z_rg" (WCT it's opposite: "wire cross pitch = x_wc").
+
+    Rays generally start on left hand side, pitch increasing toward right
+    (x_rg).  This is equivalent to increasing with z_wc.  Special case
+    horizontal rays start at bottom and go up.
     '''
     pitches = torch.zeros((5, 2, 2))
-
 
     # horizontal ray bounds, pitch is vertical
     pitches[0] = torch.tensor([[width/2.0, 0], [width/2.0, height]])
@@ -31,23 +35,25 @@ def symmetric_views(width=100., height=100., pitch_mag=3,
     # vertical ray bounds, pitch is horizontal
     pitches[1] = torch.tensor([[0, height/2.0], [width, height/2.0]])
 
-    
     # corners
     ll = torch.tensor([0,0])
-    lr = torch.tensor([0,width])
+    ul = torch.tensor([0,height])
+    lr = torch.tensor([width,0])
 
-    # /-wires as seen looking in negative-X direction
-    w = torch.tensor([math.cos(angle), -math.sin(angle)])
-    p = torch.tensor([-w[1], w[0]])
-    ## inverse: w = [p[1], -p[0]]
+    # /-wires
+    w = torch.tensor([math.sin(angle), math.cos(angle)])
+    p = torch.tensor([w[1], -w[0]])
     pitches[2] = torch.vstack([
-        lr + 0.5*pitch_mag*p,
-        lr + 1.5*pitch_mag*p
+        ul + 0.5*pitch_mag*p,
+        ul + 1.5*pitch_mag*p
     ])
 
+    # the symmetry
+    angle *= -1
+
     # \-wires
-    w = torch.tensor([math.cos(angle), +math.sin(angle)])
-    p = torch.tensor([-w[1], w[0]])
+    w = torch.tensor([math.sin(angle), math.cos(angle)])
+    p = torch.tensor([w[1], -w[0]])
     pitches[3] = torch.vstack([
         ll + 0.5*pitch_mag*p,
         ll + 1.5*pitch_mag*p
@@ -59,474 +65,301 @@ def symmetric_views(width=100., height=100., pitch_mag=3,
     return pitches
 
 
-
-# gemini generated
-import torch
-import numpy as np
-
-class Rasterizer3D:
+class Raster:
     """
-    A class to project and rasterize multiple 3D line segments onto a
-    2D planar grid of pixels.
-
-    The line is projected along the plane's normal direction. Each pixel on
-    which the line is projected will have a value equal to the length of the
-    3D element of the line that is covered by the pixel.
+    Represents a 3D to 2D projection of 3D line segments onto a finite 2D rectangle
+    divided into pixels. Each pixel accumulates the length of the projected line
+    segment that falls onto it.
     """
 
-    def __init__(self,
-                 grid_center_3d: torch.Tensor,
-                 grid_total_width: float,
-                 grid_total_height: float,
-                 num_pixels_width: int,
-                 num_pixels_height: int,
-                 grid_angle_y_radians: float):
+    def __init__(self, normal, center, direction, size, shape):
         """
-        Initializes the Rasterizer3D with the grid definition.
+        Initializes the Raster object with the rectangle's properties.
 
         Args:
-            grid_center_3d (torch.Tensor): A PyTorch tensor of shape (3,) giving the
-                                           3D point at which the center of the pixel
-                                           grid rectangle is located.
-            grid_total_width (float): The total width of the pixel grid rectangle
-                                      (along the edge parallel to the X-axis).
-            grid_total_height (float): The total height of the pixel grid rectangle.
-            num_pixels_width (int): The number of pixels along the width.
-            num_pixels_height (int): The number of pixels along the height.
-            grid_angle_y_radians (float): The angle (in radians) of the grid plane
-                                          with respect to the Y-axis, rotated around
-                                          the X-axis.
+            normal (torch.Tensor): A 1D tensor of 3 elements representing the
+                                   3D vector perpendicular to the plane of the rectangle.
+            center (torch.Tensor): A 1D tensor of 3 elements representing the
+                                   3D point at the center of the rectangle.
+            direction (torch.Tensor): A 1D tensor of 3 elements representing the
+                                      3D vector along the length dimension of the rectangle.
+            size (tuple): A pair of real numbers (length, width) giving the dimensions
+                          of the rectangle. 'length' is along 'direction', 'width' is transverse.
+            shape (tuple): An integer pair (num_pixels_length, num_pixels_width) giving
+                           the number of pixels in each dimension, corresponding to 'size'.
+        
+        Raises:
+            ValueError: If input tensors have incorrect shapes or types, or if
+                        'direction' is parallel to 'normal'.
         """
-        if grid_center_3d.shape != (3,):
-            raise ValueError("grid_center_3d must be a PyTorch tensor of shape (3,)")
-        if not all(isinstance(arg, (int, float)) for arg in [grid_total_width, grid_total_height, num_pixels_width, num_pixels_height, grid_angle_y_radians]):
-            raise TypeError("grid_total_width, grid_total_height, num_pixels_width, num_pixels_height, grid_angle_y_radians must be numeric")
-        if num_pixels_width <= 0 or num_pixels_height <= 0:
-            raise ValueError("num_pixels_width and num_pixels_height must be positive integers")
+        # Input validation
+        if not (isinstance(normal, torch.Tensor) and normal.shape == (3,)):
+            raise ValueError("normal must be a 1D tensor of 3 elements.")
+        if not (isinstance(center, torch.Tensor) and center.shape == (3,)):
+            raise ValueError("center must be a 1D tensor of 3 elements.")
+        if not (isinstance(direction, torch.Tensor) and direction.shape == (3,)):
+            raise ValueError("direction must be a 1D tensor of 3 elements.")
+        if not (isinstance(size, tuple) and len(size) == 2 and all(isinstance(s, (int, float)) for s in size)):
+            raise ValueError("size must be a tuple of two numbers (length, width).")
+        if not (isinstance(shape, tuple) and len(shape) == 2 and all(isinstance(s, int) and s > 0 for s in shape)):
+            raise ValueError("shape must be a tuple of two positive integers (num_pixels_length, num_pixels_width).")
 
-        self.grid_center_3d = grid_center_3d
-        self.grid_total_width = grid_total_width
-        self.grid_total_height = grid_total_height
-        self.num_pixels_width = num_pixels_width
-        self.num_pixels_height = num_pixels_height
-        self.grid_angle_y_radians = grid_angle_y_radians
+        # Store input parameters, ensuring float type for calculations
+        self.normal = normal.float()
+        self.center = center.float()
+        self.direction = direction.float()
+        self.size = size
+        self.shape = shape
 
-        # Initialize the raster grid (all zeros)
-        self.raster_grid = torch.zeros((self.num_pixels_height, self.num_pixels_width), dtype=torch.float32)
+        # Normalize the normal vector
+        self.normal_unit = torch.nn.functional.normalize(self.normal, dim=0)
 
-        # Pre-calculate grid properties that are constant for all lines
-        self._precompute_grid_properties()
+        # Project the 'direction' vector onto the plane and normalize to get u_vec
+        # This ensures u_vec is truly in the plane and orthogonal to normal_unit
+        direction_proj = self.direction - torch.dot(self.direction, self.normal_unit) * self.normal_unit
+        
+        # Handle edge case where original 'direction' is almost parallel to 'normal'
+        if torch.norm(direction_proj) < 1e-6:
+            # If direction is parallel to normal, pick an arbitrary orthogonal direction in the plane.
+            # Try (1,0,0), then (0,1,0), then (0,0,1) until a non-parallel vector is found.
+            temp_vecs = [
+                torch.tensor([1.0, 0.0, 0.0], dtype=torch.float),
+                torch.tensor([0.0, 1.0, 0.0], dtype=torch.float),
+                torch.tensor([0.0, 0.0, 1.0], dtype=torch.float)
+            ]
+            found_valid_direction = False
+            for temp_vec in temp_vecs:
+                direction_proj = temp_vec - torch.dot(temp_vec, self.normal_unit) * self.normal_unit
+                if torch.norm(direction_proj) > 1e-6:
+                    found_valid_direction = True
+                    break
+            if not found_valid_direction:
+                raise ValueError("Could not determine a valid 'direction' vector in the plane. "
+                                 "This might happen if 'normal' is degenerate or if all axis vectors are parallel to it.")
 
-    def _precompute_grid_properties(self):
+        self.u_vec = torch.nn.functional.normalize(direction_proj, dim=0)
+        
+        # Calculate v_vec (transverse direction) using cross product
+        # v_vec = normal_unit x u_vec ensures a right-handed coordinate system in the plane
+        self.v_vec = torch.nn.functional.normalize(torch.cross(self.normal_unit, self.u_vec), dim=0)
+
+        # Calculate the 3D coordinates of the rectangle's origin (bottom-left corner in local coordinates)
+        self.rect_origin_3d = self.center - (self.size[0] / 2) * self.u_vec - (self.size[1] / 2) * self.v_vec
+
+        # Calculate the physical size of each pixel
+        self.pixel_size_x = self.size[0] / self.shape[0] # Length per pixel
+        self.pixel_size_y = self.size[1] / self.shape[1] # Width per pixel
+
+        # Initialize the 2D pixel grid with zeros.
+        # The shape is (num_pixels_width, num_pixels_length) to correspond to (rows, columns).
+        self.pixels = torch.zeros((self.shape[1], self.shape[0]), dtype=torch.float)
+
+    def _project_point_to_plane(self, point):
         """
-        Pre-calculates properties of the grid plane and pixel dimensions.
-        """
-        # The plane's normal vector.
-        self.normal_vector = torch.tensor([
-            0.0,
-            math.cos(self.grid_angle_y_radians),
-            math.sin(self.grid_angle_y_radians)
-        ], dtype=torch.float32)
-        self.normal_vector = self.normal_vector / torch.norm(self.normal_vector)
-
-        # Basis vectors for the plane's 2D coordinate system
-        self.u_vec = torch.tensor([1.0, 0.0, 0.0], dtype=torch.float32)
-        # Using torch.linalg.cross to avoid deprecation warning
-        self.v_vec = torch.linalg.cross(self.normal_vector, self.u_vec)
-        self.v_vec = self.v_vec / torch.norm(self.v_vec)
-
-        # Calculate pixel dimensions
-        self.pixel_width_3d = self.grid_total_width / self.num_pixels_width
-        self.pixel_height_3d = self.grid_total_height / self.num_pixels_height
-
-        # Define the 2D bounding box of the grid in the plane's coordinates
-        self.grid_min_u_coord = -self.grid_total_width / 2.0
-        self.grid_max_u_coord = self.grid_total_width / 2.0
-        self.grid_min_v_coord = -self.grid_total_height / 2.0
-        self.grid_max_v_coord = self.grid_total_height / 2.0
-
-    def add_line(self, line_segment: torch.Tensor):
-        """
-        Adds a single 3D line segment to the raster.
+        Projects a 3D point onto the plane defined by self.normal_unit and self.center.
 
         Args:
-            line_segment (torch.Tensor): A PyTorch tensor of shape (2, 3) giving
-                                         two 3D Cartesian points for the segment endpoints.
-        """
-        if line_segment.shape != (2, 3):
-            raise ValueError("line_segment must be a PyTorch tensor of shape (2, 3)")
-
-        # Project line segment endpoints onto the plane
-        line_start_3d = line_segment[0]
-        line_end_3d = line_segment[1]
-
-        # Vector from grid center to line start point
-        vec_to_start = line_start_3d - self.grid_center_3d
-        # Vector from grid center to line end point
-        vec_to_end = line_end_3d - self.grid_center_3d
-
-        # Start and end points of the line in the plane's 2D coordinate system
-        line_start_2d_u = torch.dot(vec_to_start, self.u_vec)
-        line_start_2d_v = torch.dot(vec_to_start, self.v_vec)
-
-        line_end_2d_u = torch.dot(vec_to_end, self.u_vec)
-        line_end_2d_v = torch.dot(vec_to_end, self.v_vec)
-
-        projected_line_start_2d = torch.tensor([line_start_2d_u, line_start_2d_v], dtype=torch.float32)
-        projected_line_end_2d = torch.tensor([line_end_2d_u, line_end_2d_v], dtype=torch.float32)
-
-        # 3D length of the original line segment
-        original_line_length_3d = torch.norm(line_segment[1] - line_segment[0])
-
-        # 2D length of the projected line segment
-        projected_line_length_2d = torch.norm(projected_line_end_2d - projected_line_start_2d)
-
-        EPS = 1e-9 # Epsilon for floating point comparisons
-
-        if projected_line_length_2d < EPS:
-            if original_line_length_3d > EPS: # Original line is not a point but projects to a point
-                # Find the pixel this projected point falls into
-                if (self.grid_min_u_coord <= projected_line_start_2d[0] <= self.grid_max_u_coord and
-                    self.grid_min_v_coord <= projected_line_start_2d[1] <= self.grid_max_v_coord):
-
-                    pixel_u_idx = int(torch.floor((projected_line_start_2d[0] - self.grid_min_u_coord) / self.pixel_width_3d))
-                    pixel_v_idx = int(torch.floor((projected_line_start_2d[1] - self.grid_min_v_coord) / self.pixel_height_3d))
-
-                    pixel_u_idx = max(0, min(pixel_u_idx, self.num_pixels_width - 1))
-                    pixel_v_idx = max(0, min(pixel_v_idx, self.num_pixels_height - 1))
-
-                    # Add the length to the raster grid.
-                    # Remember: num_pixels_height - 1 - pixel_v_idx for top-left origin.
-                    self.raster_grid[self.num_pixels_height - 1 - pixel_v_idx, pixel_u_idx] += original_line_length_3d
-            return # No line or only a point to raster
-
-        length_ratio_3d_to_2d = original_line_length_3d / projected_line_length_2d
-
-        # Determine min/max pixel indices that the projected line could possibly cover
-        min_u_proj = min(projected_line_start_2d[0], projected_line_end_2d[0])
-        max_u_proj = max(projected_line_start_2d[0], projected_line_end_2d[0])
-        min_v_proj = min(projected_line_start_2d[1], projected_line_end_2d[1])
-        max_v_proj = max(projected_line_start_2d[1], projected_line_end_2d[1])
-
-        # Clamp these to the grid boundaries
-        start_pixel_u = int(torch.floor((min_u_proj - self.grid_min_u_coord) / self.pixel_width_3d).clamp(0, self.num_pixels_width - 1))
-        end_pixel_u = int(torch.ceil((max_u_proj - self.grid_min_u_coord) / self.pixel_width_3d).clamp(0, self.num_pixels_width - 1))
-
-        start_pixel_v = int(torch.floor((min_v_proj - self.grid_min_v_coord) / self.pixel_height_3d).clamp(0, self.num_pixels_height - 1))
-        end_pixel_v = int(torch.ceil((max_v_proj - self.grid_min_v_coord) / self.pixel_height_3d).clamp(0, self.num_pixels_height - 1))
-
-        line_dir = projected_line_end_2d - projected_line_start_2d
-
-        # Iterate over relevant pixels
-        for pv_idx in range(start_pixel_v, end_pixel_v + 1):
-            for pu_idx in range(start_pixel_u, end_pixel_u + 1):
-                # Calculate pixel's 2D bounding box in the plane's coordinate system
-                pixel_min_u = self.grid_min_u_coord + pu_idx * self.pixel_width_3d
-                pixel_max_u = self.grid_min_u_coord + (pu_idx + 1) * self.pixel_width_3d
-                pixel_min_v = self.grid_min_v_coord + pv_idx * self.pixel_height_3d
-                pixel_max_v = self.grid_min_v_coord + (pv_idx + 1) * self.pixel_height_3d
-
-                t_values = []
-
-                # Check intersection with vertical lines of pixel box (u-bounds)
-                if abs(line_dir[0]) > EPS:
-                    t1 = (pixel_min_u - projected_line_start_2d[0]) / line_dir[0]
-                    t2 = (pixel_max_u - projected_line_start_2d[0]) / line_dir[0]
-                    t_values.extend([t1, t2])
-
-                # Check intersection with horizontal lines of pixel box (v-bounds)
-                if abs(line_dir[1]) > EPS:
-                    t3 = (pixel_min_v - projected_line_start_2d[1]) / line_dir[1]
-                    t4 = (pixel_max_v - projected_line_start_2d[1]) / line_dir[1]
-                    t_values.extend([t3, t4])
-
-                # Include t=0 and t=1 for segment endpoints
-                t_values.extend([0.0, 1.0])
-
-                # Filter valid t values (0 <= t <= 1) and sort them
-                t_values = [t for t in t_values if 0.0 - EPS <= t <= 1.0 + EPS] # Add epsilon for robustness
-                t_values = sorted(list(set(t_values)))
-
-                if len(t_values) < 2:
-                    continue
-
-                segment_length_in_pixel_2d = 0.0
-                for i in range(len(t_values) - 1):
-                    t_start = t_values[i]
-                    t_end = t_values[i+1]
-
-                    t_mid = (t_start + t_end) / 2.0
-                    mid_point_2d = projected_line_start_2d + t_mid * line_dir
-
-                    if (pixel_min_u <= mid_point_2d[0] <= pixel_max_u and
-                        pixel_min_v <= mid_point_2d[1] <= pixel_max_v):
-
-                        sub_segment_start_2d = projected_line_start_2d + t_start * line_dir
-                        sub_segment_end_2d = projected_line_start_2d + t_end * line_dir
-                        segment_length_in_pixel_2d += torch.norm(sub_segment_end_2d - sub_segment_start_2d)
-
-                if segment_length_in_pixel_2d > EPS:
-                    length_3d_in_pixel = segment_length_in_pixel_2d * length_ratio_3d_to_2d
-                    # Add to the raster grid (accumulate)
-                    self.raster_grid[self.num_pixels_height - 1 - pv_idx, pu_idx] += length_3d_in_pixel
-
-    def get_raster(self) -> torch.Tensor:
-        """
-        Returns the current accumulated raster grid.
+            point (torch.Tensor): A 1D tensor of 3 elements representing the 3D point.
 
         Returns:
-            torch.Tensor: The 2D PyTorch array representing the rasterized lines.
+            torch.Tensor: The 3D projected point on the plane.
         """
-        return self.raster_grid
+        # Vector from the plane's center to the point
+        vec_to_point = point - self.center
+        # Distance from the point to the plane along the normal vector
+        dist = torch.dot(vec_to_point, self.normal_unit)
+        # The projected point is found by moving 'dist' along the negative normal from the original point
+        return point - dist * self.normal_unit
 
+    def _to_local_2d(self, point_3d_proj):
+        """
+        Converts a 3D point (which is assumed to be on the plane) to its 2D local
+        coordinates relative to the rectangle's origin (bottom-left corner).
 
-def rasterize_3d_line_segment_to_2d_grid(
-    line_segment: torch.Tensor,
-    grid_center_3d: torch.Tensor,
-    grid_total_width: float,
-    grid_total_height: float,
-    num_pixels_width: int,
-    num_pixels_height: int,
-    grid_angle_y_radians: float # Angle with respect to the Y-axis (around X-axis)
-) -> torch.Tensor:
-    """
-    Projects and rasterizes a 3D line segment onto a 2D planar grid of pixels.
+        Args:
+            point_3d_proj (torch.Tensor): A 1D tensor of 3 elements representing the
+                                          3D point projected onto the plane.
 
-    The line is projected along the plane's normal direction. Each pixel on
-    which the line is projected will have a value equal to the length of the
-    3D element of the line that is covered by the pixel.
+        Returns:
+            torch.Tensor: A 1D tensor of 2 elements (x_local, y_local) in the
+                          rectangle's local coordinate system.
+        """
+        # Vector from the rectangle's 3D origin to the projected 3D point
+        vec_from_rect_origin = point_3d_proj - self.rect_origin_3d
+        # Project this vector onto u_vec and v_vec to get local 2D coordinates
+        x_local = torch.dot(vec_from_rect_origin, self.u_vec)
+        y_local = torch.dot(vec_from_rect_origin, self.v_vec)
+        return torch.tensor([x_local, y_local], dtype=torch.float)
 
-    Args:
-        line_segment (torch.Tensor): A PyTorch tensor of shape (2, 3) giving
-                                     two 3D Cartesian points for the segment endpoints.
-        grid_center_3d (torch.Tensor): A PyTorch tensor of shape (3,) giving the
-                                       3D point at which the center of the pixel
-                                       grid rectangle is located.
-        grid_total_width (float): The total width of the pixel grid rectangle
-                                  (along the edge parallel to the X-axis).
-        grid_total_height (float): The total height of the pixel grid rectangle.
-        num_pixels_width (int): The number of pixels along the width.
-        num_pixels_height (int): The number of pixels along the height.
-        grid_angle_y_radians (float): The angle (in radians) of the grid plane
-                                      with respect to the Y-axis, rotated around
-                                      the X-axis.
+    def _liang_barsky_clip(self, p1, p2):
+        """
+        Applies the Liang-Barsky line clipping algorithm to a 2D line segment.
+        Clips the line segment (p1, p2) against the rectangle defined by
+        [0, self.size[0]] for x and [0, self.size[1]] for y.
 
-    Returns:
-        torch.Tensor: A 2D PyTorch array of shape (num_pixels_height, num_pixels_width)
-                      representing the rasterized line, where each element is the
-                      length of the 3D line segment portion covered by that pixel.
-    """
-    if line_segment.shape != (2, 3):
-        raise ValueError("line_segment must be a PyTorch tensor of shape (2, 3)")
-    if grid_center_3d.shape != (3,):
-        raise ValueError("grid_center_3d must be a PyTorch tensor of shape (3,)")
-    if not all(isinstance(arg, (int, float)) for arg in [grid_total_width, grid_total_height, num_pixels_width, num_pixels_height, grid_angle_y_radians]):
-        raise TypeError("grid_total_width, grid_total_height, num_pixels_width, num_pixels_height, grid_angle_y_radians must be numeric")
-    if num_pixels_width <= 0 or num_pixels_height <= 0:
-        raise ValueError("num_pixels_width and num_pixels_height must be positive integers")
+        Args:
+            p1 (torch.Tensor): A 1D tensor of 2 elements representing the first
+                               endpoint of the 2D line segment.
+            p2 (torch.Tensor): A 1D tensor of 2 elements representing the second
+                               endpoint of the 2D line segment.
 
-    # 1. Define the Pixel Grid in 3D and its coordinate system
+        Returns:
+            tuple or None: A tuple (clipped_p1, clipped_p2) of 1D tensors if the
+                           segment intersects the rectangle, otherwise None.
+        """
+        # Define the clipping window boundaries
+        xmin, ymin = 0.0, 0.0
+        xmax, ymax = float(self.size[0]), float(self.size[1])
 
-    # The plane's normal vector. Since one edge is parallel to the X-axis,
-    # and it's rotated around the X-axis with respect to the Y-axis,
-    # the normal will be in the YZ-plane.
-    # If angle is 0, normal is (0, 1, 0) (plane is XZ plane)
-    # If angle is pi/2, normal is (0, 0, 1) (plane is XY plane)
-    normal_vector = torch.tensor([
-        0.0,
-        math.cos(grid_angle_y_radians),
-        math.sin(grid_angle_y_radians)
-    ], dtype=torch.float32)
-    normal_vector = normal_vector / torch.norm(normal_vector) # Ensure unit vector
+        # Calculate line segment direction vector components
+        dx = p2[0] - p1[0]
+        dy = p2[1] - p1[1]
 
-    # Basis vectors for the plane's 2D coordinate system
-    # u_vec is along the width, parallel to X-axis
-    u_vec = torch.tensor([1.0, 0.0, 0.0], dtype=torch.float32)
-    # v_vec is along the height, orthogonal to u_vec and in the plane
-    v_vec = torch.cross(normal_vector, u_vec, dim=-1)
-    v_vec = v_vec / torch.norm(v_vec) # Ensure unit vector
+        # Parameters for Liang-Barsky algorithm
+        # p values: [-dx, dx, -dy, dy]
+        # q values: [x1 - xmin, xmax - x1, y1 - ymin, ymax - y1]
+        p = torch.tensor([-dx, dx, -dy, dy], dtype=torch.float)
+        q = torch.tensor([p1[0] - xmin, xmax - p1[0], p1[1] - ymin, ymax - p1[1]], dtype=torch.float)
 
-    # Check for potential issues if normal_vector is parallel to u_vec (not expected with current setup)
-    if torch.dot(normal_vector, u_vec).abs() > 1e-6:
-        print("Warning: Normal vector not orthogonal to X-axis direction. Check angle definition.")
+        u1 = 0.0 # Parameter for the entering point of the clipped segment
+        u2 = 1.0 # Parameter for the exiting point of the clipped segment
 
-    # Calculate pixel dimensions
-    pixel_width_3d = grid_total_width / num_pixels_width
-    pixel_height_3d = grid_total_height / num_pixels_height
+        for k in range(4): # Iterate through the four clipping boundaries
+            if torch.abs(p[k]) < 1e-9: # Line is parallel to this clipping edge
+                if q[k] < 0: # And it's outside the boundary
+                    return None # No intersection
+            else:
+                t = q[k] / p[k] # Calculate intersection parameter
+                if p[k] < 0: # Entering point (from outside to inside)
+                    u1 = max(u1, t.item())
+                else: # Exiting point (from inside to outside)
+                    u2 = min(u2, t.item())
+        
+        if u1 > u2:
+            return None # No intersection (segment is entirely outside or crosses and exits before entering)
 
-    # Rasterization grid initialization
-    raster_grid = torch.zeros((num_pixels_height, num_pixels_width), dtype=torch.float32)
+        # Calculate the clipped endpoints using the determined parameters u1 and u2
+        clipped_p1 = p1 + u1 * (p2 - p1)
+        clipped_p2 = p1 + u2 * (p2 - p1)
+        return clipped_p1, clipped_p2
 
-    # Project line segment endpoints onto the plane
-    line_start_3d = line_segment[0]
-    line_end_3d = line_segment[1]
+    def add_line(self, tail, head):
+        """
+        Projects a 3D line segment (tail, head) onto the rectangle and updates
+        the pixel values in the internal `pixels` tensor. The value added to
+        each pixel is proportional to the length of the projected segment
+        that falls onto that pixel.
 
-    # Vector from grid center to line start point
-    vec_to_start = line_start_3d - grid_center_3d
-    # Vector from grid center to line end point
-    vec_to_end = line_end_3d - grid_center_3d
+        Args:
+            tail (torch.Tensor): A 1D tensor of 3 elements representing the
+                                 first endpoint of the 3D line segment.
+            head (torch.Tensor): A 1D tensor of 3 elements representing the
+                                 second endpoint of the 3D line segment.
+        
+        Raises:
+            ValueError: If input tensors for tail or head have incorrect shapes.
+        """
+        # Input validation
+        if not (isinstance(tail, torch.Tensor) and tail.shape == (3,)):
+            raise ValueError("tail must be a 1D tensor of 3 elements.")
+        if not (isinstance(head, torch.Tensor) and head.shape == (3,)):
+            raise ValueError("head must be a 1D tensor of 3 elements.")
+        
+        # Ensure float type for calculations
+        tail = tail.float()
+        head = head.float()
 
-    # Project the vectors onto the plane and get their 2D coordinates
-    # The projection is done along the normal.
-    # A point P's projection P_proj onto a plane with normal N and point C is P - dot(P-C, N) * N
-    # Since we defined our plane coordinate system based on grid_center_3d as origin
-    # the 2D coordinates (u,v) for a point P_3d are:
-    # u = dot(P_3d - grid_center_3d, u_vec)
-    # v = dot(P_3d - grid_center_3d, v_vec)
+        # 1. Project 3D line segment endpoints onto the plane
+        tail_proj_3d = self._project_point_to_plane(tail)
+        head_proj_3d = self._project_point_to_plane(head)
 
-    # Start and end points of the line in the plane's 2D coordinate system
-    # We define the origin of this 2D system at the grid_center_3d
-    # and the +u direction along u_vec, +v along v_vec.
-    # The grid's bottom-left corner in this 2D system will be (-grid_total_width/2, -grid_total_height/2)
-    line_start_2d_u = torch.dot(vec_to_start, u_vec)
-    line_start_2d_v = torch.dot(vec_to_start, v_vec)
+        # If the projected line segment collapses to a single point (e.g., original line
+        # was parallel to the normal and projected onto a single point on the plane)
+        if torch.norm(tail_proj_3d - head_proj_3d) < 1e-9:
+            point_2d = self._to_local_2d(tail_proj_3d)
+            
+            # Check if this single projected point is within the rectangle bounds
+            if 0 <= point_2d[0] < self.size[0] and 0 <= point_2d[1] < self.size[1]:
+                # Convert local 2D coordinates to pixel indices
+                col_idx = int(point_2d[0] / self.pixel_size_x)
+                row_idx = int(point_2d[1] / self.pixel_size_y)
+                
+                # Ensure indices are within the valid range of the pixel grid
+                col_idx = min(max(0, col_idx), self.shape[0] - 1)
+                row_idx = min(max(0, row_idx), self.shape[1] - 1)
+                
+                # Add a small fixed value for a point projection (e.g., 1.0)
+                self.pixels[row_idx, col_idx] += 1.0 
+            return
 
-    line_end_2d_u = torch.dot(vec_to_end, u_vec)
-    line_end_2d_v = torch.dot(vec_to_end, v_vec)
+        # 2. Convert projected 3D points to 2D local coordinates within the rectangle's plane
+        tail_proj_2d = self._to_local_2d(tail_proj_3d)
+        head_proj_2d = self._to_local_2d(head_proj_3d)
 
-    projected_line_start_2d = torch.tensor([line_start_2d_u, line_start_2d_v], dtype=torch.float32)
-    projected_line_end_2d = torch.tensor([line_end_2d_u, line_end_2d_v], dtype=torch.float32)
+        # 3. Clip the 2D line segment against the rectangle's boundaries
+        clipped_segment = self._liang_barsky_clip(tail_proj_2d, head_proj_2d)
 
-    # 3D length of the original line segment
-    original_line_length_3d = torch.norm(line_segment[1] - line_segment[0])
+        if clipped_segment is None:
+            return # The line segment is entirely outside the rectangle, so do nothing
 
-    # 2D length of the projected line segment
-    projected_line_length_2d = torch.norm(projected_line_end_2d - projected_line_start_2d)
+        clipped_p1_2d, clipped_p2_2d = clipped_segment
 
-    # Ratio of 3D length to 2D length (for scaling back later)
-    # Handle cases where projected_line_length_2d is zero (line is perpendicular to plane)
-    if projected_line_length_2d < 1e-6:
-        if original_line_length_3d < 1e-6: # Original line is a point
-            return raster_grid # No line to raster
-        else: # Original line is not a point but projects to a point
-            # Find the pixel this projected point falls into
-            # First, check if the projected point is within the grid bounds
-            grid_min_u = -grid_total_width / 2.0
-            grid_max_u = grid_total_width / 2.0
-            grid_min_v = -grid_total_height / 2.0
-            grid_max_v = grid_total_height / 2.0
+        # 4. Rasterize the clipped 2D segment onto the pixel grid
+        # Calculate the length of the clipped 2D segment
+        segment_length_2d = torch.norm(clipped_p2_2d - clipped_p1_2d).item()
 
-            if (grid_min_u <= projected_line_start_2d[0] <= grid_max_u and
-                grid_min_v <= projected_line_start_2d[1] <= grid_max_v):
+        # If the clipped segment is extremely short, treat it as a point
+        if segment_length_2d < 1e-9:
+            point_2d = clipped_p1_2d # Use one of the clipped points
+            
+            # Convert local 2D coordinates to pixel indices
+            col_idx = int(point_2d[0] / self.pixel_size_x)
+            row_idx = int(point_2d[1] / self.pixel_size_y)
+            
+            # Ensure indices are within bounds
+            col_idx = min(max(0, col_idx), self.shape[0] - 1)
+            row_idx = min(max(0, row_idx), self.shape[1] - 1)
+            
+            self.pixels[row_idx, col_idx] += 1.0 # Add a small fixed value
+            return
 
-                # Calculate pixel indices
-                pixel_u_idx = int((projected_line_start_2d[0] - grid_min_u) / pixel_width_3d)
-                pixel_v_idx = int((projected_line_start_2d[1] - grid_min_v) / pixel_height_3d)
+        # Determine the number of steps for rasterization based on pixel resolution
+        # This ensures that we sample enough points to cover all pixels crossed by the line
+        dx_pixels = abs(clipped_p2_2d[0] - clipped_p1_2d[0]) / self.pixel_size_x
+        dy_pixels = abs(clipped_p2_2d[1] - clipped_p1_2d[1]) / self.pixel_size_y
+        
+        num_steps = int(max(dx_pixels, dy_pixels))
+        if num_steps == 0:
+            num_steps = 1 # Ensure at least one step for very short segments within a pixel
 
-                # Clamp indices to valid range (shouldn't be necessary if bounds check is good, but for safety)
-                pixel_u_idx = max(0, min(pixel_u_idx, num_pixels_width - 1))
-                pixel_v_idx = max(0, min(pixel_v_idx, num_pixels_height - 1))
+        # Calculate the length increment to add to each sampled pixel
+        step_increment = segment_length_2d / num_steps
 
-                # Note: PyTorch arrays are (height, width) i.e. (rows, cols) where row is v-axis, col is u-axis
-                # So pixel_v_idx corresponds to row, pixel_u_idx to col
-                # For image coordinates, usually (0,0) is top-left, so we might need to invert v_idx
-                # For now, let's assume (0,0) is bottom-left for simplicity in geometric calculations.
-                # If you need top-left, adjust the v_idx: num_pixels_height - 1 - pixel_v_idx
-                raster_grid[num_pixels_height - 1 - pixel_v_idx, pixel_u_idx] = original_line_length_3d
-            return raster_grid
+        # Iterate along the clipped 2D segment, distributing its length
+        for i in range(num_steps + 1): # Include the end point for full coverage
+            t = i / num_steps # Parameter along the segment from 0 to 1
+            
+            # Calculate the current point on the 2D segment
+            current_point_x = clipped_p1_2d[0] + (clipped_p2_2d[0] - clipped_p1_2d[0]) * t
+            current_point_y = clipped_p1_2d[1] + (clipped_p2_2d[1] - clipped_p1_2d[1]) * t
 
+            # Convert local 2D coordinates to integer pixel indices
+            col_idx = int(current_point_x / self.pixel_size_x)
+            row_idx = int(current_point_y / self.pixel_size_y)
 
-    length_ratio_3d_to_2d = original_line_length_3d / projected_line_length_2d
+            # Ensure pixel indices are within the valid bounds of the pixel grid
+            col_idx = min(max(0, col_idx), self.shape[0] - 1)
+            row_idx = min(max(0, row_idx), self.shape[1] - 1)
+            
+            # Add the calculated length increment to the corresponding pixel
+            self.pixels[row_idx, col_idx] += step_increment
 
-    # Define the 2D bounding box of the grid in the plane's coordinates
-    grid_min_u_coord = -grid_total_width / 2.0
-    grid_max_u_coord = grid_total_width / 2.0
-    grid_min_v_coord = -grid_total_height / 2.0
-    grid_max_v_coord = grid_total_height / 2.0
+    @property
+    def get_pixels(self):
+        """
+        Returns the 2D PyTorch tensor representing the pixel grid with accumulated lengths.
 
-    # Iterate over pixels (using a simple DDA-like approach or Bresenham variant)
-    # Or, iterate over the projected line segment and find intersecting pixels.
-    # A more robust approach for line-pixel intersection:
-    # 1. Determine the bounding box of the projected line segment in 2D.
-    # 2. Iterate over pixels within this bounding box (and grid bounds).
-    # 3. For each pixel, check if the line segment intersects the pixel's bounding box.
-    # 4. If it intersects, calculate the segment of the line within the pixel.
-
-    # Determine min/max pixel indices that the projected line could possibly cover
-    min_u_proj = min(projected_line_start_2d[0], projected_line_end_2d[0])
-    max_u_proj = max(projected_line_start_2d[0], projected_line_end_2d[0])
-    min_v_proj = min(projected_line_start_2d[1], projected_line_end_2d[1])
-    max_v_proj = max(projected_line_start_2d[1], projected_line_end_2d[1])
-
-    # Convert projected 2D coordinates to pixel indices range
-    # U-axis: maps from [-grid_total_width/2, grid_total_width/2] to [0, num_pixels_width]
-    # V-axis: maps from [-grid_total_height/2, grid_total_height/2] to [0, num_pixels_height]
-
-    # Start pixel indices (clamped to grid)
-    start_pixel_u = int(torch.floor((min_u_proj - grid_min_u_coord) / pixel_width_3d).clamp(0, num_pixels_width - 1))
-    end_pixel_u = int(torch.ceil((max_u_proj - grid_min_u_coord) / pixel_width_3d).clamp(0, num_pixels_width - 1))
-
-    start_pixel_v = int(torch.floor((min_v_proj - grid_min_v_coord) / pixel_height_3d).clamp(0, num_pixels_height - 1))
-    end_pixel_v = int(torch.ceil((max_v_proj - grid_min_v_coord) / pixel_height_3d).clamp(0, num_pixels_height - 1))
-
-    # Iterate over relevant pixels
-    for pv_idx in range(start_pixel_v, end_pixel_v + 1):
-        for pu_idx in range(start_pixel_u, end_pixel_u + 1):
-            # Calculate pixel's 2D bounding box in the plane's coordinate system
-            # Note: pu_idx and pv_idx are 0-indexed.
-            # (0,0) is bottom-left pixel, corresponds to (grid_min_u_coord, grid_min_v_coord)
-            pixel_min_u = grid_min_u_coord + pu_idx * pixel_width_3d
-            pixel_max_u = grid_min_u_coord + (pu_idx + 1) * pixel_width_3d
-            pixel_min_v = grid_min_v_coord + pv_idx * pixel_height_3d
-            pixel_max_v = grid_min_v_coord + (pv_idx + 1) * pixel_height_3d
-
-            # Intersection of line segment with pixel bounding box (using clipping algorithm like Liang-Barsky or Cohen-Sutherland)
-            # For simplicity, we'll use a parametric line intersection check.
-            # Line: P(t) = P_start + t * (P_end - P_start), 0 <= t <= 1
-            # Pixel bounds: u_min <= P(t)_u <= u_max, v_min <= P(t)_v <= v_max
-
-            line_dir = projected_line_end_2d - projected_line_start_2d
-            # Avoid division by zero for horizontal/vertical lines
-            EPS = 1e-9
-
-            t_values = []
-
-            # Check intersection with vertical lines of pixel box (u-bounds)
-            if abs(line_dir[0]) > EPS:
-                t1 = (pixel_min_u - projected_line_start_2d[0]) / line_dir[0]
-                t2 = (pixel_max_u - projected_line_start_2d[0]) / line_dir[0]
-                t_values.extend([t1, t2])
-
-            # Check intersection with horizontal lines of pixel box (v-bounds)
-            if abs(line_dir[1]) > EPS:
-                t3 = (pixel_min_v - projected_line_start_2d[1]) / line_dir[1]
-                t4 = (pixel_max_v - projected_line_start_2d[1]) / line_dir[1]
-                t_values.extend([t3, t4])
-
-            # Include t=0 and t=1 for segment endpoints
-            t_values.extend([0.0, 1.0])
-
-            # Filter valid t values (0 <= t <= 1) and sort them
-            t_values = [t for t in t_values if 0.0 <= t <= 1.0]
-            t_values = sorted(list(set(t_values))) # Use set to remove duplicates
-
-            if len(t_values) < 2:
-                continue # No segment or only a point within the current pixel
-
-            segment_length_in_pixel_2d = 0.0
-            for i in range(len(t_values) - 1):
-                t_start = t_values[i]
-                t_end = t_values[i+1]
-
-                # Midpoint of the potential sub-segment for checking inclusion
-                t_mid = (t_start + t_end) / 2.0
-                mid_point_2d = projected_line_start_2d + t_mid * line_dir
-
-                # Check if this sub-segment's midpoint is inside the current pixel
-                if (pixel_min_u <= mid_point_2d[0] <= pixel_max_u and
-                    pixel_min_v <= mid_point_2d[1] <= pixel_max_v):
-                    
-                    # Calculate the length of this 2D sub-segment
-                    sub_segment_start_2d = projected_line_start_2d + t_start * line_dir
-                    sub_segment_end_2d = projected_line_start_2d + t_end * line_dir
-                    segment_length_in_pixel_2d += torch.norm(sub_segment_end_2d - sub_segment_start_2d)
-
-            if segment_length_in_pixel_2d > EPS: # Only add if there's a significant length
-                # Convert 2D length back to 3D length using the ratio
-                length_3d_in_pixel = segment_length_in_pixel_2d * length_ratio_3d_to_2d
-
-                # Assign to raster grid. Remember to flip v_idx for image-like (top-left origin) indexing
-                raster_grid[num_pixels_height - 1 - pv_idx, pu_idx] = length_3d_in_pixel
-
-    return raster_grid
-
+        Returns:
+            torch.Tensor: A 2D tensor of shape (num_pixels_width, num_pixels_length).
+        """
+        return self.pixels
