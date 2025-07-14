@@ -29,7 +29,8 @@ def test_activity_fill():
 
     coords, points, activities = make_stuff()
 
-    fig,ax = plots.make_fig_2d(coords)
+    bb = torch.tensor([ [-100,200], [-100,200] ]).cpu().numpy()
+    fig,ax = plots.make_fig_2d(bb)
 
     plots.point_activity(ax, coords, points, activities)
 

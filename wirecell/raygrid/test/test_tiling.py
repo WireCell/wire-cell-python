@@ -94,14 +94,14 @@ def test_fresh_crossings():
     ], [
         [0, 1],
         [1, 1]]]], dtype=torch.long)
-    fresh_crossings = tiling.fresh_crossings(fresh_blobs, old_crossings)
-
-def test_fresh_insides():
-    from sampledata import all_blobs, all_crossings
-    fi = tiling.fresh_insides(all_blobs, all_crossings)
+    fresh_crossings = tiling.blob_crossings(fresh_blobs)
 
 
-def test_line_tiling():
+
+### Warning: this "raster" tester was an early attempt to make some validation
+### plotter.  It didn't yet catch up with some refactoring and fixes that
+### occurred to get ray tiling working.  See instead the test_plots.py tests.
+def _test_line_tiling():
 
     grid_size = (10.0, 10.0)
     grid_shape = (100, 100)
@@ -158,8 +158,8 @@ def test_line_tiling():
     nblobs_empty = 0
 
     for tick in range(grid_shape[0]):
-        img = tiling.trivial()
-        print(f'trivial: {img.blobs=}')
+        t = tiling.trivial()
+        blobs = t.blobs
 
 
         nview_empty = 0
@@ -170,13 +170,13 @@ def test_line_tiling():
                 nview_empty += 1
                 continue
 
-            img = tiling.apply_view(coords, img, activity)
-            if img is None:
+            blobs = tiling.apply_activity(coords, blobs, activity)
+            if blobs is None:
                 nblobs_empty += 1
                 break
-            print(f'view {letter}: {img.blobs=}')
+            print(f'view {letter}: {blobs=}')
             
-            print(f'tick {tick} has {img.nblobs} blobs')
+            print(f'tick {tick} has {blobs.shape} blobs')
         if nview_empty:
             ntick_empty += 1
 

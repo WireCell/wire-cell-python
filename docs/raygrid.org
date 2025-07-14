@@ -1,0 +1,116 @@
+#+title: Vectorized Ray Grid Tiling
+
+WCT's C++ ~RayGrid~ structure for fast wire/pitch geometry operations and
+~RayTiling~ algorithm which provides the kernel for the inverse tomographic
+imaging known as "wire cell" has been converted to "broadcast" vectorized form
+in ~wirecell.raygrid~.  This document describes some aspects of this translation.
+
+* Data representation
+
+The C++ version uses array-of-struct data representations while we need "bulk"
+multi-dimensional tensor representations in order to gain "broadcast" style
+vectorization.
+
+The ~raygrid.coordinates.Coordinates~ class is largely structured as the ~RayGrid~
+version of the same name.  It's core has the same two small tensors and simple
+vector arithmetic to answer questions like "what is the pitch of these two rays
+measured in a third view".  Its methods can handle batched input.
+
+There are these tensors relevant to the tiling operations
+
+- activity :: ~(nmeasurements,)~ a Boolean tensor spanning the electronics
+  channels of one view.  It is ~True~ where a measurement is above some threshold
+  and thus may be considered when forming blobs.  There is one ~activity~ tensor
+  per view and these are kept in "view order".
+
+- blobs :: ~(nblobs, nviews, 2)~ an integer tensor holding indices into ~activity~
+  tensors.  The dim=0 dimension runs over the total number of blobs found over
+  the number of views.  A view is indexed in the dim=1 dimension.  The last
+  dimension of fixed size 2 holds a "lo" and a "hi" index into the activity for
+  a given view.  The bounds ~[lo, hi)~ is half-open and defines a region of space
+  parallel to the rays of the view and extending transversely from ~lo~ up to but
+  not including ~hi~.  As a new view is added, ~nviews~ increments by one and ~nblobs~
+  increments by a number based on the pattern of ~activity~ and the wire geometry.
+  A given blob sub-tensor made with value ~nviews~ is replicated across the new
+  tensor when ~nviews+1~ is added.
+
+- crossings :: ~(nblobs, npairs, 4, 2)~ an integer tensor holding indices into
+  ~activity~ tensors.  Indices in the dim=1 dimension of size ~npairs~ enumerate a
+  ~nviews-choose-2~ combination of view indices.  Each choice represents a pair of
+  blob "strips" from different views.  The order of pairs is stable in that the
+  list of pairs at ~nviews+1~ appends new pairs to the list of pairs at ~nviews~.
+  The dim=3 dimension of fixed size 4 enumerates all possible edge-pairs that
+  may be formed from a pair of strips.  This enumeration is also in a fixed
+  order so while the tensor holds no view nor edge indices one may always know
+  these given the indices in dim=1 and dim=2.  The last dim=3 dimension of fixed
+  size 2 holds ~activity~ indices that identify the rays, one from each view in
+  the pair, that are crossing.
+
+- insides :: ~(nblobs, npairs, 4)~ a Boolean tensor holding True if the
+  corresponding crossing is "inside" all strips in the blob.  The strip is
+  effectively enlarged slightly (by a "nudge" amount) when testing if a crossing
+  point is "inside".  This accounts for floating point errors.
+
+* High level usage guidance
+
+** Describe views with pitch rays
+
+Simplest thing is:
+
+#+begin_src python
+  from wirecell.raygrid.examples import symmetric_views
+  views = symmetric_views()
+#+end_src
+
+The ~views~ tensor conventionally has shape ~(nviews,2,2)~ with the dim=0 giving the
+number of views, dim=1 running over two endpoints of a "pitch ray" and the last
+dim=2 dimension running over the coordinates of the 2D Cartesian space.
+Conventionally, ~nviews=5~, with the first two views being "logical" or "virtual".
+They have a single horizontal or vertical ray with a pitch that spans the
+vertical or horizontal active rectangular region, respectively.  The remaining
+views correspond to wire planes.
+
+** Make ray grid coordinates object
+
+#+begin_src python
+  coords = Coordinates(views)
+#+end_src
+
+This object provides the kernel for fast "wire geometry" operations.
+
+** Make the "trivial" blobs
+
+#+begin_src python
+  from wirecell.raygrid import plots, tiling
+  blobs = tiling.trivial()
+#+end_src
+
+The trivial ~blobs~ tensor holds a single blob and it defined literally, assuming
+the first two views provide the horizontal and vertical bounds as described
+above.
+
+** Iterate over remaining views
+
+#+begin_src python
+  for view in [2,3,4]:
+      blobs = tiling.apply_activity(coords, blobs, activities[view])
+#+end_src
+
+This assumes ~activities~ is a list of ~activity~ tensors as described above.  As
+this loop progresses, the number of blobs (dim=0) increases greatly and the
+number of views (dim=1) increases linearly.
+
+The ~crossings~ and ~insides~ tensors are created internally as temporaries but the
+user may call ~blob_crossings()~ and ~blob_insides()~ to form these tensors
+explicitly.
+
+* LLM assistance
+
+The tiling code found here will not look much at all like the code seen in the
+C++.  The low level algorithms have been substantially recast to have several
+levels of indirection through these index tensors.  Although the general
+architecture, data representations and the algorithms were created by human,
+some of the "advanced indexing" patterns were "developed" and/or checked by LLM
+(almost entirely Gemini 2.5 Flash).  Some fraction of the module and test code
+was generated by LLM.  All LLM-generated code was checked by a human.
+
