@@ -8,7 +8,7 @@ def test_vector():
     assert torch.all(vec == torch.tensor([1.0,1.0]))
 
 def test_direction():
-    vec = funcs.direction(torch.tensor([ [0.0,0.0], [1.0,1.0] ]))
+    vec = funcs.ray_direction(torch.tensor([ [0.0,0.0], [1.0,1.0] ]))
     assert torch.all(vec == torch.tensor([1.0,1.0]) / math.sqrt(2.0))
 
 def test_crossing():

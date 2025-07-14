@@ -3,7 +3,6 @@ import torch
 import numpy as np
 
 
-
 def symmetric_views(width=100., height=100., pitch_mag=3,
                     angle=math.radians(60.0)):
     '''
@@ -63,6 +62,127 @@ def symmetric_views(width=100., height=100., pitch_mag=3,
     pitches[4] = torch.tensor([[0, height/2.0], [pitch_mag, height/2.0]])
 
     return pitches
+
+def random_points(npoints=100, ll=(0.,0.), ur=(100.0,100.0)):
+    '''
+    Return points randomly chosen in a rectangular domain
+    '''
+    points = torch.rand(npoints, 2, dtype=torch.float32)
+    for dim in [0,1]:
+        points[:, dim] = points[:, dim] * (ur[dim]-ll[dim]) + ll[dim]
+    return points
+
+
+def random_groups(ngroups: int = 10, n_in_group: int = 10, sigma: float = 10,
+                  ll: tuple[float, float] = (0.0, 0.0),
+                  ur: tuple[float, float] = (100.0, 100.0)) -> torch.Tensor:
+    """
+    Generates "clumpy" 2D points by first creating group centers uniformly
+    and then sampling points around these centers from a Gaussian distribution.
+
+    Args:
+        ngroups: The number of distinct groups (clusters) of points.
+        n_in_group: The number of points to generate within each group.
+        sigma: The standard deviation (width) of the Gaussian distribution
+               for points within each group.
+        ll: A tuple (x_min, y_min) representing the lower-left corner
+            of the bounding box for generating group centers.
+        ur: A tuple (x_max, y_max) representing the upper-right corner
+            of the bounding box for generating group centers.
+
+    Returns:
+        A torch.Tensor of shape (ngroups, n_in_group, 2) containing
+        the generated 2D points. Points outside the bounding box are
+        included as per the requirement.
+    """
+    # 1. Generate `ngroups` "group points" uniformly random within the bounding box.
+    # These will serve as the mean locations for the Gaussian distributions.
+    x_range = ur[0] - ll[0]
+    y_range = ur[1] - ll[1]
+
+    # Generate points in [0, 1) and then scale/shift
+    group_means = torch.rand(ngroups, 2, dtype=torch.float32)
+    group_means[:, 0] = group_means[:, 0] * x_range + ll[0]
+    group_means[:, 1] = group_means[:, 1] * y_range + ll[1]
+
+    # 2. For each group point, generate `n_in_group` points
+    # according to a Gaussian distribution centered at the group point.
+
+    # Generate standard normal noise: (ngroups, n_in_group, 2)
+    # Each row (ngroups) corresponds to a group, each column (n_in_group) to a point in that group,
+    # and the last dim (2) for X, Y coordinates.
+    noise = torch.randn(ngroups, n_in_group, 2, dtype=torch.float32)
+
+    # Scale the noise by sigma (standard deviation)
+    scaled_noise = noise * sigma
+
+    # Add the group means to the scaled noise.
+    # `group_means` is (ngroups, 2). To add it to `scaled_noise` (ngroups, n_in_group, 2),
+    # we need to expand `group_means` to (ngroups, 1, 2) to enable broadcasting.
+    # The '1' in the middle dimension will broadcast across 'n_in_group'.
+    points_in_groups = group_means.unsqueeze(1) + scaled_noise
+
+    return points_in_groups
+
+def fill_activity(coords, points):
+    nviews = coords.nviews
+
+    activity_tensors = []
+
+    # Get all pitch indices for all points across all views in one vectorized call
+    all_pitch_indices = coords.point_indices(points)  # Shape (num_points, nviews)
+
+    # Iterate through each view to fill its individual activity tensor
+    for view_idx in range(nviews):
+        current_view_indices = all_pitch_indices[:, view_idx]
+
+        # Handle the special cases for the first two views (view_idx 0 and 1)
+        if view_idx in [0, 1]:
+            # The requirement is for activity tensors of size 1 for these views.
+            # This implies a simple boolean state: True if any point maps to a valid index (>=0), False otherwise.
+            activity_tensor = torch.zeros(1, dtype=torch.bool, device=points.device)
+            if (current_view_indices == 0).any(): # Check if at least one point has a non-negative index
+                activity_tensor[0] = True
+            activity_tensors.append(activity_tensor)
+
+        else:
+            # For other views (view_idx >= 2):
+            # Calculate the minimum and maximum pitch indices encountered for this view.
+            min_idx = current_view_indices.min().item()
+            max_idx = current_view_indices.max().item()
+
+            # Adjust indices to be non-negative if they contain negative values.
+            # This offset will shift all indices so that the smallest index becomes 0.
+            offset = 0
+            if min_idx < 0:
+                offset = -min_idx
+
+            adjusted_indices = current_view_indices + offset
+
+            # Determine the required size for the activity tensor based on the adjusted indices.
+            # It should cover from 0 up to the maximum adjusted index.
+            effective_max_idx = adjusted_indices.max().item()
+            required_size = effective_max_idx + 1
+
+            # Apply the constraint: activity tensors should not be larger than 100 elements.
+            # We cap the size at 100 if the required size is greater.
+            activity_tensor_size = min(required_size, 100)
+
+            # Create the activity tensor initialized to False
+            activity_tensor = torch.zeros(activity_tensor_size, dtype=torch.bool, device=points.device)
+
+            # Clamp the adjusted indices to fit within the `activity_tensor_size`.
+            # Any index that would fall outside the capped size will be mapped to the boundary.
+            adjusted_indices_clamped = torch.clamp(adjusted_indices, 0, activity_tensor_size - 1)
+
+            # Set the corresponding positions in the activity tensor to True
+            activity_tensor[adjusted_indices_clamped] = True
+            activity_tensors.append(activity_tensor)
+    return activity_tensors
+
+
+
+
 
 
 class Raster:
@@ -141,7 +261,7 @@ class Raster:
         
         # Calculate v_vec (transverse direction) using cross product
         # v_vec = normal_unit x u_vec ensures a right-handed coordinate system in the plane
-        self.v_vec = torch.nn.functional.normalize(torch.cross(self.normal_unit, self.u_vec), dim=0)
+        self.v_vec = torch.nn.functional.normalize(torch.linalg.cross(self.normal_unit, self.u_vec), dim=0)
 
         # Calculate the 3D coordinates of the rectangle's origin (bottom-left corner in local coordinates)
         self.rect_origin_3d = self.center - (self.size[0] / 2) * self.u_vec - (self.size[1] / 2) * self.v_vec

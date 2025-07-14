@@ -41,9 +41,10 @@ def crossing(r0, r1):
     intersection_point = p1 + t * (p2 - p1)
     return intersection_point    
 
-def direction(ray):
-    d = vector(ray);
-    return d / torch.norm(d)
+def ray_direction(ray):
+    n = vector(ray);
+    d = torch.linalg.norm(n)
+    return n / d
 
 def vector(ray):
     '''
@@ -51,4 +52,66 @@ def vector(ray):
     '''
     return ray[1] - ray[0]
 
+def vec_direction(v: torch.Tensor) -> torch.Tensor:
+    """
+    Returns the unit vector of a given 2D vector.
+    Handles the case of a zero vector to prevent division by zero.
+    """
+    norm = torch.linalg.norm(v)
+    if norm == 0:
+        return torch.zeros_like(v)
+    return v / norm
 
+def combo_partition(n: int, k: int) -> torch.Tensor:
+    """
+    Return (c,nc) where c holds n-choose-k combinations and nc holds the
+    numbers not chosen in c.
+
+    Args:
+        n (int): The total number of elements (from 0 to n-1).
+        k (int): The number of elements chosen in each combination.
+
+    Returns:
+        tuple (c,nc)
+
+        c: shape (Ncombos, k)
+        nc: shape (Ncombos n-k)
+
+    """
+    c = torch.combinations(torch.arange(n), k)
+    if c.numel() == 0:
+        raise ValueError(f'no combinations for {n}-choose-{k}')
+
+    num_combinations = c.shape[0]
+    
+    # Create a tensor representing all possible elements (0 to n-1)
+    all_elements_range = torch.arange(n, dtype=torch.int64)
+
+    # 2. Create a boolean mask to identify chosen elements
+    # Initialize a mask of shape (num_combinations, n) with all False values.
+    # This mask will indicate for each combination (row) which of the 'n'
+    # possible elements (columns) are present.
+    mask = torch.zeros((num_combinations, n), dtype=torch.bool)
+
+    # Mark chosen elements as true
+    mask.scatter_(1, c, True)
+
+    # 3. Invert the mask to get the unchosen elements
+    unchosen_mask = ~mask
+
+    # 4. Extract the actual unchosen values and reshape
+    nonzero_indices = unchosen_mask.nonzero()
+
+    # If all elements are chosen (k=n), then `unchosen_mask` will be all False,
+    # and `nonzero_indices` will be empty. Handle this case.
+    if nonzero_indices.numel() == 0:
+        raise ValueError(f'no unchosen from {n}-choose-{k}')
+
+    # Extract the unchosen values, which are in the second column of `nonzero_indices`.
+    nc_values = nonzero_indices[:, 1]
+
+    # Reshape the flattened list of unchosen values back into the desired shape:
+    # `(num_combinations, n - k)`.
+    nc = nc_values.reshape(num_combinations, n - k)
+
+    return c, nc
