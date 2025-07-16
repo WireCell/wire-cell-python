@@ -1,7 +1,68 @@
 #!/usr/bin/env python
+'''
+This module provide functions to calculate a "ray grid tiling".  This uses a
+"ray grid Coordinates" object to partition 2D space into regions that are likely
+to contain values for a scalar field above some threshold based on measured
+activities from a number of tomographic views.
+
+The important tensors relevant to the tiling operations are described:
+
+- activity : (nmeasurements,), a Boolean tensor spanning the measurements of
+  one view.  It is True where a measurement is above some threshold.  There is
+  one activity tensor per view and these are kept in a list to define a "view
+  order".  Indices into this list (and some of the following tensors) are called
+  "view indices".
+
+- blobs : (nblobs, nviews, 2), an integer tensor holding indices into activity
+  tensors.  The dim=0 dimension runs over the total number of blobs found after
+  considering the number of views "nviews".  The dim=1 dimension runs over "view
+  indices".  The last dimension of fixed size 2 holds a "lo" and a "hi" index
+  into the activity for a given view.  This can be called a "ray index".  The
+  bounds [lo, hi) is half-open and defines a region of space parallel to the
+  rays of the view and extending transversely from the ray at the "lo" index up
+  to but not including the ray at the "hi".  As a new view is added, "nviews"
+  increments by one and "nblobs" increments by a number based on the pattern of
+  "activity" and the wire geometry encoded by object "coords" of type
+  "Coordinates".
+
+- crossings : (nblobs, npairs, 4, 2), an integer tensor holding "ray indices"
+  into activity tensors.  The indices in the dim=1 dimension of size "npairs"
+  enumerate a "nviews-choose-2" combination of view indices.  Each pair
+  represents a pair of "strips" from two different views that overlap to partly
+  define the "blob".  The order of view indices in each pair and the order of
+  pairs is stable in that the list of pairs at nviews+1 appends new pairs to the
+  list of pairs at nviews.  The dim=3 dimension of fixed size 4 enumerates all
+  possible edge-pairs that may be formed from a pair of strips.  This
+  enumeration is also in a fixed order so while the tensor holds no view nor
+  edge indices one may always know these given the indices in dim=1 and dim=2.
+  The last dim=3 dimension of fixed size 2 holds "activity" indices or "ray
+  indices" that identify the rays, one from each view in the pair, that are
+  crossing.
+
+- insides : (nblobs, npairs, 4), a Boolean tensor holding True if the
+  corresponding crossing is "inside" all strips in the blob.  The strip is
+  effectively enlarged slightly (by a "nudge" amount) when testing if a crossing
+  point is "inside" to accounts for floating point errors.
+
+To use the tiling functions, start with the "trivial" two-view blobs tensor
+(holds a single blob), which is defined in a literal, hard-wired manner, and
+then iteratively apply the remaining view activities.
+
+  from wirecell.raygrid.examples import symmetric_views
+  from wirecell.raygrid import plots, tiling
+
+  views = symmetric_views()
+  coords = Coordinates(views)
+  blobs = tiling.trivial()
+  for view in [2,3,4]:
+      blobs = tiling.apply_activity(coords, blobs, activities[view])
+
+This above assumes the list of activity tensors in "activities" is provided and
+represents the result of the forward tomographic transform.
+'''
+
 
 import torch
-from .activity import threshold_1d
 
 from collections import namedtuple
 from itertools import product, combinations
@@ -376,7 +437,7 @@ def blob_crossings_bounds_new_view(coords, crossings, nviews):
     nblobs = crossings.shape[0]
     v1, r1, v2, r2 = flatten_crossings(crossings, nviews)
     v3 = torch.full_like(v1, fill_value=nviews)
-    pitches = coords.pitch_location((v1,r1), (v2,r2), v3)
+    pitches = coords.pitch_location(v1,r1, v2,r2, v3)
     blob_pitches = pitches.reshape(nblobs, -1)
     pmin = torch.min(blob_pitches, dim=1).values
     pmax = torch.max(blob_pitches, dim=1).values
@@ -419,7 +480,7 @@ def blob_bounds(coords, crossings, nviews, insides):
 
     # 3. Calculate pitches for all crossings
     # This returns a 1D tensor of all pitches: (nblobs * npairs * 4,)
-    pitches = coords.pitch_location((v1, r1), (v2, r2), v3)
+    pitches = coords.pitch_location(v1, r1, v2, r2, v3)
 
     # 4. Reshape pitches to (nblobs, npairs * 4) to align with flattened 'insides'
     blob_pitches = pitches.reshape(nblobs, -1) # Using -1 infers npairs * 4
@@ -489,7 +550,7 @@ def crossing_in_other(coords, v1, r1, v2, r2, v3, rbegin3, rend3, nudge=1e-3):
 
     These may be 1D tensors.
     '''
-    pitches = coords.pitch_location((v1,r1), (v2,r2), v3)
+    pitches = coords.pitch_location(v1,r1, v2,r2, v3)
 
     # find indices after we "nudge" the pitch a little high for the low
     # comparison and a little low for the high comparison in order that we
