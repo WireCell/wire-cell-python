@@ -6,7 +6,9 @@ from .activity import threshold_1d
 from collections import namedtuple
 from itertools import product, combinations
 
-# represent the state of a tiling.
+# Represent the state of a tiling.  This class is not actually used in most
+# function which instead take individual tensors.  However, the tensor names
+# described here are relevant throughout.
 class Tiling:
     def __init__(self, blobs, crossings, insides):
 

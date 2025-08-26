@@ -15,7 +15,7 @@ mpl.rcParams['mathtext.rm'] = 'serif'
 cmddef = dict(context_settings = dict(help_option_names=['-h', '--help']))
 
 
-@context("aux")
+@context("resp")
 def cli(ctx):
     '''
     Commands related to responses used by Wire-Cell Toolkit.
