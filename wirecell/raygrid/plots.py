@@ -222,7 +222,7 @@ def blobs_corners(coords,
                 pitch2_idx = crossings[blob_idx, pair_idx, edges_idx, 1].item()
 
                 # Calculate the 2D Cartesian coordinates of the crossing point
-                crossing_pt_2d = coords.ray_crossing((view1_idx, pitch1_idx), (view2_idx, pitch2_idx))
+                crossing_pt_2d = coords.ray_crossing(view1_idx, pitch1_idx, view2_idx, pitch2_idx)
 
                 # Add to lists for plotting if the point is valid (not NaN)
                 if not torch.any(torch.isnan(crossing_pt_2d)):

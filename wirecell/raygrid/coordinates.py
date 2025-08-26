@@ -1,22 +1,43 @@
 #!/usr/bin/env python
 '''
-Ray grid coordinates provide a set of 1D tomographic coordinate systems
-("views") that cover a 2D domain.
+A pedantic explanation of ray grid
 
-The 1D coordinates of each view as a unique sampling period ("pitch magnitude")
-and direction ("pitch direction").  The start of each sample is a line ("ray")
-that is perpendicular to the pitch.  One coordinate represents the half-open 2D
-region ("strip" 0bounded by the ray and the next neighboring ray at higher
-pitch.
+A "ray" is conceptually an infinite line with a defined direction.  The ray line
+is defined by giving two points on the line and the ray direction is taken as
+going from the first point to the second point.  The points are specified in a
+2D Cartesian coordinate system called "face" coordinates (not the same as but
+related to WCT 3D coordinates).  This coordinate system takes the usual
+convention of the x-axis pointing right on the horizontal and the y-axis
+pointing up on the vertical.
 
-The shared angle of each view's set of parallel rays is unique among the views.
-Each view may have a unique pitch magnitude.  Rays are identified by
-non-negative indices and a point on "ray 0" is identified as the "view origin".
+A "ray grid" is an array of rays that are mutually parallel and uniformly spaced
+by a fixed "pitch" distance measured perpendicularly between two neighboring
+rays.  A "ray grid" is placed into the "face" coordinates by giving a "center"
+point and a "pitch vector", both defined in the 2D "face" coordinates.  The
+"center" point is on a special ray called "ray zero" and the "pitch vector" is
+perpendicular to the rays and with magnitude equal to their transverse
+separation.  The term "ray zero" is used as later rays are identified by indices
+and ray zero is index 0.
 
-Each view is likewise identified with a non-negative "layer index".  The views
-are uniquely specified with an ordered list of pairs of line segments.  Each
-pair is coincident with the view's "ray 0" and "ray 1" rays and such that the
-first segment is centered on the view's origin.
+Multiple ray grids of different angles may be overlayed in the "face"
+coordinates.  Each is said to provide one tomographic "view" of a scalar field
+defined in the "face" coordinate system.  An array of sensitive detectors are
+associated with a finite subset of rays starting with "ray zero" in each view
+spanning some active region.  Each detector measures the integral of the scalar
+field in the vicinity of the ray and over the active region.  The array of
+detectors produces an "activity" tensor, each element being one measured
+integral.
+
+In order to estimate the 2D scalar field given multiple views of 1D activity
+measures, the algorithms provided wirecell.raygrid.tiling algorithm are applied.
+They rely on the "Coordinates" class provided below for performing fast geometry
+operation between views and between a particular view coordinate system with its
+"ray" and "pitch" axes and the "face" coordinate system.  Regions along the
+pitch axes in each view are identified by half-open ranges of "view indices".
+The range [a,b) contains the ray at index "a" up to but excluding the ray at
+index "b".  Rays are thus "lower edges" of half open bins.  Use of "view
+indices" is the key to the optimizations in the Coordinate class and what will
+be seen later in the wirecell.raygrid.tiling module.
 '''
 
 import torch
@@ -62,7 +83,8 @@ class Coordinates:
         direction of the pitch.  The magnitude of the vector is the pitch.
         '''
         self.init(views)
-    
+        self.views = views      # keep for provenance
+
     @property
     def nviews(self):
         return self.pitch_mag.shape[0]
@@ -164,31 +186,30 @@ class Coordinates:
 
         return pitch_indices
 
-    def ray_crossing(self, one, two):
+    def ray_crossing(self, view1, ray1, view2, ray2):
         '''
         Return the 2D crossing point(s) ray grid coordinates "one" and
         "two".  Each coordinate is given as a pair (view,ray) of indices.  These
         may be scalar or batched array.
         '''
-        view1, ray1 = one
-        view2, ray2 = two
-
         r00 = self.zero_crossings[view1, view2]
         w12 = self.ray_jump[view1, view2]
         w21 = self.ray_jump[view2, view1]
+
+        # broadcast matching
+        ray1 = ray1.unsqueeze(1)
+        ray2 = ray2.unsqueeze(1)
+
         return r00 + ray2 * w12 + ray1 * w21;
 
-    def pitch_location(self, one, two, view):
+    def pitch_location(self, view1, ray1, view2, ray2, view3):
         '''
         Return the pitch location measured in the given view (an index) of
         the crossing point of ray grid coordinates one and two.
         '''
-        view1, ray1 = one
-        view2, ray2 = two
-        
-        return self.b[view1, view2, view] \
-            + ray2 * self.a[view1, view2, view] \
-            + ray1 * self.a[view2, view1, view]
+        return self.b[view1, view2, view3] \
+            + ray2 * self.a[view1, view2, view3] \
+            + ray1 * self.a[view2, view1, view3]
 
 
     def pitch_index(self, pitch, view):
@@ -211,7 +232,7 @@ class Coordinates:
         self.pitch_mag = torch.sqrt(pvrel[:,0]**2 + pvrel[:,1]**2)
 
         # 2D (l,c) the pitch direction 2D coordinates c of view l.
-        self.pitch_dir = pvrel / self.pitch_mag.reshape(5,1)
+        self.pitch_dir = pvrel / self.pitch_mag.reshape(nviews,1)
 
         # 2D (l,c) the 2D coordinates c of the origin point of view l
         self.center = pitches[:,0,:]
@@ -289,3 +310,32 @@ class Coordinates:
                     self.b[il,im,ik] = rlmpk - cp
                     self.b[im,il,ik] = rlmpk - cp
             
+    def __str__(self):
+        return self.as_string()
+
+    def as_dict(self):
+        return dict(
+            views = self.views,
+            pitch_mag = self.pitch_mag,
+            pitch_dir = self.pitch_dir,
+            center = self.center,
+            zero_crossings = self.zero_crossings,
+            ray_jump = self.ray_jump,
+            ray_dir = self.ray_dir,
+            a = self.a,
+            b = self.b)
+
+    def as_string(self, style=None):
+        if style in (None, "python"):
+            return str(self.as_dict())
+        if style.lower() in ("c++"):
+            lines = ["const std::map<std::string, torch::Tensor> ray_grid_coordinates_data = {"]
+            for k,v in self.as_dict().items():
+                v = v.to(torch.double)
+                t = str(v).replace("[","{").replace("]","}")
+                t = t.replace("dtype=torch.float64", "torch::kDouble")
+                lines += [f'    {{ "{k}", torch::{t} }},']
+            lines[-1] = lines[-1][:-1] # remove final comma
+            lines.append('};')
+            return '\n'.join(lines)
+
