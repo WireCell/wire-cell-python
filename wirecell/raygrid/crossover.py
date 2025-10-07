@@ -1,3 +1,4 @@
+import sys
 import torch
 from torch import nn
 from math import sqrt
@@ -41,7 +42,7 @@ def build_map(coords, i, j, k, nwires):
     return results
 
 class CrossoverTerm(nn.Module):
-    def __init__(self, map, feats=[16,128,]):
+    def __init__(self, map=None, feats=[16,128,]):
         super().__init__()
         self.map = map
         # 3-in, 3-out
@@ -108,7 +109,7 @@ if __name__ == '__main__':
     plane_j = 1
     plane_k = 2
     indices = build_map(coords, plane_i, plane_j, plane_k, [nwires_0, nwires_1, nwires_2])
-    print(indices)
+    print(indices, indices.nelement(), indices.nelement()*indices.element_size())
 
     # for ii, p in enumerate([plane_i, plane_j, plane_k]):
     #     print(ii, img[ii][:, indices[:,p]].shape)
@@ -128,6 +129,7 @@ if __name__ == '__main__':
     print('Passing')
     passed = xover_term(catted)
     print(passed.shape)
+    print(passed.element_size()*passed.nelement()*1e-6)
 
     expanded = indices.view(1,1,1,*indices.shape).expand(nbatches, nfeatures, nticks, -1, -1)
     print(expanded.shape)
