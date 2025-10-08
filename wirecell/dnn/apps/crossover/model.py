@@ -17,7 +17,7 @@ class Network(nn.Module):
         '''
         Input data is assumed to be of shape (nbatch, nfeatures, nticks, nchannels=3)
         '''
-        print(x)
+        print(x.shape)
         x = self.unet(x)
         return torch.sigmoid(x)
 
