@@ -9,14 +9,14 @@ class Network(nn.Module):
 
 
 
-    def __init__(self, wires_file='/home/jacob/protodunevd-wires-larsoft-v3.json.bz2', nfeatures=4, detector=0):
+    def __init__(self, wires_file='protodunevd-wires-larsoft-v3.json.bz2', nfeatures=4, detector=0):
         super().__init__()
         self.nfeatures=nfeatures
-        self.unets = [
+        self.unets = nn.ModuleList([
                 UNet(n_channels=2, n_classes=nfeatures,
                      batch_norm=True, bilinear=True, padding=True)
                 for i in range(3)
-        ]
+        ])
         self.crossover_term = crossover.CrossoverTerm()
         store = schema_load.StoreDB()
         schema_load.load_file(wires_file, store)
@@ -77,6 +77,7 @@ class Network(nn.Module):
         Input data is assumed to be of shape (nbatch, nfeatures, nchannels, nticks)
         '''
         input_shape = x.shape
+        the_device = x.device
         print(x.shape)
         xs = [
             x[:, :, (0 if i == 0 else sum(self.nchans[:i])):sum(self.nchans[:i+1]), :]
@@ -105,7 +106,7 @@ class Network(nn.Module):
         nticks = x.shape[2]
         nchans = x.shape[3]
         expanded = [
-            indices.view(1,1,1,*indices.shape).expand(nbatches, nfeatures_in, nticks, -1, -1)
+            indices.to(the_device).view(1,1,1,*indices.shape).expand(nbatches, nfeatures_in, nticks, -1, -1)
             for indices in self.xover_map
         ]
         #Go from the elec channel view to wire segment view
@@ -120,7 +121,7 @@ class Network(nn.Module):
                 view_shape = [i for i in x.shape]
                 view_shape[-1] =  len(this_wires_channels)
                 print(view_shape)
-                wire_seg_view[-1].append(torch.zeros(view_shape))
+                wire_seg_view[-1].append(torch.zeros(view_shape).to(the_device))
                 print(x[..., this_wires_channels[:,1]].shape)
                 wire_seg_view[-1][-1][..., this_wires_channels[:,0]] = x[..., this_wires_channels[:,1]]
 
@@ -152,12 +153,12 @@ class Network(nn.Module):
         for i, wsv_face in enumerate(wire_seg_view):
             summed_wire_terms.append([])
             for j, wsv_plane in enumerate(wsv_face):
-                summed = torch.zeros_like(wsv_plane)
+                summed = torch.zeros_like(wsv_plane).to(the_device)
                 print('Scatter add in sum', i, j, expanded[i][..., j].size(), indexed_arr[i][..., j].size())
                 summed.scatter_add_(-1, index=expanded[i][..., j], src=indexed_arr[i][..., j])
                 
-                count = torch.zeros_like(wsv_plane)
-                ones = torch.ones_like(indexed_arr[i][..., j])
+                count = torch.zeros_like(wsv_plane).to(the_device)
+                ones = torch.ones_like(indexed_arr[i][..., j]).to(the_device)
                 count.scatter_add_(-1, index=expanded[i][..., j], src=ones)
 
                 summed /= count.clamp(min=1)
@@ -165,11 +166,11 @@ class Network(nn.Module):
                 print(summed.shape)
         
         #Now we have to go to channels view
-        summed_y = torch.zeros(nbatches, self.nfeatures, nticks, nchans)
-        counts_y = torch.zeros_like(summed_y)
+        summed_y = torch.zeros(nbatches, self.nfeatures, nticks, nchans).to(the_device)
+        counts_y = torch.zeros_like(summed_y).to(the_device)
 
         expanded_wire_channels = {
-            ij:wire_channels.view(1,1,1,*wire_channels.shape).expand(nbatches, self.nfeatures, nticks, -1, -1)
+            ij:wire_channels.to(the_device).view(1,1,1,*wire_channels.shape).expand(nbatches, self.nfeatures, nticks, -1, -1)
             for ij, wire_channels in self.face_plane_wires_channels.items()
         }
         for i in range(len(summed_wire_terms)):
