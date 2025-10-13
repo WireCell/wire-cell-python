@@ -2,10 +2,39 @@ import bz2
 import json
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
+import torch
 
 # ====================================================================
 # 1. PYTHON DATA STRUCTURES (Replacing C++ structs/classes)
 # ====================================================================
+
+def get_center(wire, drift='vd'):
+    center =  torch.mean(torch.Tensor([
+            [wire.head.z, wire.head.y],
+            [wire.tail.z, wire.tail.y],
+    ]), dim=0)
+    return center
+
+def views_from_schema(store, face_index, drift='vd'):
+    #GEt the plane objects from the store for htis face
+    planes = [store.planes[i] for i in store.faces[face_index].planes]
+
+
+    views = []
+    #For each plane, get the first and second wire to get the pitch direction and magnitude
+    for plane in planes:
+        first_wire = store.wires[plane.wires[0]]
+        second_wire = store.wires[plane.wires[1]]
+        # print(first_wire, second_wire)
+
+        first_center = get_center(first_wire)
+        # print(first_center)
+
+        second_center = get_center(second_wire)
+        # print(second_center)
+        views.append(torch.cat([first_center.unsqueeze(0), second_center.unsqueeze(0)], dim=0).unsqueeze(0))
+
+    return torch.cat(views)
 
 @dataclass
 class Point:
@@ -71,6 +100,7 @@ def load_file(path: str, store: StoreDB):
     Converts the C++ load_file logic to Python.
     Parses geometry data from a JSON structure and populates the StoreDB object.
     """
+
     # Abstraction of WireCell::Persist::load(path)
     jtop = load_bz2_json(path)
     

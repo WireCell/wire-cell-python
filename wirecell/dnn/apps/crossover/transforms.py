@@ -51,7 +51,8 @@ class Rec:
     The DNNROI "rec" data transformation.
     '''
 
-    default_params = Params(DimParams((476, 952), 1), DimParams((0,6000), 10), 4000)
+    # default_params = Params(DimParams((476, 952), 1), DimParams((0,6000), 10), 4000)
+    default_params = Params(DimParams((0, 1536), 1), DimParams((0,6000), 10), 4000)
 
     def __init__(self,  params: Params = None):
         '''
@@ -63,6 +64,7 @@ class Rec:
         self._params = params or self.default_params
 
     def crop(self, x):
+        print('In crop, x:', x.shape)
         return x[:, self._params.elech.crop, self._params.ticks.crop]
 
     def rebin(self, x):
@@ -99,7 +101,8 @@ class Tru(Rec):
     This is same as "rec" but with a thresholding.
     '''
 
-    default_params = Params(DimParams((476, 952), 1), DimParams((0,6000), 10), 200)
+    # default_params = Params(DimParams((476, 952), 1), DimParams((0,6000), 10), 200)
+    default_params = Params(DimParams((0, 1536), 1), DimParams((0,6000), 10), 200)
 
     def __init__(self, params: Params = None,  threshold: float = 0.5):
         '''

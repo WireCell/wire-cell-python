@@ -13,36 +13,93 @@ import matplotlib.pyplot as plt
 import json 
 from argparse import ArgumentParser as ap
 
-def build_map(coords, i, j, k, nwires):
-
-    #Make the Ni x Nj pairs of indices in the ith and jth planes
-    rays_i = torch.arange(nwires[plane_i])
-    rays_j = torch.arange(nwires[plane_j])
+def build_cross(rays_i, rays_j):
     cross = torch.zeros((rays_i.size(0), rays_j.size(0), 2), dtype=int)
     cross[..., 1] = rays_j
     cross = cross.permute(1,0,2)
     cross[..., 0] = rays_i
     cross = cross.reshape((-1, 2))
+    return cross
 
+def get_indices(coords, cross, i, j, k):
+    #Find the locations in the third plane of crossing points from the first 2 planes
+    #Then turn those into indices within the last plane
+    locs = coords.pitch_location(i, cross[:, 0], j, cross[:, 1], k)
+    # torch.save(locs, 'xover_locs.pt')
+    indices = coords.pitch_index(locs, k)
+    return indices
+
+
+def build_map(coords, plane_i, plane_j, plane_k, nwires):
+
+    #Make the Ni x Nj pairs of indices in the ith and jth planes
+    rays_0 = torch.arange(nwires[0])
+    rays_1 = torch.arange(nwires[1])
+    rays_2 = torch.arange(nwires[2])
+    
+    rays = [rays_0, rays_1, rays_2]
+
+    # cross = torch.zeros((rays_i.size(0), rays_j.size(0), 2), dtype=int)
+    # cross[..., 1] = rays_j
+    # cross = cross.permute(1,0,2)
+    # cross[..., 0] = rays_i
+    # cross = cross.reshape((-1, 2))
+    # cross = build_cross(rays_0, rays_1)
+
+    cross01 = build_cross(rays_0, rays_1)
+    cross12 = build_cross(rays_1, rays_2)
+    cross20 = build_cross(rays_2, rays_0)
+    
+    # print(cross.shape, 'Crossings')
+    # torch.save(cross, 'xover_cross.pt')
     #"Real" raygrid views start at index 2
-    view1 = plane_i + 2
-    view2 = plane_j + 2
-    view3 = plane_k + 2
+    view0 = 0 + (len(coords.views) - 3)
+    view1 = 1 + (len(coords.views) - 3)
+    view2 = 2 + (len(coords.views) - 3)
 
     #Find the locations in the third plane of crossing points from the first 2 planes
     #Then turn those into indices within the last plane
-    locs = coords.pitch_location(view1, cross[:, 0], view2, cross[:, 1], view3)
-    indices = coords.pitch_index(locs, view3)
-    
+    # locs = coords.pitch_location(view0, cross[:, 0], view1, cross[:, 1], view2)
+    # torch.save(locs, 'xover_locs.pt')
+    # indices = coords.pitch_index(locs, view2)
+
+    indices012 = get_indices(coords, cross01, view0, view1, view2)
+    indices120 = get_indices(coords, cross12, view1, view2, view0)
+    indices201 = get_indices(coords, cross20, view2, view0, view1)
+
+    good_ones012 = torch.where((indices012 >= 0) & (indices012 < nwires[2]))
+    good_ones120 = torch.where((indices120 >= 0) & (indices120 < nwires[0]))
+    good_ones201 = torch.where((indices201 >= 0) & (indices201 < nwires[1]))
+
+    results012 = torch.cat((cross01[good_ones012], indices012[good_ones012].reshape((-1, 1))), dim=1)
+    results120 = torch.cat((cross12[good_ones120], indices120[good_ones120].reshape((-1, 1))), dim=1)
+    results201 = torch.cat((cross20[good_ones201], indices201[good_ones201].reshape((-1, 1))), dim=1)
+
+    results = torch.zeros((results012.shape[0] + results120.shape[0] + results201.shape[0], 3), dtype=int)
+    results[:results012.shape[0],:] = results012
+
+    results[results012.shape[0]:results012.shape[0]+results120.shape[0], 0] = results120[:, 2]
+    results[results012.shape[0]:results012.shape[0]+results120.shape[0], 1] = results120[:, 0]
+    results[results012.shape[0]:results012.shape[0]+results120.shape[0], 2] = results120[:, 1]
+
+    results[-results201.shape[0]:, 0] = results201[:, 1]
+    results[-results201.shape[0]:, 1] = results201[:, 2]
+    results[-results201.shape[0]:, 2] = results201[:, 0]
+
+
+    # torch.save(locs, 'xover_indices.pt')
     #Then check that they are valid a.k.a. they are bounded within the last wire plane
-    good_ones = torch.where((indices >= 0) & (indices < nwires[k]))
+    # good_ones = torch.where((indices >= 0) & (indices < nwires[plane_k]))
 
     #Concat with the corresponding pairs from above
-    results = torch.cat((cross[good_ones], indices[good_ones].reshape((-1, 1))), dim=1)
+    # results = torch.cat((cross[good_ones], indices[good_ones].reshape((-1, 1))), dim=1)
+
+    # results = torch.unique(torch.cat([results012, results120, results201], dim=0), dim=0)
+    results = torch.unique(results, dim=0)
     return results
 
 class CrossoverTerm(nn.Module):
-    def __init__(self, map=None, feats=[16,128,]):
+    def __init__(self, map=None, feats=[16,32,]):
         super().__init__()
         self.map = map
         # 3-in, 3-out
