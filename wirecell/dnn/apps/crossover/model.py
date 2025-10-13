@@ -1,4 +1,5 @@
 import numpy as np
+import time
 import torch
 import torch.nn as nn
 from wirecell.dnn.models.unet import UNet
@@ -107,6 +108,7 @@ class Network(nn.Module):
         nchans = x.shape[3]
         expanded = [
             indices.to(the_device).view(1,1,1,*indices.shape).expand(nbatches, nfeatures_in, nticks, -1, -1)
+            # indices.to(the_device).view(1,1,1,*indices.shape)
             for indices in self.xover_map
         ]
         #Go from the elec channel view to wire segment view
@@ -152,14 +154,20 @@ class Network(nn.Module):
         summed_wire_terms = []
         for i, wsv_face in enumerate(wire_seg_view):
             summed_wire_terms.append([])
+            indices = self.xover_map[i]
+            expanded = indices.to(the_device).view(1,1,1,*indices.shape).expand(nbatches, nfeatures_in, nticks, -1, -1)
             for j, wsv_plane in enumerate(wsv_face):
                 summed = torch.zeros_like(wsv_plane).to(the_device)
-                print('Scatter add in sum', i, j, expanded[i][..., j].size(), indexed_arr[i][..., j].size())
-                summed.scatter_add_(-1, index=expanded[i][..., j], src=indexed_arr[i][..., j])
                 
-                count = torch.zeros_like(wsv_plane).to(the_device)
+                # print('Scatter add in sum', i, j, expanded[i][..., j].size(), indexed_arr[i][..., j].size())
+                # summed.scatter_add_(-1, index=expanded[i][..., j], src=indexed_arr[i][..., j])
+                summed.scatter_add_(-1, index=expanded[..., j], src=indexed_arr[i][..., j])
+                
+                ##These can probably be precomputed
+                count = torch.zeros_like(wsv_plane).to(the_device).detach()
                 ones = torch.ones_like(indexed_arr[i][..., j]).to(the_device)
-                count.scatter_add_(-1, index=expanded[i][..., j], src=ones)
+                # count.scatter_add_(-1, index=expanded[i][..., j], src=ones)
+                count.scatter_add_(-1, index=expanded[..., j], src=ones)
 
                 summed /= count.clamp(min=1)
                 summed_wire_terms[-1].append(summed)
@@ -167,7 +175,7 @@ class Network(nn.Module):
         
         #Now we have to go to channels view
         summed_y = torch.zeros(nbatches, self.nfeatures, nticks, nchans).to(the_device)
-        counts_y = torch.zeros_like(summed_y).to(the_device)
+        counts_y = torch.zeros_like(summed_y).to(the_device).detach()
 
         expanded_wire_channels = {
             ij:wire_channels.to(the_device).view(1,1,1,*wire_channels.shape).expand(nbatches, self.nfeatures, nticks, -1, -1)
@@ -193,6 +201,8 @@ class Network(nn.Module):
 
         #Get ticks last
         # x = x.permute((0,1,3,2))
-        return torch.sigmoid(self.segmap(summed_y))
+        summed_y = torch.sigmoid(self.segmap(summed_y))
+        torch.save(summed_y, f'summed_y_{int(time.time()*1000)}.pt')
+        return summed_y
         # return torch.sigmoid(x)
 
