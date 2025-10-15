@@ -12,6 +12,7 @@ from wirecell.raygrid.examples import (
 import matplotlib.pyplot as plt 
 import json 
 from argparse import ArgumentParser as ap
+import numpy as np
 
 def scatter_crossings(coords, v1, r1, v2, r2):
     rc = coords.ray_crossing(v1, r1, v2, r2)
@@ -21,7 +22,7 @@ def scatter_crossings(coords, v1, r1, v2, r2):
 
 def coords_from_schema(store, face_index, drift='vd'):
     views = views_from_schema(store, face_index, drift)
-    coords = Coordinates(views)
+    coords = Coordinates(views.to(torch.float))
     return coords
 
 def get_center(store, wire, drift='vd'):
@@ -65,11 +66,37 @@ def views_from_schema(store, face_index, drift='vd'):
         # print(first_wire, second_wire)
 
         first_center = get_center(store, first_wire)
+        second_center = get_center(store, second_wire)
+        
+        first_head = store.points[first_wire.head]
+        first_tail = store.points[first_wire.tail]
+
+        second_head = store.points[second_wire.head]
+        second_tail = store.points[second_wire.tail]
+
+        first_head = np.array([first_head.x, first_head.y, first_head.z])
+        first_tail = np.array([first_tail.x, first_tail.y, first_tail.z])
+        second_head = np.array([second_head.x, second_head.y, second_head.z])
+        second_tail = np.array([second_tail.x, second_tail.y, second_tail.z])
+
+        b = first_head - first_tail
+        b = b / np.linalg.norm(b)
+
+        pitch = np.linalg.norm(np.linalg.cross((second_head - first_head), b))
+        print(pitch)
+
+        b = pitch * np.array([b[2], b[1]])
+        b = np.linalg.matmul(
+            b, [[0, -1], [1, 0]]
+        )
+
+        second_point = first_center + b
+             
         # print(first_center)
 
-        second_center = get_center(store, second_wire)
         # print(second_center)
-        views.append(torch.cat([first_center.unsqueeze(0), second_center.unsqueeze(0)], dim=0).unsqueeze(0))
+        # views.append(torch.cat([first_center.unsqueeze(0), second_center.unsqueeze(0)], dim=0).unsqueeze(0))
+        views.append(torch.cat([first_center.unsqueeze(0), second_point.unsqueeze(0)], dim=0).unsqueeze(0))
 
     return torch.cat(views)
 
