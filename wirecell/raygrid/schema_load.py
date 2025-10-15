@@ -8,12 +8,77 @@ import torch
 # 1. PYTHON DATA STRUCTURES (Replacing C++ structs/classes)
 # ====================================================================
 
+def get_center2(store, wire, drift='vd'):
+
+    head = store.points[wire.head]
+    tail = store.points[wire.tail]
+    center =  torch.mean(torch.Tensor([
+            [head.z, head.y],
+            [tail.z, tail.y],
+    ]), dim=0)
+    return center
+
 def get_center(wire, drift='vd'):
     center =  torch.mean(torch.Tensor([
             [wire.head.z, wire.head.y],
             [wire.tail.z, wire.tail.y],
     ]), dim=0)
     return center
+
+def draw_schema2(store, face_index, plane_indices=[0,1,2], colors=['orange','blue','red']):
+    import matplotlib.pyplot as plt
+    import numpy as np
+    
+    planes = []
+    for pi in plane_indices:
+        global_plane = store.faces[face_index].planes[pi]
+        plane = store.planes[global_plane]
+        planes.append(plane)
+        for wi in plane.wires:
+            wire = store.wires[wi]
+            head = store.points[wire.head]
+            tail = store.points[wire.tail]
+            xs = [tail.z, head.z]
+            ys = [tail.y, head.y]
+            plt.plot(xs, ys, color=colors[pi])
+    plt.show()
+
+def draw_schema(store, face_index, plane_indices=[0,1,2], colors=['orange','blue','red']):
+    import matplotlib.pyplot as plt
+    import numpy as np
+    
+    planes = []
+    for pi in plane_indices:
+        global_plane = store.faces[face_index].planes[pi]
+        plane = store.planes[global_plane]
+        planes.append(plane)
+        for wi in plane.wires:
+            wire = store.wires[wi]
+            xs = [wire.tail.z, wire.head.z]
+            ys = [wire.tail.y, wire.head.y]
+            plt.plot(xs, ys, color=colors[pi])
+    plt.show()
+
+def views_from_schema2(store, face_index, drift='vd'):
+    #GEt the plane objects from the store for htis face
+    planes = [store.planes[i] for i in store.faces[face_index].planes]
+
+
+    views = []
+    #For each plane, get the first and second wire to get the pitch direction and magnitude
+    for plane in planes:
+        first_wire = store.wires[plane.wires[0]]
+        second_wire = store.wires[plane.wires[1]]
+        # print(first_wire, second_wire)
+
+        first_center = get_center2(store, first_wire)
+        # print(first_center)
+
+        second_center = get_center2(store, second_wire)
+        # print(second_center)
+        views.append(torch.cat([first_center.unsqueeze(0), second_center.unsqueeze(0)], dim=0).unsqueeze(0))
+
+    return torch.cat(views)
 
 def views_from_schema(store, face_index, drift='vd'):
     #GEt the plane objects from the store for htis face

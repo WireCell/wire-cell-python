@@ -13,6 +13,66 @@ import matplotlib.pyplot as plt
 import json 
 from argparse import ArgumentParser as ap
 
+def scatter_crossings(coords, v1, r1, v2, r2):
+    rc = coords.ray_crossing(v1, r1, v2, r2)
+    xs = rc.detach().numpy()[:,0]
+    ys = rc.detach().numpy()[:,1]
+    plt.scatter(xs, ys, color='black')
+
+def coords_from_schema(store, face_index, drift='vd'):
+    views = views_from_schema(store, face_index, drift)
+    coords = Coordinates(views)
+    return coords
+
+def get_center(store, wire, drift='vd'):
+
+    head = store.points[wire.head]
+    tail = store.points[wire.tail]
+    center =  torch.mean(torch.Tensor([
+            [head.z, head.y],
+            [tail.z, tail.y],
+    ]), dim=0)
+    return center
+
+def draw_schema(store, face_index, plane_indices=[0,1,2], colors=['orange','blue','red']):
+    import matplotlib.pyplot as plt
+    import numpy as np
+    
+    planes = []
+    for pi in plane_indices:
+        global_plane = store.faces[face_index].planes[pi]
+        plane = store.planes[global_plane]
+        planes.append(plane)
+        for wi in plane.wires:
+            wire = store.wires[wi]
+            head = store.points[wire.head]
+            tail = store.points[wire.tail]
+            xs = [tail.z, head.z]
+            ys = [tail.y, head.y]
+            plt.plot(xs, ys, color=colors[pi])
+    plt.show()
+
+def views_from_schema(store, face_index, drift='vd'):
+    #GEt the plane objects from the store for htis face
+    planes = [store.planes[i] for i in store.faces[face_index].planes]
+
+
+    views = []
+    #For each plane, get the first and second wire to get the pitch direction and magnitude
+    for plane in planes:
+        first_wire = store.wires[plane.wires[0]]
+        second_wire = store.wires[plane.wires[1]]
+        # print(first_wire, second_wire)
+
+        first_center = get_center(store, first_wire)
+        # print(first_center)
+
+        second_center = get_center(store, second_wire)
+        # print(second_center)
+        views.append(torch.cat([first_center.unsqueeze(0), second_center.unsqueeze(0)], dim=0).unsqueeze(0))
+
+    return torch.cat(views)
+
 def build_cross(rays_i, rays_j):
     cross = torch.zeros((rays_i.size(0), rays_j.size(0), 2), dtype=int)
     cross[..., 1] = rays_j
