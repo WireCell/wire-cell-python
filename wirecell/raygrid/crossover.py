@@ -60,6 +60,8 @@ def views_from_schema(store, face_index, drift='vd'):
 
     views = []
     #For each plane, get the first and second wire to get the pitch direction and magnitude
+    min_y, max_y = sys.float_info.max, -sys.float_info.max
+    min_z, max_z = sys.float_info.max, -sys.float_info.max
     for plane in planes:
         first_wire = store.wires[plane.wires[0]]
         second_wire = store.wires[plane.wires[1]]
@@ -78,6 +80,16 @@ def views_from_schema(store, face_index, drift='vd'):
         first_tail = np.array([first_tail.x, first_tail.y, first_tail.z])
         second_head = np.array([second_head.x, second_head.y, second_head.z])
         second_tail = np.array([second_tail.x, second_tail.y, second_tail.z])
+
+        for wi in plane.wires:
+            wire = store.wires[wi]
+            head = store.points[wire.head]
+            tail = store.points[wire.tail]
+
+            min_y = min([head.y, tail.y, min_y])
+            max_y = max([head.y, tail.y, max_y])
+            min_z = min([head.z, tail.z, min_z])
+            max_z = max([head.z, tail.z, max_z])
 
         b = first_head - first_tail
         b = b / np.linalg.norm(b)
@@ -98,6 +110,19 @@ def views_from_schema(store, face_index, drift='vd'):
         # views.append(torch.cat([first_center.unsqueeze(0), second_center.unsqueeze(0)], dim=0).unsqueeze(0))
         views.append(torch.cat([first_center.unsqueeze(0), second_point.unsqueeze(0)], dim=0).unsqueeze(0))
 
+    ul = torch.Tensor([min_z, max_y])
+    ur = torch.Tensor([max_z, max_y])
+    ll = torch.Tensor([min_z, min_y])
+    lr = torch.Tensor([max_z, min_y])
+    view_0 = torch.cat([
+        ((ur + ul)/2).unsqueeze(0), 
+        ((ll + lr)/2).unsqueeze(0), 
+    ], dim=0).unsqueeze(0)
+    view_1 = torch.cat([
+        ((ul + ll)/2).unsqueeze(0), 
+        ((ur + lr)/2).unsqueeze(0), 
+    ], dim=0).unsqueeze(0)
+    views = [view_0, view_1] + views
     return torch.cat(views)
 
 def build_cross(rays_i, rays_j):
@@ -116,6 +141,20 @@ def get_indices(coords, cross, i, j, k):
     indices = coords.pitch_index(locs, k)
     return indices
 
+def get_good_crossers(coords, i, j, nwires):
+    cross = build_cross(torch.arange(nwires[i]), torch.arange(nwires[j]))
+    base = len(coords.views) - 3
+    ray_crossings = coords.ray_crossing(i+base, cross[:, 0], j+base, cross[:, 1])
+
+    #Check that they are within the bounding box
+    good = torch.where(
+        (ray_crossings[:,1] >= coords.bounding_box[1,0]) &
+        (ray_crossings[:,1] <  coords.bounding_box[1,1]) &
+        (ray_crossings[:,0] >= coords.bounding_box[0,0]) &
+        (ray_crossings[:,0] <  coords.bounding_box[0,1])
+    )
+
+    return cross[good] #, ray_crossings[good]
 
 def build_map(coords, plane_i, plane_j, plane_k, nwires):
 

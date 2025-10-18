@@ -93,18 +93,30 @@ class Coordinates:
     def bounding_box(self):
         '''
         Tensor of shape (2,2) holding [ (x0,x1), (y0,y1) ] bounds in Cartesian space.
+
+        This makes a lot of assumptions like the 'trivial blobs' are the first 2 views
         '''
 
-        if self.pitch_dir[0,0] == 0: # points up, hbounds is view 0
-            x0 = self.center[1,0]
-            y0 = self.center[0,1]
-            x1 = x0 + self.pitch_mag[1]
-            y1 = y0 + self.pitch_mag[0]
-        else:
-            x0 = self.center[0,1]
-            y0 = self.center[1,0]
-            x1 = x0 + self.pitch_mag[0]
-            y1 = y0 + self.pitch_mag[1]
+        #Assume first index points horizontally
+        vert_index = 1
+        horiz_index = 0        
+        if self.pitch_dir[0,0] == 0: #Actually it points horizontally
+            vert_index = 0
+            horiz_index = 1
+
+        #Assume it points down
+        y1 = self.views[vert_index, 0, 1]
+        y0 = self.views[vert_index, 1, 1]
+
+        if self.pitch_dir[vert_index, 1] > 0: #up --> swap
+            y1, y0 = y0, y1
+        
+        #Assume it points left to right
+        x1 = self.views[horiz_index, 1, 0]
+        x0 = self.views[horiz_index, 0, 0]
+        if self.pitch_dir[horiz_index, 0] < 0: #right to left --> swap
+            x1, x0 = x0, x1
+
         return torch.tensor([ [x0,x1], [y0,y1] ])
 
 
