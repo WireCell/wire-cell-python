@@ -74,7 +74,9 @@ class Network(nn.Module):
         self.good_indices_0_12 = xover.get_good_crossers(self.coords_face0, 1, 2, self.nwires_0)
         self.good_indices_0_20 = xover.get_good_crossers(self.coords_face0, 2, 0, self.nwires_0)
 
-
+        self.ray_crossings_0_01 = self.coords_face0.ray_crossing(0, self.good_indices_0_01[:,0], 1, self.good_indices_0_01[:,1])
+        self.ray_crossings_0_12 = self.coords_face0.ray_crossing(1, self.good_indices_0_12[:,0], 2, self.good_indices_0_12[:,1])
+        self.ray_crossings_0_20 = self.coords_face0.ray_crossing(2, self.good_indices_0_20[:,0], 0, self.good_indices_0_20[:,1])
         
         self.nchans = [476, 476, 292, 292]
 
@@ -83,6 +85,9 @@ class Network(nn.Module):
         Input data is assumed to be of shape (nbatch, nfeatures, nchannels, nticks)
         '''
         input_shape = x.shape
+        nbatches = x.shape[0]
+        nticks = x.shape[-1]
+
         the_device = x.device
         print(x.shape)
         # xs = [
@@ -147,28 +152,29 @@ class Network(nn.Module):
 
         #Could add more things: i.e. channel RMS over readout window.
         #Worth some thought and tests
-
+        
         #Now set up our 2-channel crossings -- these will be our GNN nodes
         print('Crossers 01:', self.good_indices_0_01.shape)
         crossings_01 = torch.cat([
            as_wires_f0_p0[:, :, self.good_indices_0_01[:,0], :],
            as_wires_f0_p1[:, :, self.good_indices_0_01[:,1], :],
+            self.ray_crossings_0_01.view(1, 1, -1, 2).repeat(nbatches, nticks, 1, 1), #locations of crossings
         ], dim=-1)
 
         print(crossings_01.shape)
-        print(crossings_01[:,:,:,(2,6)])
         # torch.save(crossings_01[:,:,:,(2,6)], 'crossings_01.pt')
-        print(self.good_indices_0_01)
         # torch.save(self.good_indices_0_01, 'good_indices_01.pt')
 
         crossings_12 = torch.cat([
            as_wires_f0_p1[:, :, self.good_indices_0_12[:,0], :],
            as_wires_f0_p2[:, :, self.good_indices_0_12[:,1], :],
+           self.ray_crossings_0_12.view(1, 1, -1, 2).repeat(nbatches, nticks, 1, 1), #locations of crossings
         ], dim=-1)
 
         crossings_20 = torch.cat([
            as_wires_f0_p2[:, :, self.good_indices_0_20[:,0], :],
            as_wires_f0_p0[:, :, self.good_indices_0_20[:,1], :],
+           self.ray_crossings_0_20.view(1, 1, -1, 2).repeat(nbatches, nticks, 1, 1), #locations of crossings
         ], dim=-1)
 
         # time.sleep(10)
