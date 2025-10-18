@@ -78,6 +78,12 @@ class Network(nn.Module):
         self.ray_crossings_0_12 = self.coords_face0.ray_crossing(1, self.good_indices_0_12[:,0], 2, self.good_indices_0_12[:,1])
         self.ray_crossings_0_20 = self.coords_face0.ray_crossing(2, self.good_indices_0_20[:,0], 0, self.good_indices_0_20[:,1])
         
+
+        #TODO -- find the crossing points within some distance
+        #Also find for crossings in planes i,j, find the nearest (j, k), and (k, i) crossings
+        # -- can it just be find ray k from crossers i, j?
+        #All crossings common to the same wires in the crossing?
+
         self.nchans = [476, 476, 292, 292]
 
     def forward(self, x):
@@ -89,7 +95,7 @@ class Network(nn.Module):
         nticks = x.shape[-1]
 
         the_device = x.device
-        print(x.shape)
+        print('Pre unet', x.shape)
         # xs = [
         #     x[:, :, (0 if i == 0 else sum(self.nchans[:i])):sum(self.nchans[:i+1]), :]
         #     for i, nc in enumerate(self.nchans)
@@ -107,7 +113,7 @@ class Network(nn.Module):
         # #Cat to get into global channel number shape
         # x = torch.cat(xs, dim=2)
 
-        print(x.shape)
+        print('Post unet', x.shape)
 
         n_feat_base = x.shape[1]
         
@@ -116,16 +122,16 @@ class Network(nn.Module):
 
         #Convert from channels to wires (values duped for common elec chan)
         #Also expand features to include 'meta' features i.e. wire seg number, elec channel
-        n_feat_wire = 2
+        n_feat_wire = 4
         new_shape = (x.shape[0], n_feat_base+n_feat_wire, x.shape[2], )
         as_wires_f0_p0 = torch.zeros(new_shape + (len(self.face_plane_wires_channels[0,0]),))
-        as_wires_f0_p0[:, :2, :, self.face_plane_wires_channels[0,0][:,0]] = x[..., self.face_plane_wires_channels[0,0][:,1]]
+        as_wires_f0_p0[:, :n_feat_base, :, self.face_plane_wires_channels[0,0][:,0]] = x[..., self.face_plane_wires_channels[0,0][:,1]]
 
         as_wires_f0_p1 = torch.zeros(new_shape + (len(self.face_plane_wires_channels[0,1]),))
-        as_wires_f0_p1[:, :2, :, self.face_plane_wires_channels[0,1][:,0]] = x[..., self.face_plane_wires_channels[0,1][:,1]]
+        as_wires_f0_p1[:, :n_feat_base, :, self.face_plane_wires_channels[0,1][:,0]] = x[..., self.face_plane_wires_channels[0,1][:,1]]
         
         as_wires_f0_p2 = torch.zeros(new_shape + (len(self.face_plane_wires_channels[0,2]),))
-        as_wires_f0_p2[:, :2, :, self.face_plane_wires_channels[0,2][:,0]] = x[..., self.face_plane_wires_channels[0,2][:,1]]
+        as_wires_f0_p2[:, :n_feat_base, :, self.face_plane_wires_channels[0,2][:,0]] = x[..., self.face_plane_wires_channels[0,2][:,1]]
 
         print(as_wires_f0_p0.shape)
         print(as_wires_f0_p1.shape)
@@ -149,6 +155,16 @@ class Network(nn.Module):
         as_wires_f0_p0[..., n_feat_base + 1] = self.face_plane_wires_channels[0,0][:,1]
         as_wires_f0_p1[..., n_feat_base + 1] = self.face_plane_wires_channels[0,1][:,1]
         as_wires_f0_p2[..., n_feat_base + 1] = self.face_plane_wires_channels[0,2][:,1]
+
+        #Anode face
+        as_wires_f0_p0[..., n_feat_base + 2] = 0
+        as_wires_f0_p1[..., n_feat_base + 2] = 0
+        as_wires_f0_p2[..., n_feat_base + 2] = 0
+
+        #Wire plane
+        as_wires_f0_p0[..., n_feat_base + 3] = 0
+        as_wires_f0_p1[..., n_feat_base + 3] = 1
+        as_wires_f0_p2[..., n_feat_base + 3] = 2
 
         #Could add more things: i.e. channel RMS over readout window.
         #Worth some thought and tests
@@ -176,6 +192,11 @@ class Network(nn.Module):
            as_wires_f0_p0[:, :, self.good_indices_0_20[:,1], :],
            self.ray_crossings_0_20.view(1, 1, -1, 2).repeat(nbatches, nticks, 1, 1), #locations of crossings
         ], dim=-1)
+
+
+        #WHEN BUILDING UP THE TIME WINDOW FUNCTIONALITY
+        # TRY TO MAKE IT SO THAT YOU CAN JUST SET TIME WINDOW = 1
+        # THIS WILL BE USEFUL AS A HYPER PARAMETER & FOR ABLATION STUDIES
 
         # time.sleep(10)
         return 0
