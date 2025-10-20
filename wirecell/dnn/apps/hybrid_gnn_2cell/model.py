@@ -148,47 +148,47 @@ class Network(nn.Module):
             n_0_12 = len(self.ray_crossings_0_12)
             n_0_20 = len(self.ray_crossings_0_20)
 
-            self.nearest_neighbors_0_01 = get_nn_from_plane_pair(self.good_indices_0_01, n_nearest=n_nearest)
-            self.nearest_neighbors_0_12 = get_nn_from_plane_pair(self.good_indices_0_12, n_nearest=n_nearest) # + n_0_01
-            self.nearest_neighbors_0_20 = get_nn_from_plane_pair(self.good_indices_0_20, n_nearest=n_nearest) # + n_0_01 + n_0_12
+            nearest_neighbors_0_01 = get_nn_from_plane_pair(self.good_indices_0_01, n_nearest=n_nearest)
+            nearest_neighbors_0_12 = get_nn_from_plane_pair(self.good_indices_0_12, n_nearest=n_nearest) # + n_0_01
+            nearest_neighbors_0_20 = get_nn_from_plane_pair(self.good_indices_0_20, n_nearest=n_nearest) # + n_0_01 + n_0_12
 
             #Neighbors between anode faces which are connected by the elec channel
             #TODO
 
 
             self.neighbors = torch.cat([
-                self.nearest_neighbors_0_01,
-                (self.nearest_neighbors_0_12 + n_0_01),
-                (self.nearest_neighbors_0_20 + n_0_01 + n_0_12),
+                nearest_neighbors_0_01,
+                (nearest_neighbors_0_12 + n_0_01),
+                (nearest_neighbors_0_20 + n_0_01 + n_0_12),
             ], dim=1)
 
-            # self.neighbors = self.nearest_neighbors_0_01
+            # self.neighbors = nearest_neighbors_0_01
 
             #Static edge attributes -- dZ, dY, r=sqrt(dZ**2 + dY**2), dFace
             #TODO  Do things like dWire0, dWire1 make sense for things like cross-pair (i.e. 0,1 and 0,2) neighbors?
             #      Same question for cross face (i.e. 0,1 on face 0 and 0,1 on face 1)
             self.nstatic_edge_attr = 4
 
-            self.static_edges_0_01 = torch.zeros(self.nearest_neighbors_0_01.size(1), self.nstatic_edge_attr)
+            self.static_edges_0_01 = torch.zeros(nearest_neighbors_0_01.size(1), self.nstatic_edge_attr)
             self.static_edges_0_01[:, :2] = (
-                self.ray_crossings_0_01[self.nearest_neighbors_0_01[0]] -
-                self.ray_crossings_0_01[self.nearest_neighbors_0_01[1]]
+                self.ray_crossings_0_01[nearest_neighbors_0_01[0]] -
+                self.ray_crossings_0_01[nearest_neighbors_0_01[1]]
             ) #dZ, dY
             self.static_edges_0_01[:, 2] = torch.norm(self.static_edges_0_01[:, :2], dim=1) # r
             self.static_edges_0_01[:, 3] = 0 #dFace
 
-            self.static_edges_0_12 = torch.zeros(self.nearest_neighbors_0_12.size(1), self.nstatic_edge_attr)
+            self.static_edges_0_12 = torch.zeros(nearest_neighbors_0_12.size(1), self.nstatic_edge_attr)
             self.static_edges_0_12[:, :2] = (
-                self.ray_crossings_0_12[self.nearest_neighbors_0_12[0]] -
-                self.ray_crossings_0_12[self.nearest_neighbors_0_12[1]]
+                self.ray_crossings_0_12[nearest_neighbors_0_12[0]] -
+                self.ray_crossings_0_12[nearest_neighbors_0_12[1]]
             ) #dZ, dY
             self.static_edges_0_12[:, 2] = torch.norm(self.static_edges_0_12[:, :2], dim=1) # r
             self.static_edges_0_12[:, 3] = 0 #dFace
 
-            self.static_edges_0_20 = torch.zeros(self.nearest_neighbors_0_20.size(1), self.nstatic_edge_attr)
+            self.static_edges_0_20 = torch.zeros(nearest_neighbors_0_20.size(1), self.nstatic_edge_attr)
             self.static_edges_0_20[:, :2] = (
-                self.ray_crossings_0_20[self.nearest_neighbors_0_20[0]] -
-                self.ray_crossings_0_20[self.nearest_neighbors_0_20[1]]
+                self.ray_crossings_0_20[nearest_neighbors_0_20[0]] -
+                self.ray_crossings_0_20[nearest_neighbors_0_20[1]]
             ) #dZ, dY
             self.static_edges_0_20[:, 2] = torch.norm(self.static_edges_0_20[:, :2], dim=1) # r
             self.static_edges_0_20[:, 3] = 0 #dFace
@@ -196,13 +196,13 @@ class Network(nn.Module):
             #This would be the differeince in electronics channel from plane 0, between the nearest neighbors
             #It's really confusing so maybe think more about implementing
             # self.static_edges_0_01[:, 4] = (
-            #     self.face_plane_wires_channels[0,0][self.good_indices_0_01[self.nearest_neighbors_0_01[0]][0]] -
-            #     self.face_plane_wires_channels[0,0][self.good_indices_0_01[self.nearest_neighbors_0_01[1]][0]]
+            #     self.face_plane_wires_channels[0,0][self.good_indices_0_01[nearest_neighbors_0_01[0]][0]] -
+            #     self.face_plane_wires_channels[0,0][self.good_indices_0_01[nearest_neighbors_0_01[1]][0]]
             # ) 
             
             # self.static_edges_0_01[:, 4] = 1 #dPlane
             # self.static_edges_0_01[:, 5] = self.good_indices_0_01
-            # self.nearest_neighbors_0_01[0] - self.nearest_neighbors_0_01[1] #dWire0
+            # nearest_neighbors_0_01[0] - nearest_neighbors_0_01[1] #dWire0
             # self.static_edges_0_01[:, 6] = (
             # implement dWire
             # )
@@ -249,7 +249,7 @@ class Network(nn.Module):
         print('Post unet', x.shape)
 
         n_feat_base = x.shape[1]
-        
+        nticks_orig = x.size(-1)
         #For ease
         to_pad = int((self.time_window-1)/2)
         x = F.pad(x, (to_pad, to_pad))
@@ -386,8 +386,9 @@ class Network(nn.Module):
                 ind_0 = (base + ncross*(j*(dt) + i))
                 ind_1 = ind_0 + ncross
                 edge_attr[ind_0:ind_1, -1] = (i-j)
-        out = torch.zeros(nbatches, 1, all_crossings.size(1)-2, nchannels)
-        for tick in range(1, all_crossings.size(1)-1):
+        out = torch.zeros(nbatches, 1, nticks_orig, nchannels)
+        # for tick in range(1, all_crossings.size(1)-to_pad):
+        for tick in range(to_pad, 100):
             low = tick - to_pad
             hi = tick + to_pad + 1
             print(low, tick, hi)
@@ -490,6 +491,6 @@ class Network(nn.Module):
 
 
 
-
-        return out
+        print(out.size())
+        return out.permute(0, 1, 3, 2)
 
