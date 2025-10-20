@@ -27,7 +27,9 @@ class Rec(hdf.Single):
 
     path_res = tuple(
         r'/(\d+)/%s\d'%tag for tag in [
-            'frame_loose_lf', 'frame_gauss']
+            'frame_loose_lf',
+            # 'frame_gauss'
+        ]
     )
 
     def __init__(self, paths, 

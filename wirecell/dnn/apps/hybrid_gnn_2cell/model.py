@@ -59,11 +59,13 @@ class Network(nn.Module):
             time_window=1,
             n_feat_wire = 4,
             detector=0,
+            n_input_features=1,
             out_channels=4):
         super().__init__()
         with torch.no_grad():
             self.nfeat_post_unet=nfeatures
             self.n_feat_wire = n_feat_wire
+            self.n_input_features=n_input_features
             ##Set up the UNets
             self.unets = nn.ModuleList([
                     UNet(n_channels=2, n_classes=nfeatures,
@@ -72,7 +74,7 @@ class Network(nn.Module):
             ])
 
             self.GNN = GAT(
-                2*(2+n_feat_wire) + 3, #Input -- testing without passing unets for now
+                2*(n_input_features + n_feat_wire) + 3, #Input -- testing without passing unets for now
                 1, #Hidden channels -- starting small
                 1, #N message passes -- starting small
                 out_channels=out_channels,
