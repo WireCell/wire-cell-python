@@ -495,6 +495,7 @@ class Network(nn.Module):
         print(out.size())
         if self.save:
             torch.save(out, 'out_test.pt')
+            print('Saved')
             self.save = False
         return out.permute(0, 1, 3, 2)
 
