@@ -14,6 +14,24 @@ import json
 from argparse import ArgumentParser as ap
 import numpy as np
 
+
+def get_nearest(rcs, n=5):
+    dist = (rcs[:, 0].unsqueeze(0) - rcs[:,0].unsqueeze(1))**2
+    dist += (rcs[:, 1].unsqueeze(0) - rcs[:,1].unsqueeze(1))**2
+    dist += 1.e32*torch.eye(len(rcs))
+
+    knns = torch.zeros((n, len(rcs)))
+    #nearest_dists = []
+    arange = torch.arange(len(rcs))
+    for i in range(n):
+        nearest = dist.argmin(dim=1)
+        # , dist[(arange, nearest)] -- nearest distances
+        # knns[0, :] = arange
+        knns[i, :] = nearest
+        # knns.append((arange, nearest))
+        dist[(arange, nearest)] += 1.e32
+    return knns
+
 def scatter_crossings(coords, v1, r1, v2, r2):
     rc = coords.ray_crossing(v1, r1, v2, r2)
     xs = rc.detach().numpy()[:,0]
