@@ -3,6 +3,7 @@ import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch_scatter
 from torch_geometric.data import Data
 from torch_geometric.nn import GAT
 from wirecell.dnn.models.unet import UNet
@@ -55,9 +56,10 @@ class Network(nn.Module):
             self,
             wires_file='protodunevd-wires-larsoft-v3.json.bz2',
             nfeatures=4,
-            time_window=3,
+            time_window=1,
             n_feat_wire = 4,
-            detector=0):
+            detector=0,
+            out_channels=4):
         super().__init__()
         with torch.no_grad():
             self.nfeat_post_unet=nfeatures
@@ -70,10 +72,13 @@ class Network(nn.Module):
             ])
 
             self.GNN = GAT(
-                2+n_feat_wire, #Input -- testing without passing unets for now
-                4, #Hidden channels -- starting small
-                2, #N message passes -- starting small
+                2*(2+n_feat_wire) + 3, #Input -- testing without passing unets for now
+                1, #Hidden channels -- starting small
+                1, #N message passes -- starting small
+                out_channels=out_channels,
             )
+            self.out_channels=out_channels
+            self.mlp = nn.Linear(out_channels, 1)
 
             self.time_window = time_window
 
@@ -136,28 +141,32 @@ class Network(nn.Module):
             ])
 
             #Neighbors on either face of the anode
-            n_nearest = 3
+            n_nearest = 1
             n_0_01 = len(self.ray_crossings_0_01)
             n_0_12 = len(self.ray_crossings_0_12)
             n_0_20 = len(self.ray_crossings_0_20)
+
             self.nearest_neighbors_0_01 = get_nn_from_plane_pair(self.good_indices_0_01, n_nearest=n_nearest)
-            self.nearest_neighbors_0_12 = get_nn_from_plane_pair(self.good_indices_0_12, n_nearest=n_nearest) + n_0_01
-            self.nearest_neighbors_0_20 = get_nn_from_plane_pair(self.good_indices_0_20, n_nearest=n_nearest) + n_0_01 + n_0_12
+            self.nearest_neighbors_0_12 = get_nn_from_plane_pair(self.good_indices_0_12, n_nearest=n_nearest) # + n_0_01
+            self.nearest_neighbors_0_20 = get_nn_from_plane_pair(self.good_indices_0_20, n_nearest=n_nearest) # + n_0_01 + n_0_12
 
             #Neighbors between anode faces which are connected by the elec channel
             #TODO
 
 
-            # self.neighbors = torch.cat([
-            #     self.nearest_neighbors_0_01, self.nearest_neighbors_0_12, self.nearest_neighbors_0_20
-            # ], dim=1)
+            self.neighbors = torch.cat([
+                self.nearest_neighbors_0_01,
+                (self.nearest_neighbors_0_12 + n_0_01),
+                (self.nearest_neighbors_0_20 + n_0_01 + n_0_12),
+            ], dim=1)
 
-            self.neighbors = self.nearest_neighbors_0_01
+            # self.neighbors = self.nearest_neighbors_0_01
 
             #Static edge attributes -- dZ, dY, r=sqrt(dZ**2 + dY**2), dFace
             #TODO  Do things like dWire0, dWire1 make sense for things like cross-pair (i.e. 0,1 and 0,2) neighbors?
             #      Same question for cross face (i.e. 0,1 on face 0 and 0,1 on face 1)
             self.nstatic_edge_attr = 4
+
             self.static_edges_0_01 = torch.zeros(self.nearest_neighbors_0_01.size(1), self.nstatic_edge_attr)
             self.static_edges_0_01[:, :2] = (
                 self.ray_crossings_0_01[self.nearest_neighbors_0_01[0]] -
@@ -165,6 +174,22 @@ class Network(nn.Module):
             ) #dZ, dY
             self.static_edges_0_01[:, 2] = torch.norm(self.static_edges_0_01[:, :2], dim=1) # r
             self.static_edges_0_01[:, 3] = 0 #dFace
+
+            self.static_edges_0_12 = torch.zeros(self.nearest_neighbors_0_12.size(1), self.nstatic_edge_attr)
+            self.static_edges_0_12[:, :2] = (
+                self.ray_crossings_0_12[self.nearest_neighbors_0_12[0]] -
+                self.ray_crossings_0_12[self.nearest_neighbors_0_12[1]]
+            ) #dZ, dY
+            self.static_edges_0_12[:, 2] = torch.norm(self.static_edges_0_12[:, :2], dim=1) # r
+            self.static_edges_0_12[:, 3] = 0 #dFace
+
+            self.static_edges_0_20 = torch.zeros(self.nearest_neighbors_0_20.size(1), self.nstatic_edge_attr)
+            self.static_edges_0_20[:, :2] = (
+                self.ray_crossings_0_20[self.nearest_neighbors_0_20[0]] -
+                self.ray_crossings_0_20[self.nearest_neighbors_0_20[1]]
+            ) #dZ, dY
+            self.static_edges_0_20[:, 2] = torch.norm(self.static_edges_0_20[:, :2], dim=1) # r
+            self.static_edges_0_20[:, 3] = 0 #dFace
             
             #This would be the differeince in electronics channel from plane 0, between the nearest neighbors
             #It's really confusing so maybe think more about implementing
@@ -180,9 +205,16 @@ class Network(nn.Module):
             # implement dWire
             # )
 
-            self.static_edges = self.static_edges_0_01
+            # self.static_edges = self.static_edges_0_01
+            self.static_edges = torch.cat([
+                self.static_edges_0_01,
+                self.static_edges_0_12,
+                self.static_edges_0_20,
+            ])
 
             self.nchans = [476, 476, 292, 292]
+
+            self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         '''
@@ -191,6 +223,7 @@ class Network(nn.Module):
         input_shape = x.shape
         nbatches = x.shape[0]
         nticks = x.shape[-1]
+        nchannels = x.shape[-2]
 
         the_device = x.device
         print('Pre unet', x.shape)
@@ -216,12 +249,17 @@ class Network(nn.Module):
         n_feat_base = x.shape[1]
         
         #For ease
+        to_pad = int((self.time_window-1)/2)
+        x = F.pad(x, (to_pad, to_pad))
+        nticks = x.size(-1)
+        print(x.shape)
         x = x.permute(0,1,3,2)
+
 
         #Convert from channels to wires (values duped for common elec chan)
         #Also expand features to include 'meta' features i.e. wire seg number, elec channel
-        n_feat_wire = 4
-        new_shape = (x.shape[0], n_feat_base+n_feat_wire, x.shape[2], )
+        # n_feat_wire = 4
+        new_shape = (x.shape[0], n_feat_base+ self.n_feat_wire, x.shape[2], )
         as_wires_f0_p0 = torch.zeros(new_shape + (len(self.face_plane_wires_channels[0,0]),))
         as_wires_f0_p0[:, :n_feat_base, :, self.face_plane_wires_channels[0,0][:,0]] = x[..., self.face_plane_wires_channels[0,0][:,1]]
 
@@ -303,60 +341,147 @@ class Network(nn.Module):
         ncross_20 = crossings_20.shape[-2]
         
         
-        all_crossings = crossings_01
-        # ncross = ncross_01 + ncross_12 + ncross_20
-        ncross = ncross_01
+        all_crossings = torch.cat([
+            crossings_01,
+            crossings_12,
+            crossings_20,
+        ], dim=-2)
+        ncross = ncross_01 + ncross_12 + ncross_20
+        print(ncross_01, ncross_12, ncross_20, ncross)
+        # all_crossings = crossings_01
+        # ncross = ncross_01
 
         #WHEN BUILDING UP THE TIME WINDOW FUNCTIONALITY
         # TRY TO MAKE IT SO THAT YOU CAN JUST SET TIME WINDOW = 1
         # THIS WILL BE USEFUL AS A HYPER PARAMETER & FOR ABLATION STUDIES
+        # to_pad = int((self.time_window-1)/2)
+        # padded = F.pad(all_crossings, (0,0, 0, 0, to_pad, to_pad))
+        # print('padded shape:', padded.size())
 
-        for i in range(all_crossings.size(1)):
-            hi = i+1 if i == all_crossings.size(1)-1 else i + int((self.time_window-1)/2) + 1
-            low = 0 if i == 0 else i - int((self.time_window-1)/2)
+        #in-tick crossings
+        dt = self.time_window
+        n_window_neighbors = self.neighbors.size(1)
+        new_window_neighbors_size = n_window_neighbors*dt
+        all_neighbors = torch.zeros(2, new_window_neighbors_size + ncross*((dt)**2), dtype=int)
+        all_neighbors[:, :n_window_neighbors*(dt)] = self.neighbors.repeat(1, dt)
+        all_neighbors[:, new_window_neighbors_size:] = torch.arange(ncross).unsqueeze(0).repeat(2,(dt)**2)
+
+        for i in range(dt):
+            all_neighbors[:, i*n_window_neighbors:(i+1)*n_window_neighbors] += (i*ncross)
+            # print(i, ncross*i, n_window_neighbors, i*n_window_neighbors, (i+1)*n_window_neighbors)
+
+            for j in range(dt):
+                all_neighbors[0, new_window_neighbors_size + (ncross*(j*(dt) + i)):new_window_neighbors_size + (ncross*(j*(dt) + (i+1)))] += i*ncross
+                all_neighbors[1, new_window_neighbors_size + (ncross*(j*(dt) + i)):new_window_neighbors_size + (ncross*(j*(dt) + (i+1)))] += j*ncross
+
+        n_edge_attr = self.nstatic_edge_attr + 1 #+1 for tick
+        edge_attr = torch.zeros(all_neighbors.size(1), n_edge_attr)
+        #TODO -- consider batching
+        edge_attr[:new_window_neighbors_size, :-1] = self.static_edges.view(self.neighbors.size(1), -1).repeat(1*(dt), 1)
+        base = new_window_neighbors_size
+        for i in range(dt):
+            for j in range(dt):
+                ind_0 = (base + ncross*(j*(dt) + i))
+                ind_1 = ind_0 + ncross
+                edge_attr[ind_0:ind_1, -1] = (i-j)
+        out = torch.zeros(nbatches, 1, all_crossings.size(1)-2, nchannels)
+        for tick in range(1, all_crossings.size(1)-1):
+            low = tick - to_pad
+            hi = tick + to_pad + 1
+            print(low, tick, hi)
 
             window = all_crossings[:, low:hi, ...].view(nbatches, -1, nfeat)
             # print(i, low, hi, window.shape)
             #Window neighbors includes the nearest neighbors within the time tick
             # as well as the common crossing points between the time ticks
 
-            #in-tick crossings
-            window_neighbors = self.neighbors.repeat(1, hi-low)
-            
-            #between ticks
-            # tick_neighbors = []
-            tick_neighbors = torch.arange(ncross).unsqueeze(0).repeat(2,(hi-low)**2)
 
-            for i in range(hi-low):
-                window_neighbors[:, i*ncross:(i+1)*ncross] += (i*ncross)
-                for j in range(hi-low):
-                    # if i == j: continue #Self-message-pass
-                    # tick_neighbors.append(torch.cat([
-                    #     torch.arange(i*ncross, (i+1)*ncross).unsqueeze(0), torch.arange(ncross*j, ncross*(j+1)).unsqueeze(0)
-                    # ], dim=0))
-                    tick_neighbors[0, ncross*(j*(hi-low) + i):ncross*(j*(hi-low) + (i+1))] += i*ncross
-                    tick_neighbors[1, ncross*(j*(hi-low) + i):ncross*(j*(hi-low) + (i+1))] += j*ncross
+
+            #between ticks
+            # tick_neighbors = torch.arange(ncross).unsqueeze(0).repeat(2,(hi-low)**2)
+
+
 
             # print(tick_neighbors)
             #TODO -- get unique between tick neighbors
             # tick_neighbors = torch.cat(tick_neighbors, dim=1)
             # print(tick_neighbors)
-            all_neighbors = torch.cat([window_neighbors, tick_neighbors], dim=1)
+            # all_neighbors = torch.cat([window_neighbors, tick_neighbors], dim=1)
             
             # all_neighbors = window_neighbors
             
-            n_edge_attr = self.nstatic_edge_attr + 1 #+1 for tick
-            edge_attr = torch.zeros(all_neighbors.size(1), n_edge_attr)
             window = window.reshape(-1, nfeat)
-            
-            #TODO -- consider batching
-            edge_attr[:window_neighbors.size(1), :-1] = self.static_edges.view(self.neighbors.size(1), -1).repeat(1*(hi-low), 1)
-            base = window_neighbors.size(1)
-            for i in range(hi-low):
-                for j in range(hi-low):
-                    ind_0 = (base + ncross*(j*(hi-low) + i))
-                    ind_1 = ind_0 + ncross
-                    edge_attr[ind_0:ind_1, -1] = (i-j)
+
+            y = self.GNN(window, all_neighbors, edge_attr=edge_attr)
+
+            #Just get out the middle element
+            y = y.reshape(nbatches, self.time_window, -1,self.out_channels)[:, int((self.time_window-1)/2), ...]
+            y = [
+                y[:, :ncross_01, :],
+                y[:, ncross_01:ncross_01+ncross_12, :],
+                y[:, -ncross_20:, :],
+            ]
+
+            # print(self.face_plane_wires_channels[(0,0)][self.good_indices_0_01[:,0]][:,0].size())
+
+            # out[:, (tick-1)] = torch_scatter.scatter_add()
+            temp_out = torch.zeros(nbatches, nchannels, self.out_channels)
+
+            #plane 0
+            torch_scatter.scatter_add(
+                y[0],
+                self.face_plane_wires_channels[(0,0)][self.good_indices_0_01[:,0]][:,1],
+                out=temp_out,
+                dim=1
+            )
+            torch_scatter.scatter_add(
+                y[2],
+                self.face_plane_wires_channels[(0,0)][self.good_indices_0_20[:,1]][:,1],
+                out=temp_out,
+                dim=1
+            )
+
+            #plane 1
+            torch_scatter.scatter_add(
+                y[0],
+                self.face_plane_wires_channels[(0,1)][self.good_indices_0_01[:,1]][:,1],
+                out=temp_out,
+                dim=1
+            )
+            torch_scatter.scatter_add(
+                y[1],
+                self.face_plane_wires_channels[(0,1)][self.good_indices_0_12[:,0]][:,1],
+                out=temp_out,
+                dim=1
+            )
+
+            #plane 2
+            torch_scatter.scatter_add(
+                y[1],
+                self.face_plane_wires_channels[(0,2)][self.good_indices_0_12[:,1]][:,1],
+                out=temp_out,
+                dim=1
+            )
+            torch_scatter.scatter_add(
+                y[2],
+                self.face_plane_wires_channels[(0,2)][self.good_indices_0_20[:,0]][:,1],
+                out=temp_out,
+                dim=1
+            )
+
+            out[:, 0, (tick-1), :] = self.sigmoid(self.mlp(temp_out)).view(1,-1)
+            # print(out.shape)
+            # print(out)
+
+
+            # y = self.sigmoid(self.mlp(y))
+            # # print('Window & y:', window.shape, y.shape)
+            # if (tick-1) in [0, all_crossings.size(1)-1, int(all_crossings.size(1)/2)]:
+            #     torch.save(edge_attr, f'edge_attr_{tick}.pt')
+            #     torch.save(window, f'window_{tick}.pt')
+            #     torch.save(all_neighbors, f'all_neighbors_{tick}.pt')
+                # torch.save(window_neighbors, f'window_neighbors_{tick}.pt')
+                # torch.save(tick_neighbors, f'tick_neighbors_{tick}.pt')
             
             
             # print(edge_attr[0])
@@ -364,5 +489,5 @@ class Network(nn.Module):
 
 
 
-        return 1
+        return out
 
