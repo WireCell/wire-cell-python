@@ -217,6 +217,7 @@ class Network(nn.Module):
             self.nchans = [476, 476, 292, 292]
 
             self.sigmoid = nn.Sigmoid()
+            self.save = True
 
     def forward(self, x):
         '''
@@ -492,5 +493,8 @@ class Network(nn.Module):
 
 
         print(out.size())
+        if self.save:
+            torch.save(out, 'out_test.pt')
+            self.save = False
         return out.permute(0, 1, 3, 2)
 
