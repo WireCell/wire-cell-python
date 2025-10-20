@@ -148,11 +148,11 @@ class Network(nn.Module):
             #TODO
 
 
-            self.neighbors = torch.cat([
-                self.nearest_neighbors_0_01, self.nearest_neighbors_0_12, self.nearest_neighbors_0_20
-            ], dim=1)
+            # self.neighbors = torch.cat([
+            #     self.nearest_neighbors_0_01, self.nearest_neighbors_0_12, self.nearest_neighbors_0_20
+            # ], dim=1)
 
-
+            self.neighbors = self.nearest_neighbors_0_01
 
             #Static edge attributes -- dZ, dY, r=sqrt(dZ**2 + dY**2), dFace
             #TODO  Do things like dWire0, dWire1 make sense for things like cross-pair (i.e. 0,1 and 0,2) neighbors?
@@ -180,6 +180,7 @@ class Network(nn.Module):
             # implement dWire
             # )
 
+            self.static_edges = self.static_edges_0_01
 
             self.nchans = [476, 476, 292, 292]
 
@@ -300,38 +301,41 @@ class Network(nn.Module):
         ncross_01 = crossings_01.shape[-2]
         ncross_12 = crossings_12.shape[-2]
         ncross_20 = crossings_20.shape[-2]
+        
+        
         all_crossings = crossings_01
-        ncross = ncross_01 + ncross_12 + ncross_20
+        # ncross = ncross_01 + ncross_12 + ncross_20
+        ncross = ncross_01
 
         #WHEN BUILDING UP THE TIME WINDOW FUNCTIONALITY
         # TRY TO MAKE IT SO THAT YOU CAN JUST SET TIME WINDOW = 1
         # THIS WILL BE USEFUL AS A HYPER PARAMETER & FOR ABLATION STUDIES
 
-        for i in range(crossings_01.size(1)):
-            hi = i+1 if i == crossings_01.size(1)-1 else i + int((self.time_window-1)/2) + 1
+        for i in range(all_crossings.size(1)):
+            hi = i+1 if i == all_crossings.size(1)-1 else i + int((self.time_window-1)/2) + 1
             low = 0 if i == 0 else i - int((self.time_window-1)/2)
 
-            window = crossings_01[:, low:hi, ...].view(nbatches, -1, nfeat)
+            window = all_crossings[:, low:hi, ...].view(nbatches, -1, nfeat)
             # print(i, low, hi, window.shape)
             #Window neighbors includes the nearest neighbors within the time tick
             # as well as the common crossing points between the time ticks
 
             #in-tick crossings
-            window_neighbors = self.nearest_neighbors_0_01.repeat(1, hi-low)
+            window_neighbors = self.neighbors.repeat(1, hi-low)
             
             #between ticks
             # tick_neighbors = []
-            tick_neighbors = torch.arange(ncross_01).unsqueeze(0).repeat(2,(hi-low)**2)
+            tick_neighbors = torch.arange(ncross).unsqueeze(0).repeat(2,(hi-low)**2)
 
             for i in range(hi-low):
-                window_neighbors[:, i*ncross_01:(i+1)*ncross_01] += (i*ncross_01)
+                window_neighbors[:, i*ncross:(i+1)*ncross] += (i*ncross)
                 for j in range(hi-low):
                     # if i == j: continue #Self-message-pass
                     # tick_neighbors.append(torch.cat([
-                    #     torch.arange(i*ncross_01, (i+1)*ncross_01).unsqueeze(0), torch.arange(ncross_01*j, ncross_01*(j+1)).unsqueeze(0)
+                    #     torch.arange(i*ncross, (i+1)*ncross).unsqueeze(0), torch.arange(ncross*j, ncross*(j+1)).unsqueeze(0)
                     # ], dim=0))
-                    tick_neighbors[0, ncross_01*(j*(hi-low) + i):ncross_01*(j*(hi-low) + (i+1))] += i*ncross_01
-                    tick_neighbors[1, ncross_01*(j*(hi-low) + i):ncross_01*(j*(hi-low) + (i+1))] += j*ncross_01
+                    tick_neighbors[0, ncross*(j*(hi-low) + i):ncross*(j*(hi-low) + (i+1))] += i*ncross
+                    tick_neighbors[1, ncross*(j*(hi-low) + i):ncross*(j*(hi-low) + (i+1))] += j*ncross
 
             # print(tick_neighbors)
             #TODO -- get unique between tick neighbors
@@ -346,12 +350,12 @@ class Network(nn.Module):
             window = window.reshape(-1, nfeat)
             
             #TODO -- consider batching
-            edge_attr[:window_neighbors.size(1), :-1] = self.static_edges_0_01.view(self.nearest_neighbors_0_01.size(1), -1).repeat(1*(hi-low), 1)
+            edge_attr[:window_neighbors.size(1), :-1] = self.static_edges.view(self.neighbors.size(1), -1).repeat(1*(hi-low), 1)
             base = window_neighbors.size(1)
             for i in range(hi-low):
                 for j in range(hi-low):
-                    ind_0 = (base + ncross_01*(j*(hi-low) + i))
-                    ind_1 = ind_0 + ncross_01
+                    ind_0 = (base + ncross*(j*(hi-low) + i))
+                    ind_1 = ind_0 + ncross
                     edge_attr[ind_0:ind_1, -1] = (i-j)
             
             
