@@ -51,13 +51,11 @@ def get_nn_from_plane_pair(indices, n_nearest=3):
 import math
 class Network(nn.Module):
 
-
-
     def __init__(
             self,
             wires_file='protodunevd-wires-larsoft-v3.json.bz2',
             nfeatures=4,
-            time_window=3,
+            time_window=1,
             n_feat_wire = 4,
             detector=0,
             n_input_features=1,
@@ -69,13 +67,13 @@ class Network(nn.Module):
             self.n_input_features=n_input_features
             ##Set up the UNets
             self.unets = nn.ModuleList([
-                    UNet(n_channels=2, n_classes=nfeatures,
+                    UNet(n_channels=n_input_features, n_classes=nfeatures,
                         batch_norm=True, bilinear=True, padding=True)
                     for i in range(3)
             ])
 
             self.GNN = GAT(
-                2*(n_input_features + n_feat_wire) + 3, #Input -- testing without passing unets for now
+                2*(nfeatures + n_feat_wire) + 3, #Input -- testing without passing unets for now
                 1, #Hidden channels -- starting small
                 1, #N message passes -- starting small
                 out_channels=out_channels,
@@ -223,7 +221,7 @@ class Network(nn.Module):
     def forward(self, x):
         outA, outA_meta = self.A(x)
         nregions = outA_meta['nregions']
-        out = torch.zeros(x.shape[0], 1, nregions, x.shape[-2])
+        out = torch.zeros(x.shape[0], 1, nregions, x.shape[-2]).to(x.device)
         for tick in range(nregions):
         # for tick in range(100):
             out[:, 0, tick, :] = self.B(outA, outA_meta, tick)
@@ -234,7 +232,7 @@ class Network(nn.Module):
             #     tick,
             # )
 
-        print(out.size())
+        # print(out.size())
         if self.save:
             torch.save(out, 'out_test.pt')
             print('Saved')
@@ -254,22 +252,26 @@ class Network(nn.Module):
 
         the_device = x.device
         print('Pre unet', x.shape)
-        # xs = [
-        #     x[:, :, (0 if i == 0 else sum(self.nchans[:i])):sum(self.nchans[:i+1]), :]
-        #     for i, nc in enumerate(self.nchans)
-        # ]
-        # for x in xs: print(x.shape)
+        xs = [
+            x[:, :, (0 if i == 0 else sum(self.nchans[:i])):sum(self.nchans[:i+1]), :]
+            for i, nc in enumerate(self.nchans)
+        ]
+        for x in xs: print(x.shape)
 
-        # #Pass through the unets
-        # xs = [
-        #     self.unets[(i if i < 3 else 2)](xs[i]) for i in range(len(xs))
-        # ]
+        #Pass through the unets
+        xs = [
+            # self.unets[(i if i < 3 else 2)](xs[i]) for i in range(len(xs))
+            checkpoint.checkpoint(
+                self.unets[(i if i < 3 else 2)],
+                xs[i]
+            ) for i in range(len(xs))
+        ]
 
-        # print('passed through unets')
-        # for x in xs: print(x.shape)
+        print('passed through unets')
+        for x in xs: print(x.shape)
 
-        # #Cat to get into global channel number shape
-        # x = torch.cat(xs, dim=2)
+        #Cat to get into global channel number shape
+        x = torch.cat(xs, dim=2)
 
         print('Post unet', x.shape)
 
@@ -288,27 +290,31 @@ class Network(nn.Module):
         #Also expand features to include 'meta' features i.e. wire seg number, elec channel
         # n_feat_wire = 4
         new_shape = (x.shape[0], n_feat_base+ self.n_feat_wire, x.shape[2], )
-        as_wires_f0_p0 = torch.zeros(new_shape + (len(self.face_plane_wires_channels[0,0]),))
+        for ij, tensor in self.face_plane_wires_channels.items():
+            self.face_plane_wires_channels[ij] = tensor.to(the_device)
+        self.face_plane_wires_channels[0,0][:,0] = self.face_plane_wires_channels[0,0][:,0].to(the_device)
+        
+        as_wires_f0_p0 = torch.zeros(new_shape + (len(self.face_plane_wires_channels[0,0]),)).to(the_device)
         as_wires_f0_p0[:, :n_feat_base, :, self.face_plane_wires_channels[0,0][:,0]] = x[..., self.face_plane_wires_channels[0,0][:,1]]
 
-        as_wires_f0_p1 = torch.zeros(new_shape + (len(self.face_plane_wires_channels[0,1]),))
+        as_wires_f0_p1 = torch.zeros(new_shape + (len(self.face_plane_wires_channels[0,1]),)).to(the_device)
         as_wires_f0_p1[:, :n_feat_base, :, self.face_plane_wires_channels[0,1][:,0]] = x[..., self.face_plane_wires_channels[0,1][:,1]]
         
-        as_wires_f0_p2 = torch.zeros(new_shape + (len(self.face_plane_wires_channels[0,2]),))
+        as_wires_f0_p2 = torch.zeros(new_shape + (len(self.face_plane_wires_channels[0,2]),)).to(the_device)
         as_wires_f0_p2[:, :n_feat_base, :, self.face_plane_wires_channels[0,2][:,0]] = x[..., self.face_plane_wires_channels[0,2][:,1]]
 
-        print(as_wires_f0_p0.shape)
-        print(as_wires_f0_p1.shape)
-        print(as_wires_f0_p2.shape)
+        # print(as_wires_f0_p0.shape)
+        # print(as_wires_f0_p1.shape)
+        # print(as_wires_f0_p2.shape)
 
         #Put features in last dim
         as_wires_f0_p0 = as_wires_f0_p0.permute(0, 2, 3, 1)
         as_wires_f0_p1 = as_wires_f0_p1.permute(0, 2, 3, 1)
         as_wires_f0_p2 = as_wires_f0_p2.permute(0, 2, 3, 1)
 
-        print(as_wires_f0_p0.shape)
-        print(as_wires_f0_p1.shape)
-        print(as_wires_f0_p2.shape)
+        # print(as_wires_f0_p0.shape)
+        # print(as_wires_f0_p1.shape)
+        # print(as_wires_f0_p2.shape)
 
         #Wire segment number
         as_wires_f0_p0[..., n_feat_base] = self.face_plane_wires_channels[0,0][:,0]
@@ -335,15 +341,15 @@ class Network(nn.Module):
         #Maybe the number of electrically-connected wire segments on either side
         
         #Now set up our 2-channel crossings -- these will be our GNN nodes
-        print('Crossers 01:', self.good_indices_0_01.shape)
+        # print('Crossers 01:', self.good_indices_0_01.shape)
         crossings_01 = torch.cat([
             as_wires_f0_p0[:, :, self.good_indices_0_01[:,0], :],
             as_wires_f0_p1[:, :, self.good_indices_0_01[:,1], :],
-            self.ray_crossings_0_01.view(1, 1, -1, 2).repeat(nbatches, nticks, 1, 1), #locations of crossings
-            torch.arange(nticks).view(1, -1, 1, 1).repeat(nbatches, 1, self.good_indices_0_01.size(0), 1), #tick number
+            self.ray_crossings_0_01.view(1, 1, -1, 2).repeat(nbatches, nticks, 1, 1).to(the_device), #locations of crossings
+            torch.arange(nticks).view(1, -1, 1, 1).repeat(nbatches, 1, self.good_indices_0_01.size(0), 1).to(the_device), #tick number
         ], dim=-1)
 
-        print(crossings_01.shape)
+        # print(crossings_01.shape)
         nfeat = crossings_01.shape[-1]
         
         # torch.save(crossings_01[:,:,:,(2,6)], 'crossings_01.pt')
@@ -352,18 +358,18 @@ class Network(nn.Module):
         crossings_12 = torch.cat([
            as_wires_f0_p1[:, :, self.good_indices_0_12[:,0], :],
            as_wires_f0_p2[:, :, self.good_indices_0_12[:,1], :],
-           self.ray_crossings_0_12.view(1, 1, -1, 2).repeat(nbatches, nticks, 1, 1), #locations of crossings
-           torch.arange(nticks).view(1, -1, 1, 1).repeat(nbatches, 1, self.good_indices_0_12.size(0), 1), #tick number
+           self.ray_crossings_0_12.view(1, 1, -1, 2).repeat(nbatches, nticks, 1, 1).to(the_device), #locations of crossings
+           torch.arange(nticks).view(1, -1, 1, 1).repeat(nbatches, 1, self.good_indices_0_12.size(0), 1).to(the_device), #tick number
         ], dim=-1)
 
         crossings_20 = torch.cat([
            as_wires_f0_p2[:, :, self.good_indices_0_20[:,0], :],
            as_wires_f0_p0[:, :, self.good_indices_0_20[:,1], :],
-           self.ray_crossings_0_20.view(1, 1, -1, 2).repeat(nbatches, nticks, 1, 1), #locations of crossings
-           torch.arange(nticks).view(1, -1, 1, 1).repeat(nbatches, 1, self.good_indices_0_20.size(0), 1), #tick number
+           self.ray_crossings_0_20.view(1, 1, -1, 2).repeat(nbatches, nticks, 1, 1).to(the_device), #locations of crossings
+           torch.arange(nticks).view(1, -1, 1, 1).repeat(nbatches, 1, self.good_indices_0_20.size(0), 1).to(the_device), #tick number
         ], dim=-1)
 
-        print('X 01:', crossings_01.shape)
+        # print('X 01:', crossings_01.shape)
         ncross_01 = crossings_01.shape[-2]
         ncross_12 = crossings_12.shape[-2]
         ncross_20 = crossings_20.shape[-2]
@@ -390,9 +396,9 @@ class Network(nn.Module):
         dt = self.time_window
         n_window_neighbors = self.neighbors.size(1)
         new_window_neighbors_size = n_window_neighbors*dt
-        all_neighbors = torch.zeros(2, new_window_neighbors_size + ncross*((dt)**2), dtype=int)
-        all_neighbors[:, :n_window_neighbors*(dt)] = self.neighbors.repeat(1, dt)
-        all_neighbors[:, new_window_neighbors_size:] = torch.arange(ncross).unsqueeze(0).repeat(2,(dt)**2)
+        all_neighbors = torch.zeros(2, new_window_neighbors_size + ncross*((dt)**2), dtype=int).to(the_device)
+        all_neighbors[:, :n_window_neighbors*(dt)] = self.neighbors.repeat(1, dt).to(the_device)
+        all_neighbors[:, new_window_neighbors_size:] = torch.arange(ncross).unsqueeze(0).repeat(2,(dt)**2).to(the_device)
 
         for i in range(dt):
             all_neighbors[:, i*n_window_neighbors:(i+1)*n_window_neighbors] += (i*ncross)
@@ -403,9 +409,9 @@ class Network(nn.Module):
                 all_neighbors[1, new_window_neighbors_size + (ncross*(j*(dt) + i)):new_window_neighbors_size + (ncross*(j*(dt) + (i+1)))] += j*ncross
 
         n_edge_attr = self.nstatic_edge_attr + 1 #+1 for tick
-        edge_attr = torch.zeros(all_neighbors.size(1), n_edge_attr)
+        edge_attr = torch.zeros(all_neighbors.size(1), n_edge_attr).to(the_device)
         #TODO -- consider batching
-        edge_attr[:new_window_neighbors_size, :-1] = self.static_edges.view(self.neighbors.size(1), -1).repeat(1*(dt), 1)
+        edge_attr[:new_window_neighbors_size, :-1] = self.static_edges.view(self.neighbors.size(1), -1).repeat(1*(dt), 1).to(the_device)
         base = new_window_neighbors_size
         for i in range(dt):
             for j in range(dt):
@@ -463,6 +469,7 @@ class Network(nn.Module):
         ncross_01 = xmeta['ncross_01']
         ncross_12 = xmeta['ncross_12']
         ncross_20 = xmeta['ncross_20']
+        the_device = xmeta['the_device']
 
         all_crossings = x['all_crossings']
         all_neighbors = x['all_neighbors']
@@ -473,7 +480,7 @@ class Network(nn.Module):
         # hi = tick + to_pad + 1
         low = tick
         hi = low + 2*to_pad+1
-        print(low, tick, hi)
+        # print(low, tick, hi)
 
         window = all_crossings[:, low:hi, ...].view(nbatches, -1, nfeat)
         window = window.reshape(-1, nfeat)
@@ -494,7 +501,7 @@ class Network(nn.Module):
             y[:, -ncross_20:, :],
         ]
 
-        out = torch.zeros(nbatches, nchannels, self.out_channels)
+        out = torch.zeros(nbatches, nchannels, self.out_channels).to(the_device)
 
         #plane 0
         torch_scatter.scatter_add(
@@ -542,7 +549,7 @@ class Network(nn.Module):
         out = self.sigmoid(self.mlp(out)).view(1, 1, -1)
         
 
-        print(out.size())
+        # print(out.size())
         if self.save:
             torch.save(out, 'out_test.pt')
             print('Saved')
