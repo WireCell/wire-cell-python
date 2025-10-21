@@ -10,6 +10,7 @@ from wirecell.dnn.models.unet import UNet
 from wirecell.raygrid.coordinates import Coordinates
 from wirecell.raygrid import crossover as xover
 from wirecell.util.wires import schema, persist
+import torch.utils.checkpoint as checkpoint
 
 def check_A_in_B(A, B):
     B_map = {
@@ -56,7 +57,7 @@ class Network(nn.Module):
             self,
             wires_file='protodunevd-wires-larsoft-v3.json.bz2',
             nfeatures=4,
-            time_window=1,
+            time_window=3,
             n_feat_wire = 4,
             detector=0,
             n_input_features=1,
@@ -223,9 +224,15 @@ class Network(nn.Module):
         outA, outA_meta = self.A(x)
         nregions = outA_meta['nregions']
         out = torch.zeros(x.shape[0], 1, nregions, x.shape[-2])
-        # for tick in range(nregions):
-        for tick in range(100):
+        for tick in range(nregions):
+        # for tick in range(100):
             out[:, 0, tick, :] = self.B(outA, outA_meta, tick)
+            # out[:, 0, tick, :] = checkpoint.checkpoint(
+            #     self.checkpointed_B(self.B),
+            #     outA,
+            #     outA_meta,
+            #     tick,
+            # )
 
         print(out.size())
         if self.save:
@@ -430,8 +437,19 @@ class Network(nn.Module):
         )
 
         return x, xmeta
-    
 
+    def checkpointed_B(self, func):
+        def custom_forward(*inputs):
+            out = func(*inputs)
+            return out
+        return custom_forward
+    
+    # def checkpointed_GNN(self, func):
+    #     def custom_forward(*inputs):
+    #         out = func(inputs[0], inputs[1], inputs[2])
+    #         return out
+    #     return custom_forward
+    
     def B(self, x, xmeta, tick):
 
         n_feat_base = xmeta['n_feat_base']
@@ -460,7 +478,13 @@ class Network(nn.Module):
         window = all_crossings[:, low:hi, ...].view(nbatches, -1, nfeat)
         window = window.reshape(-1, nfeat)
 
-        y = self.GNN(window, all_neighbors, edge_attr=edge_attr)
+        # y = self.GNN(window, all_neighbors, edge_attr=edge_attr)
+        y = checkpoint.checkpoint(
+            self.GNN,
+            window,
+            all_neighbors,
+            edge_attr,
+        )
         #Just get out the middle element
         y = y.reshape(nbatches, self.time_window, -1,self.out_channels)[:, int((self.time_window-1)/2), ...]
 
