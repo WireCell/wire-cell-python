@@ -219,7 +219,7 @@ class Network(nn.Module):
             self.sigmoid = nn.Sigmoid()
             self.save = True
 
-    def forward(self, x):
+    def forward2(self, x):
         '''
         Input data is assumed to be of shape (nbatch, nfeatures, nchannels, nticks)
         '''
@@ -498,4 +498,312 @@ class Network(nn.Module):
             print('Saved')
             self.save = False
         return out.permute(0, 1, 3, 2)
+
+
+    def forward(self, x):
+        outA, outA_meta = self.A(x)
+        nregions = outA_meta['nregions']
+        out = torch.zeros(x.shape[0], 1, nregions, x.shape[-2])
+        # for tick in range(nregions):
+        for tick in range(100):
+            out[:, 0, tick, :] = self.B(outA, outA_meta, tick)
+
+        print(out.size())
+        if self.save:
+            torch.save(out, 'out_test.pt')
+            print('Saved')
+            self.save = False
+        return out.permute(0, 1, 3, 2)
+
+
+
+    def A(self, x):
+        '''
+        Input data is assumed to be of shape (nbatch, nfeatures, nchannels, nticks)
+        '''
+        input_shape = x.shape
+        nbatches = x.shape[0]
+        nticks = x.shape[-1]
+        nchannels = x.shape[-2]
+
+        the_device = x.device
+        print('Pre unet', x.shape)
+        # xs = [
+        #     x[:, :, (0 if i == 0 else sum(self.nchans[:i])):sum(self.nchans[:i+1]), :]
+        #     for i, nc in enumerate(self.nchans)
+        # ]
+        # for x in xs: print(x.shape)
+
+        # #Pass through the unets
+        # xs = [
+        #     self.unets[(i if i < 3 else 2)](xs[i]) for i in range(len(xs))
+        # ]
+
+        # print('passed through unets')
+        # for x in xs: print(x.shape)
+
+        # #Cat to get into global channel number shape
+        # x = torch.cat(xs, dim=2)
+
+        print('Post unet', x.shape)
+
+        n_feat_base = x.shape[1]
+        nticks_orig = x.size(-1)
+        #For ease
+        to_pad = int((self.time_window-1)/2)
+        x = F.pad(x, (to_pad, to_pad))
+        nticks = x.size(-1)
+        print(x.shape)
+        x = x.permute(0,1,3,2)
+
+
+       
+        #Convert from channels to wires (values duped for common elec chan)
+        #Also expand features to include 'meta' features i.e. wire seg number, elec channel
+        # n_feat_wire = 4
+        new_shape = (x.shape[0], n_feat_base+ self.n_feat_wire, x.shape[2], )
+        as_wires_f0_p0 = torch.zeros(new_shape + (len(self.face_plane_wires_channels[0,0]),))
+        as_wires_f0_p0[:, :n_feat_base, :, self.face_plane_wires_channels[0,0][:,0]] = x[..., self.face_plane_wires_channels[0,0][:,1]]
+
+        as_wires_f0_p1 = torch.zeros(new_shape + (len(self.face_plane_wires_channels[0,1]),))
+        as_wires_f0_p1[:, :n_feat_base, :, self.face_plane_wires_channels[0,1][:,0]] = x[..., self.face_plane_wires_channels[0,1][:,1]]
+        
+        as_wires_f0_p2 = torch.zeros(new_shape + (len(self.face_plane_wires_channels[0,2]),))
+        as_wires_f0_p2[:, :n_feat_base, :, self.face_plane_wires_channels[0,2][:,0]] = x[..., self.face_plane_wires_channels[0,2][:,1]]
+
+        print(as_wires_f0_p0.shape)
+        print(as_wires_f0_p1.shape)
+        print(as_wires_f0_p2.shape)
+
+        #Put features in last dim
+        as_wires_f0_p0 = as_wires_f0_p0.permute(0, 2, 3, 1)
+        as_wires_f0_p1 = as_wires_f0_p1.permute(0, 2, 3, 1)
+        as_wires_f0_p2 = as_wires_f0_p2.permute(0, 2, 3, 1)
+
+        print(as_wires_f0_p0.shape)
+        print(as_wires_f0_p1.shape)
+        print(as_wires_f0_p2.shape)
+
+        #Wire segment number
+        as_wires_f0_p0[..., n_feat_base] = self.face_plane_wires_channels[0,0][:,0]
+        as_wires_f0_p1[..., n_feat_base] = self.face_plane_wires_channels[0,1][:,0]
+        as_wires_f0_p2[..., n_feat_base] = self.face_plane_wires_channels[0,2][:,0]
+
+        #elec chan number
+        as_wires_f0_p0[..., n_feat_base + 1] = self.face_plane_wires_channels[0,0][:,1]
+        as_wires_f0_p1[..., n_feat_base + 1] = self.face_plane_wires_channels[0,1][:,1]
+        as_wires_f0_p2[..., n_feat_base + 1] = self.face_plane_wires_channels[0,2][:,1]
+
+        #Anode face
+        as_wires_f0_p0[..., n_feat_base + 2] = 0
+        as_wires_f0_p1[..., n_feat_base + 2] = 0
+        as_wires_f0_p2[..., n_feat_base + 2] = 0
+
+        #Wire plane
+        as_wires_f0_p0[..., n_feat_base + 3] = 0
+        as_wires_f0_p1[..., n_feat_base + 3] = 1
+        as_wires_f0_p2[..., n_feat_base + 3] = 2
+
+        #Could add more things: i.e. channel RMS over readout window.
+        #Worth some thought and tests
+        #Maybe the number of electrically-connected wire segments on either side
+        
+        #Now set up our 2-channel crossings -- these will be our GNN nodes
+        print('Crossers 01:', self.good_indices_0_01.shape)
+        crossings_01 = torch.cat([
+            as_wires_f0_p0[:, :, self.good_indices_0_01[:,0], :],
+            as_wires_f0_p1[:, :, self.good_indices_0_01[:,1], :],
+            self.ray_crossings_0_01.view(1, 1, -1, 2).repeat(nbatches, nticks, 1, 1), #locations of crossings
+            torch.arange(nticks).view(1, -1, 1, 1).repeat(nbatches, 1, self.good_indices_0_01.size(0), 1), #tick number
+        ], dim=-1)
+
+        print(crossings_01.shape)
+        nfeat = crossings_01.shape[-1]
+        
+        # torch.save(crossings_01[:,:,:,(2,6)], 'crossings_01.pt')
+        # torch.save(self.good_indices_0_01, 'good_indices_01.pt')
+
+        crossings_12 = torch.cat([
+           as_wires_f0_p1[:, :, self.good_indices_0_12[:,0], :],
+           as_wires_f0_p2[:, :, self.good_indices_0_12[:,1], :],
+           self.ray_crossings_0_12.view(1, 1, -1, 2).repeat(nbatches, nticks, 1, 1), #locations of crossings
+           torch.arange(nticks).view(1, -1, 1, 1).repeat(nbatches, 1, self.good_indices_0_12.size(0), 1), #tick number
+        ], dim=-1)
+
+        crossings_20 = torch.cat([
+           as_wires_f0_p2[:, :, self.good_indices_0_20[:,0], :],
+           as_wires_f0_p0[:, :, self.good_indices_0_20[:,1], :],
+           self.ray_crossings_0_20.view(1, 1, -1, 2).repeat(nbatches, nticks, 1, 1), #locations of crossings
+           torch.arange(nticks).view(1, -1, 1, 1).repeat(nbatches, 1, self.good_indices_0_20.size(0), 1), #tick number
+        ], dim=-1)
+
+        print('X 01:', crossings_01.shape)
+        ncross_01 = crossings_01.shape[-2]
+        ncross_12 = crossings_12.shape[-2]
+        ncross_20 = crossings_20.shape[-2]
+        
+        
+        all_crossings = torch.cat([
+            crossings_01,
+            crossings_12,
+            crossings_20,
+        ], dim=-2)
+        ncross = ncross_01 + ncross_12 + ncross_20
+        print(ncross_01, ncross_12, ncross_20, ncross)
+        # all_crossings = crossings_01
+        # ncross = ncross_01
+
+        #WHEN BUILDING UP THE TIME WINDOW FUNCTIONALITY
+        # TRY TO MAKE IT SO THAT YOU CAN JUST SET TIME WINDOW = 1
+        # THIS WILL BE USEFUL AS A HYPER PARAMETER & FOR ABLATION STUDIES
+        # to_pad = int((self.time_window-1)/2)
+        # padded = F.pad(all_crossings, (0,0, 0, 0, to_pad, to_pad))
+        # print('padded shape:', padded.size())
+
+        #in-tick crossings
+        dt = self.time_window
+        n_window_neighbors = self.neighbors.size(1)
+        new_window_neighbors_size = n_window_neighbors*dt
+        all_neighbors = torch.zeros(2, new_window_neighbors_size + ncross*((dt)**2), dtype=int)
+        all_neighbors[:, :n_window_neighbors*(dt)] = self.neighbors.repeat(1, dt)
+        all_neighbors[:, new_window_neighbors_size:] = torch.arange(ncross).unsqueeze(0).repeat(2,(dt)**2)
+
+        for i in range(dt):
+            all_neighbors[:, i*n_window_neighbors:(i+1)*n_window_neighbors] += (i*ncross)
+            # print(i, ncross*i, n_window_neighbors, i*n_window_neighbors, (i+1)*n_window_neighbors)
+
+            for j in range(dt):
+                all_neighbors[0, new_window_neighbors_size + (ncross*(j*(dt) + i)):new_window_neighbors_size + (ncross*(j*(dt) + (i+1)))] += i*ncross
+                all_neighbors[1, new_window_neighbors_size + (ncross*(j*(dt) + i)):new_window_neighbors_size + (ncross*(j*(dt) + (i+1)))] += j*ncross
+
+        n_edge_attr = self.nstatic_edge_attr + 1 #+1 for tick
+        edge_attr = torch.zeros(all_neighbors.size(1), n_edge_attr)
+        #TODO -- consider batching
+        edge_attr[:new_window_neighbors_size, :-1] = self.static_edges.view(self.neighbors.size(1), -1).repeat(1*(dt), 1)
+        base = new_window_neighbors_size
+        for i in range(dt):
+            for j in range(dt):
+                ind_0 = (base + ncross*(j*(dt) + i))
+                ind_1 = ind_0 + ncross
+                edge_attr[ind_0:ind_1, -1] = (i-j)
+        
+        xmeta = dict(
+            input_shape=input_shape,
+            nbatches=nbatches,
+            nticks_orig=nticks_orig,
+            nregions=nticks_orig,
+            nticks=nticks,
+            to_pad=to_pad,
+            n_feat_base=n_feat_base,
+            nchannels=nchannels,
+            the_device=the_device,
+            nfeat=nfeat,
+            ncross=ncross,
+            ncross_01=ncross_01,
+            ncross_12=ncross_12,
+            ncross_20=ncross_20,
+        )
+
+        x = dict(
+            all_crossings=all_crossings,
+            all_neighbors=all_neighbors,
+            edge_attr=edge_attr,
+        )
+
+        return x, xmeta
+    
+
+    def B(self, x, xmeta, tick):
+
+        n_feat_base = xmeta['n_feat_base']
+        nbatches = xmeta['nbatches']
+        nticks = xmeta['nticks']
+        nchannels = xmeta['nchannels']
+        nticks_orig = xmeta['nticks_orig']
+        to_pad = xmeta['to_pad']
+        nfeat = xmeta['nfeat']
+        ncross = xmeta['ncross']
+        ncross_01 = xmeta['ncross_01']
+        ncross_12 = xmeta['ncross_12']
+        ncross_20 = xmeta['ncross_20']
+
+        all_crossings = x['all_crossings']
+        all_neighbors = x['all_neighbors']
+        edge_attr = x['edge_attr']
+        out = torch.zeros(nbatches, 1, nticks_orig, nchannels)
+        
+        # low = tick - to_pad
+        # hi = tick + to_pad + 1
+        low = tick
+        hi = low + 2*to_pad+1
+        print(low, tick, hi)
+
+        window = all_crossings[:, low:hi, ...].view(nbatches, -1, nfeat)
+        window = window.reshape(-1, nfeat)
+
+        y = self.GNN(window, all_neighbors, edge_attr=edge_attr)
+        #Just get out the middle element
+        y = y.reshape(nbatches, self.time_window, -1,self.out_channels)[:, int((self.time_window-1)/2), ...]
+
+        y = [
+            y[:, :ncross_01, :],
+            y[:, ncross_01:ncross_01+ncross_12, :],
+            y[:, -ncross_20:, :],
+        ]
+
+        out = torch.zeros(nbatches, nchannels, self.out_channels)
+
+        #plane 0
+        torch_scatter.scatter_add(
+            y[0],
+            self.face_plane_wires_channels[(0,0)][self.good_indices_0_01[:,0]][:,1],
+            out=out,
+            dim=1
+        )
+        torch_scatter.scatter_add(
+            y[2],
+            self.face_plane_wires_channels[(0,0)][self.good_indices_0_20[:,1]][:,1],
+            out=out,
+            dim=1
+        )
+
+        #plane 1
+        torch_scatter.scatter_add(
+            y[0],
+            self.face_plane_wires_channels[(0,1)][self.good_indices_0_01[:,1]][:,1],
+            out=out,
+            dim=1
+        )
+        torch_scatter.scatter_add(
+            y[1],
+            self.face_plane_wires_channels[(0,1)][self.good_indices_0_12[:,0]][:,1],
+            out=out,
+            dim=1
+        )
+
+        #plane 2
+        torch_scatter.scatter_add(
+            y[1],
+            self.face_plane_wires_channels[(0,2)][self.good_indices_0_12[:,1]][:,1],
+            out=out,
+            dim=1
+        )
+        torch_scatter.scatter_add(
+            y[2],
+            self.face_plane_wires_channels[(0,2)][self.good_indices_0_20[:,0]][:,1],
+            out=out,
+            dim=1
+        )
+
+        #batch, feat, channel
+        out = self.sigmoid(self.mlp(out)).view(1, 1, -1)
+        
+
+        print(out.size())
+        if self.save:
+            torch.save(out, 'out_test.pt')
+            print('Saved')
+            self.save = False
+
+        return out
 
