@@ -22,6 +22,7 @@ Classifier training
 from torch import optim, no_grad, float16, autocast, amp
 import torch.nn as nn
 import torch.cuda.memory as memory
+import torch.cuda as cuda
 
 def dump(name, data):
     # print(f'{name:20s}: {data.shape} {data.dtype} {data.device}')
@@ -87,7 +88,7 @@ class Classifier:
             # self.scaler.scale(loss.to('cuda:0')).backward()
             # self.scaler.scale(loss).backward()
             
-            if snapshot_mem and snapshot_at == ie:
+            if snapshot_mem and snapshot_at == ie and cuda.is_available():
                 # try:
                 memory._dump_snapshot(f"backward.pickle")
                 print('Saved backward snapshot')
