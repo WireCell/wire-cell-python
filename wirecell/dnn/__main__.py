@@ -65,6 +65,7 @@ def train(ctx, config, epochs, batch, device, cache, debug_torch,
     '''
     # delay importing this monster
     import torch
+    import torch.cuda.memory as memory
     from torch.utils.data import DataLoader
     import wirecell.dnn.apps
 
@@ -83,6 +84,7 @@ def train(ctx, config, epochs, batch, device, cache, debug_torch,
     if debug_torch:
         torch.autograd.set_detect_anomaly(True)
 
+    memory._record_memory_history(max_entries=10000000)
     name = app
     app = getattr(wirecell.dnn.apps, name)
 

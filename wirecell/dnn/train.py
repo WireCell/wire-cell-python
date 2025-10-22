@@ -19,8 +19,9 @@ Classifier training
     - optimizer.step()
 
 '''
-from torch import optim, no_grad
+from torch import optim, no_grad, float16, autocast, amp
 import torch.nn as nn
+import torch.cuda.memory as memory
 
 def dump(name, data):
     # print(f'{name:20s}: {data.shape} {data.dtype} {data.device}')
@@ -33,6 +34,8 @@ class Classifier:
         self.net = net              # model
         self.optimizer = optimizer
         self.criterion = criterion
+        self.scaler = amp.GradScaler('cuda:0')
+
 
     def loss(self, features, labels):
 
@@ -62,14 +65,39 @@ class Classifier:
         Train over the batches of the data, return list of losses at each batch.
         '''
         self.net.train()
-
         epoch_losses = list()
-        for features, labels in data:
+        snapshot_mem = True
+        snapshot_at = 1
+        for ie, (features, labels) in enumerate(data):
 
+            # with autocast(
+            #     self._device,
+            #     dtype=float16):
+            #     loss = self.loss(features, labels)
             loss = self.loss(features, labels)
 
+            # if snapshot_mem:
+            #     # try:
+            #     memory._dump_snapshot(f"forward.pickle")
+            #     print('Saved foward snapshot')
+            #     # except Exception as e:
+            #         # print(f"Failed to capture memory snapshot {e}")
+            
             loss.backward(retain_graph=retain_graph)
+            # self.scaler.scale(loss.to('cuda:0')).backward()
+            # self.scaler.scale(loss).backward()
+            
+            if snapshot_mem and snapshot_at == ie:
+                # try:
+                memory._dump_snapshot(f"backward.pickle")
+                print('Saved backward snapshot')
+                snapshot_mem = False
+                memory._record_memory_history(enabled=None)
+            
             self.optimizer.step()
+            # self.scaler.step(self.optimizer)
+            # self.scaler.update()
+            
             self.optimizer.zero_grad()
 
             loss = loss.item()

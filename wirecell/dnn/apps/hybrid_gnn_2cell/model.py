@@ -50,7 +50,7 @@ def get_nn_from_plane_pair(indices, n_nearest=3):
 
 import math
 class Network(nn.Module):
-
+    # @torch.autocast('cuda' if torch.cuda.is_available() else 'cpu', dtype=torch.float16) #TODO -- Fix this
     def __init__(
             self,
             wires_file='protodunevd-wires-larsoft-v3.json.bz2',
@@ -59,18 +59,23 @@ class Network(nn.Module):
             n_feat_wire = 4,
             detector=0,
             n_input_features=1,
+            skip_unets=True,
             out_channels=4):
         super().__init__()
         with torch.no_grad():
             self.nfeat_post_unet=nfeatures
             self.n_feat_wire = n_feat_wire
             self.n_input_features=n_input_features
+            self.skip_unets=skip_unets
             ##Set up the UNets
             self.unets = nn.ModuleList([
                     UNet(n_channels=n_input_features, n_classes=nfeatures,
                         batch_norm=True, bilinear=True, padding=True)
                     for i in range(3)
             ])
+
+            if skip_unets:
+                nfeatures=n_input_features
 
             self.GNN = GAT(
                 2*(nfeatures + n_feat_wire) + 3, #Input -- testing without passing unets for now
@@ -216,7 +221,7 @@ class Network(nn.Module):
             self.nchans = [476, 476, 292, 292]
 
             self.sigmoid = nn.Sigmoid()
-            self.save = True
+            self.save = False
 
     def forward(self, x):
         outA, outA_meta = self.A(x)
@@ -225,12 +230,6 @@ class Network(nn.Module):
         for tick in range(nregions):
         # for tick in range(100):
             out[:, 0, tick, :] = self.B(outA, outA_meta, tick)
-            # out[:, 0, tick, :] = checkpoint.checkpoint(
-            #     self.checkpointed_B(self.B),
-            #     outA,
-            #     outA_meta,
-            #     tick,
-            # )
 
         # print(out.size())
         if self.save:
@@ -252,28 +251,30 @@ class Network(nn.Module):
 
         the_device = x.device
         print('Pre unet', x.shape)
-        xs = [
-            x[:, :, (0 if i == 0 else sum(self.nchans[:i])):sum(self.nchans[:i+1]), :]
-            for i, nc in enumerate(self.nchans)
-        ]
-        for x in xs: print(x.shape)
 
-        #Pass through the unets
-        xs = [
-            # self.unets[(i if i < 3 else 2)](xs[i]) for i in range(len(xs))
-            checkpoint.checkpoint(
-                self.unets[(i if i < 3 else 2)],
-                xs[i]
-            ) for i in range(len(xs))
-        ]
+        if not self.skip_unets:
+            xs = [
+                x[:, :, (0 if i == 0 else sum(self.nchans[:i])):sum(self.nchans[:i+1]), :]
+                for i, nc in enumerate(self.nchans)
+            ]
+            for x in xs: print(x.shape)
 
-        print('passed through unets')
-        for x in xs: print(x.shape)
+            #Pass through the unets
+            xs = [
+                self.unets[(i if i < 3 else 2)](xs[i]) for i in range(len(xs))
+                # checkpoint.checkpoint(
+                #     self.unets[(i if i < 3 else 2)],
+                #     xs[i]
+                # ) for i in range(len(xs))
+            ]
 
-        #Cat to get into global channel number shape
-        x = torch.cat(xs, dim=2)
+            print('passed through unets')
+            for x in xs: print(x.shape)
 
-        print('Post unet', x.shape)
+            #Cat to get into global channel number shape
+            x = torch.cat(xs, dim=2)
+
+            print('Post unet', x.shape)
 
         n_feat_base = x.shape[1]
         nticks_orig = x.size(-1)
@@ -444,18 +445,6 @@ class Network(nn.Module):
 
         return x, xmeta
 
-    def checkpointed_B(self, func):
-        def custom_forward(*inputs):
-            out = func(*inputs)
-            return out
-        return custom_forward
-    
-    # def checkpointed_GNN(self, func):
-    #     def custom_forward(*inputs):
-    #         out = func(inputs[0], inputs[1], inputs[2])
-    #         return out
-    #     return custom_forward
-    
     def B(self, x, xmeta, tick):
 
         n_feat_base = xmeta['n_feat_base']
@@ -474,7 +463,7 @@ class Network(nn.Module):
         all_crossings = x['all_crossings']
         all_neighbors = x['all_neighbors']
         edge_attr = x['edge_attr']
-        out = torch.zeros(nbatches, 1, nticks_orig, nchannels)
+        # out = torch.zeros(nbatches, 1, nticks_orig, nchannels).to('cuda:1')
         
         # low = tick - to_pad
         # hi = tick + to_pad + 1
@@ -486,6 +475,10 @@ class Network(nn.Module):
         window = window.reshape(-1, nfeat)
 
         # y = self.GNN(window, all_neighbors, edge_attr=edge_attr)
+
+        # self.GNN = self.GNN.to('cuda:1')
+        # y = self.GNN(window.to('cuda:1'), all_neighbors.to('cuda:1'), edge_attr=edge_attr.to('cuda:1')).to('cuda:0')
+        
         y = checkpoint.checkpoint(
             self.GNN,
             window,
@@ -546,7 +539,8 @@ class Network(nn.Module):
         )
 
         #batch, feat, channel
-        out = self.sigmoid(self.mlp(out)).view(1, 1, -1)
+        # out = self.sigmoid(self.mlp(out)).view(1, 1, -1)
+        out = self.mlp(out).view(1,1,-1)
         
 
         # print(out.size())
