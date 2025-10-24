@@ -32,11 +32,11 @@ def get_nearest(rcs, n=5):
         dist[(arange, nearest)] += 1.e32
     return knns
 
-def scatter_crossings(coords, v1, r1, v2, r2):
+def scatter_crossings(coords, v1, r1, v2, r2, color='black'):
     rc = coords.ray_crossing(v1, r1, v2, r2)
     xs = rc.detach().numpy()[:,0]
     ys = rc.detach().numpy()[:,1]
-    plt.scatter(xs, ys, color='black')
+    plt.scatter(xs, ys, color=color)
 
 def coords_from_schema(store, face_index, drift='vd'):
     views = views_from_schema(store, face_index, drift)
@@ -154,9 +154,10 @@ def build_cross(rays_i, rays_j):
 def get_indices(coords, cross, i, j, k):
     #Find the locations in the third plane of crossing points from the first 2 planes
     #Then turn those into indices within the last plane
-    locs = coords.pitch_location(i, cross[:, 0], j, cross[:, 1], k)
+    base = len(coords.views) - 3
+    locs = coords.pitch_location(i+base, cross[:, 0], j+base, cross[:, 1], k+base)
     # torch.save(locs, 'xover_locs.pt')
-    indices = coords.pitch_index(locs, k)
+    indices = coords.pitch_index(locs, k+base)
     return indices
 
 def get_good_crossers(coords, i, j, nwires):

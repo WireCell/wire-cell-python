@@ -19,7 +19,7 @@ Classifier training
     - optimizer.step()
 
 '''
-from torch import optim, no_grad, float16, autocast, amp
+from torch import optim, no_grad, float16, autocast, amp, any, save
 import torch.nn as nn
 import torch.cuda.memory as memory
 import torch.cuda as cuda
@@ -36,6 +36,8 @@ class Classifier:
         self.optimizer = optimizer
         self.criterion = criterion
         self.scaler = amp.GradScaler('cuda:0')
+        self.save_iter = 0
+        self.do_save = False
 
 
     def loss(self, features, labels):
@@ -48,16 +50,34 @@ class Classifier:
         prediction = self.net(features)
         dump('prediction', prediction)
 
+
+        print('Pred:', prediction)
+        with no_grad():
+            s = nn.Sigmoid()
+            sigpred = s(prediction)
+            print('Pred Sigmoid:', sigpred)
+            if self.do_save:
+                save(sigpred, f'eval_out_{self.save_iter}.pt')
+
+        print('Labels:', labels)
+        print('Any in Labels:', any(labels))
         loss = self.criterion(prediction, labels)
         return loss
 
     def evaluate(self, data):
+        print("EVALUATING")
         losses = list()
+        self.do_save = True
         with no_grad():
             for features, labels in data:
                 loss = self.loss(features, labels)
+                
+                save(labels, f'eval_labels_{self.save_iter}.pt')
+                save(features, f'eval_input_{self.save_iter}.pt')
+                self.save_iter += 1
                 loss = loss.item()
                 losses.append(loss)
+        self.do_save = False
         return losses
 
 
@@ -102,6 +122,7 @@ class Classifier:
             self.optimizer.zero_grad()
 
             loss = loss.item()
+            print('Loss:', loss)
             epoch_losses.append(loss)
 
         return epoch_losses

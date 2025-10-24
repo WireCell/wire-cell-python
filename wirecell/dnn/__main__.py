@@ -98,7 +98,7 @@ def train(ctx, config, epochs, batch, device, cache, debug_torch,
     if load:
         if not Path(load).exists():
             raise click.FileError(load, 'warning: DNN module load file does not exist')
-        history = dnn.io.load_checkpoint(load, net, opt)
+        history = wirecell.dnn.io.load_checkpoint(load, net, opt)
 
     ds_dt = time.time()
     ds = app.Dataset(files, cache=cache, config=config.get("dataset", None))
@@ -142,7 +142,7 @@ def train(ctx, config, epochs, batch, device, cache, debug_torch,
     def saveit(path):
         if not path:
             return
-        dnn.io.save_checkpoint(path, net, opt, runs=run_history, epochs=epoch_history)
+        wirecell.dnn.io.save_checkpoint(path, net, opt, runs=run_history, epochs=epoch_history)
 
     for this_epoch_number in range(first_epoch_number, first_epoch_number + epochs):
 
@@ -187,7 +187,7 @@ def dump(ctx, checkpoint):
     '''
     Dump info about a checkpoint file.
     '''
-    state = dnn.io.load_checkpoint_raw(checkpoint)
+    state = wirecell.dnn.io.load_checkpoint_raw(checkpoint)
     for rnum, robj in state.get("runs",{}).items():
         print('run: {run} ntrain: {ntrain} neval: {neval}'.format(**robj))
     for enum, eobj in state.get("epochs",{}).items():
