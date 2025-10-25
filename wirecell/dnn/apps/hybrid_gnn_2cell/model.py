@@ -136,12 +136,12 @@ class Network(nn.Module):
     def __init__(
             self,
             wires_file='protodunevd-wires-larsoft-v3.json.bz2',
-            n_unet_features=16,
+            n_unet_features=4,
             time_window=1,
-            n_feat_wire =0,
+            n_feat_wire = 2,
             detector=0,
             n_input_features=1,
-            skip_unets=True,
+            skip_unets=False,
             skip_GNN=False,
             out_channels=4):
         super().__init__()
@@ -161,8 +161,8 @@ class Network(nn.Module):
 
         self.GNN = GAT(
             2*(n_unet_features + n_feat_wire) + 2, #Input
-            1, #Hidden channels -- starting small
-            1, #N message passes -- starting small
+            4, #Hidden channels -- starting small
+            2, #N message passes -- starting small
             out_channels=out_channels,
         )
         self.out_channels=out_channels
@@ -200,12 +200,16 @@ class Network(nn.Module):
             for i, face in enumerate(self.faces):
                 for jj, j in enumerate(face.planes):
                     plane = store.planes[j]
-                    wire_chans = []
+                    # wire_chans = []
+                    wire_chans = torch.zeros((len(plane.wires), 2), dtype=int)
                     for wi in plane.wires:
                         wire = store.wires[wi]
-                        wire_chans.append([wire.ident, chanmap[wire.channel]]) #convert from larsoft
+                        # wire_chans.append([wire.ident, chanmap[wire.channel]]) #convert from larsoft
+                        wire_chans[wire.ident, 0] = wire.ident
+                        wire_chans[wire.ident, 1] = chanmap[wire.channel]
+                    # self.face_plane_wires_channels[(i,jj)] = torch.tensor(wire_chans, dtype=int)
                     self.face_plane_wires_channels[(i,jj)] = torch.tensor(wire_chans, dtype=int)
-                    print('Made fpwc:', i, jj, self.face_plane_wires_channels[(i,jj)].shape)
+                    # print('Made fpwc:', i, jj, self.face_plane_wires_channels[(i,jj)].shape)
             
 
             # face_to_plane_to_nwires = {
@@ -261,54 +265,105 @@ class Network(nn.Module):
 
             self.nstatic_edge_attr = 4
             n_nearest_third_plane = 0
-            third_plane_neighbors_0_012 = get_nn_third_plane(
-                self.coords_face0,
-                self.good_indices_0_01, self.good_indices_0_12, self.good_indices_0_20,
-                0, 1, 2, n_nearest=n_nearest_third_plane)
-            third_plane_neighbors_0_120 = get_nn_third_plane(
-                self.coords_face0,
-                self.good_indices_0_12, self.good_indices_0_20, self.good_indices_0_01,
-                1, 2, 0, n_nearest=n_nearest_third_plane)
-            third_plane_neighbors_0_201 = get_nn_third_plane(
-                self.coords_face0,
-                self.good_indices_0_20, self.good_indices_0_01, self.good_indices_0_12,
-                2, 0, 1, n_nearest=n_nearest_third_plane)
-            
 
-            plane3_edges_01_12 = self.make_edge_attr(
+            third_plane_setups = [
+                [self.coords_face0, self.good_indices_0_01, self.good_indices_0_12, self.good_indices_0_20, 0, 1, 2],
+                [self.coords_face0, self.good_indices_0_12, self.good_indices_0_20, self.good_indices_0_01, 1, 2, 0],
+                [self.coords_face0, self.good_indices_0_20, self.good_indices_0_01, self.good_indices_0_12, 2, 0, 1],
+                [self.coords_face1, self.good_indices_1_01, self.good_indices_1_12, self.good_indices_1_20, 0, 1, 2],
+                [self.coords_face1, self.good_indices_1_12, self.good_indices_1_20, self.good_indices_1_01, 1, 2, 0],
+                [self.coords_face1, self.good_indices_1_20, self.good_indices_1_01, self.good_indices_1_12, 2, 0, 1],
+            ]
+
+            # third_plane_neighbors_0_012 = get_nn_third_plane(
+            #     self.coords_face0,
+            #     self.good_indices_0_01, self.good_indices_0_12, self.good_indices_0_20,
+            #     0, 1, 2, n_nearest=n_nearest_third_plane)
+            # third_plane_neighbors_0_120 = get_nn_third_plane(
+            #     self.coords_face0,
+            #     self.good_indices_0_12, self.good_indices_0_20, self.good_indices_0_01,
+            #     1, 2, 0, n_nearest=n_nearest_third_plane)
+            # third_plane_neighbors_0_201 = get_nn_third_plane(
+            #     self.coords_face0,
+            #     self.good_indices_0_20, self.good_indices_0_01, self.good_indices_0_12,
+            #     2, 0, 1, n_nearest=n_nearest_third_plane)
+            third_plane_neighbors_0_012 = get_nn_third_plane(*(third_plane_setups[0]), n_nearest=n_nearest_third_plane)
+            third_plane_neighbors_0_120 = get_nn_third_plane(*(third_plane_setups[1]), n_nearest=n_nearest_third_plane)
+            third_plane_neighbors_0_201 = get_nn_third_plane(*(third_plane_setups[2]), n_nearest=n_nearest_third_plane)
+            third_plane_neighbors_1_012 = get_nn_third_plane(*(third_plane_setups[3]), n_nearest=n_nearest_third_plane)
+            third_plane_neighbors_1_120 = get_nn_third_plane(*(third_plane_setups[4]), n_nearest=n_nearest_third_plane)
+            third_plane_neighbors_1_201 = get_nn_third_plane(*(third_plane_setups[5]), n_nearest=n_nearest_third_plane)
+
+            #FACE 0
+            plane3_edges_f0_01_12 = self.make_edge_attr(
                 third_plane_neighbors_0_012[(1,2)],
                 self.nstatic_edge_attr,
                 self.ray_crossings_0_01, self.ray_crossings_0_12
             )
-            plane3_edges_01_20 = self.make_edge_attr(
+            plane3_edges_f0_01_20 = self.make_edge_attr(
                 third_plane_neighbors_0_012[(2,0)],
                 self.nstatic_edge_attr,
                 self.ray_crossings_0_01, self.ray_crossings_0_20
             )
             
-            plane3_edges_12_20 = self.make_edge_attr(
+            plane3_edges_f0_12_20 = self.make_edge_attr(
                 third_plane_neighbors_0_120[(2,0)],
                 self.nstatic_edge_attr,
                 self.ray_crossings_0_12, self.ray_crossings_0_20
             )
-            plane3_edges_12_01 = self.make_edge_attr(
+            plane3_edges_f0_12_01 = self.make_edge_attr(
                 third_plane_neighbors_0_120[(0,1)],
                 self.nstatic_edge_attr,
                 self.ray_crossings_0_12, self.ray_crossings_0_01
             )
-            
-            plane3_edges_20_01 = self.make_edge_attr(
+
+            plane3_edges_f0_20_01 = self.make_edge_attr(
                 third_plane_neighbors_0_201[(0,1)],
                 self.nstatic_edge_attr,
                 self.ray_crossings_0_20, self.ray_crossings_0_01
             )
-            plane3_edges_20_12 = self.make_edge_attr(
+            plane3_edges_f0_20_12 = self.make_edge_attr(
                 third_plane_neighbors_0_201[(1,2)],
                 self.nstatic_edge_attr,
                 self.ray_crossings_0_20, self.ray_crossings_0_12
             )
 
+            #FACE 1
+            plane3_edges_f1_01_12 = self.make_edge_attr(
+                third_plane_neighbors_1_012[(1,2)],
+                self.nstatic_edge_attr,
+                self.ray_crossings_1_01, self.ray_crossings_1_12
+            )
+            plane3_edges_f1_01_20 = self.make_edge_attr(
+                third_plane_neighbors_1_012[(2,0)],
+                self.nstatic_edge_attr,
+                self.ray_crossings_1_01, self.ray_crossings_1_20
+            )
+            
+            plane3_edges_f1_12_20 = self.make_edge_attr(
+                third_plane_neighbors_1_120[(2,0)],
+                self.nstatic_edge_attr,
+                self.ray_crossings_1_12, self.ray_crossings_1_20
+            )
+            plane3_edges_f1_12_01 = self.make_edge_attr(
+                third_plane_neighbors_1_120[(0,1)],
+                self.nstatic_edge_attr,
+                self.ray_crossings_1_12, self.ray_crossings_1_01
+            )
+
+            plane3_edges_f1_20_01 = self.make_edge_attr(
+                third_plane_neighbors_1_201[(0,1)],
+                self.nstatic_edge_attr,
+                self.ray_crossings_1_20, self.ray_crossings_1_01
+            )
+            plane3_edges_f1_20_12 = self.make_edge_attr(
+                third_plane_neighbors_1_201[(1,2)],
+                self.nstatic_edge_attr,
+                self.ray_crossings_1_20, self.ray_crossings_1_12
+            )
+
             #Account for the 'global' crossing indices
+            #FACE 0
             third_plane_neighbors_0_012[(1,2)][0,:] += 0 #For clarity/explicitness
             third_plane_neighbors_0_012[(2,0)][0,:] += 0 #For clarity/explicitness
             third_plane_neighbors_0_012[(1,2)][1,:] += n_0_01
@@ -323,8 +378,22 @@ class Network(nn.Module):
             third_plane_neighbors_0_201[(1,2)][0,:] += n_0_01 + n_0_12
             third_plane_neighbors_0_201[(0,1)][1,:] += 0 #For clarity/explicitness
             third_plane_neighbors_0_201[(1,2)][1,:] += n_0_01
-            print('Made 3rd plane neighbors')
-            # time.sleep(10)
+
+            #FACE 1
+            third_plane_neighbors_1_012[(1,2)][0,:] += n_0_total + 0 #For clarity/explicitness
+            third_plane_neighbors_1_012[(2,0)][0,:] += n_0_total + 0 #For clarity/explicitness
+            third_plane_neighbors_1_012[(1,2)][1,:] += n_0_total + n_1_01
+            third_plane_neighbors_1_012[(2,0)][1,:] += n_0_total + n_1_01 + n_1_12
+            
+            third_plane_neighbors_1_120[(2,0)][0,:] += n_0_total + n_1_01
+            third_plane_neighbors_1_120[(0,1)][0,:] += n_0_total + n_1_01
+            third_plane_neighbors_1_120[(2,0)][1,:] += n_0_total + n_1_01 + n_1_12
+            third_plane_neighbors_1_120[(0,1)][1,:] += n_0_total + 0 #For clarity/explicitness
+            
+            third_plane_neighbors_1_201[(0,1)][0,:] += n_0_total + n_1_01 + n_1_12
+            third_plane_neighbors_1_201[(1,2)][0,:] += n_0_total + n_1_01 + n_1_12
+            third_plane_neighbors_1_201[(0,1)][1,:] += n_0_total + 0 #For clarity/explicitness
+            third_plane_neighbors_1_201[(1,2)][1,:] += n_0_total + n_1_01
 
             #Neighbors between anode faces which are connected by the elec channel?
             #TODO
@@ -335,7 +404,7 @@ class Network(nn.Module):
                 (nearest_neighbors_0_12 + n_0_01),
                 (nearest_neighbors_0_20 + n_0_01 + n_0_12),
                 
-                nearest_neighbors_1_01,
+                nearest_neighbors_1_01 + n_0_total,
                 (nearest_neighbors_1_12 + n_0_total + n_1_01),
                 (nearest_neighbors_1_20 + n_0_total + n_1_01 + n_1_12),
 
@@ -345,6 +414,13 @@ class Network(nn.Module):
                 third_plane_neighbors_0_120[(0,1)],
                 third_plane_neighbors_0_201[(0,1)],
                 third_plane_neighbors_0_201[(1,2)],
+
+                third_plane_neighbors_1_012[(1,2)],
+                third_plane_neighbors_1_012[(2,0)],
+                third_plane_neighbors_1_120[(2,0)],
+                third_plane_neighbors_1_120[(0,1)],
+                third_plane_neighbors_1_201[(0,1)],
+                third_plane_neighbors_1_201[(1,2)],
             ], dim=1)
 
             #Static edge attributes -- dZ, dY, r=sqrt(dZ**2 + dY**2), dFace
@@ -389,18 +465,26 @@ class Network(nn.Module):
                 static_edges_1_01,
                 static_edges_1_12,
                 static_edges_1_20,
-                plane3_edges_01_12,
-                plane3_edges_01_20,
-                plane3_edges_12_20,
-                plane3_edges_12_01,
-                plane3_edges_20_01,
-                plane3_edges_20_12,
+
+                plane3_edges_f0_01_12,
+                plane3_edges_f0_01_20,
+                plane3_edges_f0_12_20,
+                plane3_edges_f0_12_01,
+                plane3_edges_f0_20_01,
+                plane3_edges_f0_20_12,
+                
+                plane3_edges_f1_01_12,
+                plane3_edges_f1_01_20,
+                plane3_edges_f1_12_20,
+                plane3_edges_f1_12_01,
+                plane3_edges_f1_20_01,
+                plane3_edges_f1_20_12,
             ])
 
             self.static_edges[..., :2] /= torch.norm(self.coords_face0.bounding_box, dim=1)
             self.static_edges[:, 2] = torch.norm(self.static_edges[:, :2], dim=1)
 
-            print('Len static edges & neighbors:',  self.static_edges.shape, self.neighbors.shape)
+            # print('Len static edges & neighbors:',  self.static_edges.shape, self.neighbors.shape)
 
             self.nchans = [476, 476, 292, 292]
 
@@ -462,8 +546,8 @@ class Network(nn.Module):
         wire_chans = self.face_plane_wires_channels[(face, plane)]
         wires = torch.zeros((x.shape[0], (hi-low), len(wire_chans), nfeat)).to(x.device)
         wires[:, :, wire_chans[:, 0], :x.shape[-1]] = x[:, low:hi, wire_chans[:,1], :]
-        # wires[..., x.shape[-1]] = plane
-        # wires[..., x.shape[-1]+1] = face
+        wires[..., x.shape[-1]] = plane
+        wires[..., x.shape[-1]+1] = face
         return wires
     
     def forward(self, x):
@@ -476,7 +560,7 @@ class Network(nn.Module):
         nchannels = x.shape[-2]
 
         the_device = x.device
-        print('Pre unet', x.shape)
+        # print('Pre unet', x.shape)
 
         if not self.skip_unets:
             if self.save:
@@ -485,7 +569,7 @@ class Network(nn.Module):
                 x[:, :, (0 if i == 0 else sum(self.nchans[:i])):sum(self.nchans[:i+1]), :]
                 for i, nc in enumerate(self.nchans)
             ]
-            for x in xs: print(x.shape)
+            # for x in xs: print(x.shape)
 
             #Pass through the unets
             xs = [
@@ -497,13 +581,13 @@ class Network(nn.Module):
             ]
 
             print('passed through unets')
-            for x in xs: print(x.shape)
+            # for x in xs: print(x.shape)
 
             #Cat to get into global channel number shape
             x = torch.cat(xs, dim=2)
             if self.save:
                 torch.save(x, 'post_unet_test.pt')
-            print('Post unet', x.shape)
+            # print('Post unet', x.shape)
 
 
         
@@ -519,7 +603,7 @@ class Network(nn.Module):
             to_pad = int((self.time_window-1)/2)
             x = F.pad(x, (to_pad, to_pad))
             nticks = x.size(-1)
-            print(x.shape)
+            # print(x.shape)
             x = x.permute(0,3,2,1)
             #Convert from channels to wires (values duped for common elec chan)
             #Also expand features to include 'meta' features i.e. wire seg number, elec channel
@@ -545,7 +629,7 @@ class Network(nn.Module):
             # ncrosses = [ncross_01, ncross_12, ncross_20]
             ranges = [[sum(ncrosses[:i]), sum(ncrosses[:i+1])] for i in range(len(ncrosses))]
             ncross = ncross_01 + ncross_12 + ncross_20 + ncross_1_01 + ncross_1_12 + ncross_1_20
-            print(ncross_01, ncross_12, ncross_20, ncross)
+            # print(ncross_01, ncross_12, ncross_20, ncross)
 
             #in-tick crossings
             dt = self.time_window
@@ -568,8 +652,6 @@ class Network(nn.Module):
             #TODO -- consider batching
             edge_attr[:new_window_neighbors_size, :-1] = self.static_edges.view(self.neighbors.size(1), -1).repeat(1*(dt), 1).to(the_device)
             base = new_window_neighbors_size
-
-            print('Edges & neighbors:', all_neighbors.size(), edge_attr.size())
 
             for i in range(dt):
                 for j in range(dt):

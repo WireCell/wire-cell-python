@@ -51,16 +51,16 @@ class Classifier:
         dump('prediction', prediction)
 
 
-        print('Pred:', prediction)
+        # print('Pred:', prediction)
         with no_grad():
             s = nn.Sigmoid()
             sigpred = s(prediction)
-            print('Pred Sigmoid:', sigpred)
+            # print('Pred Sigmoid:', sigpred)
             if self.do_save:
                 save(sigpred, f'eval_out_{self.save_iter}.pt')
 
-        print('Labels:', labels)
-        print('Any in Labels:', any(labels))
+        # print('Labels:', labels)
+        # print('Any in Labels:', any(labels))
         loss = self.criterion(prediction, labels)
         return loss
 
@@ -68,15 +68,25 @@ class Classifier:
         print("EVALUATING")
         losses = list()
         self.do_save = True
+        if cuda.is_available():
+            memory._record_memory_history(enabled=True)
+
+                
         with no_grad():
-            for features, labels in data:
+            snapshot_at = 5
+            for ie, (features, labels) in enumerate(data):
                 loss = self.loss(features, labels)
                 
                 save(labels, f'eval_labels_{self.save_iter}.pt')
                 save(features, f'eval_input_{self.save_iter}.pt')
                 self.save_iter += 1
                 loss = loss.item()
+                print('Eval Loss:', loss)
                 losses.append(loss)
+                if snapshot_at == ie and cuda.is_available():
+                    memory._dump_snapshot(f"eval.pickle")
+                    memory._record_memory_history(enabled=False)
+                    print('Saved eval snapshot')
         self.do_save = False
         return losses
 
@@ -174,10 +184,10 @@ class Looper:
 
             outA, outA_meta = self.net.A(features)
 
-            print('all_crossings:', outA['all_crossings'].shape)
-            print('all_neighbors:', outA['all_neighbors'].shape)
-            print('edge_attr:', outA['edge_attr'].shape)
-            print('labels:', labels.shape)
+            # print('all_crossings:', outA['all_crossings'].shape)
+            # print('all_neighbors:', outA['all_neighbors'].shape)
+            # print('edge_attr:', outA['edge_attr'].shape)
+            # print('labels:', labels.shape)
             nregions = outA_meta['nregions']
 
             total_loss_val = 0.0
@@ -185,7 +195,7 @@ class Looper:
             # for i in range(nregions):
             for i in range(100):
                 outB_i = self.net.B(outA, outA_meta, i)
-                print('outB_i shape:', outB_i.shape)
+                # print('outB_i shape:', outB_i.shape)
                 loss_i = self.criterion(outB_i, labels[..., i])
                 total_loss_val += loss_i.item()
                 total_loss_tensor = total_loss_tensor + loss_i
@@ -194,7 +204,7 @@ class Looper:
 
             self.optimizer.step()
             self.optimizer.zero_grad()
-            print('Total loss:', total_loss_val)
+            # print('Total loss:', total_loss_val)
             epoch_losses.append(total_loss_val)
 
         return epoch_losses
