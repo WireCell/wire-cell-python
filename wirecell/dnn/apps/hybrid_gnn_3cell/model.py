@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch_scatter
 from torch_geometric.data import Data
-from torch_geometric.nn import GAT
+from torch_geometric.nn import GAT, GCN
 from wirecell.dnn.models.unet import UNet
 from wirecell.raygrid.coordinates import Coordinates
 from wirecell.raygrid import crossover as xover
@@ -84,13 +84,15 @@ class Network(nn.Module):
             wires_file='protodunevd-wires-larsoft-v3.json.bz2',
             n_unet_features=4,
             time_window=1,
-            n_feat_wire = 2,
+            n_feat_wire = 0,
             detector=0,
             n_input_features=1,
             skip_unets=False,
             skip_GNN=False,
             one_side=False,
-            out_channels=4):
+            out_channels=4,
+            #gcn=False, #Currently not working
+        ):
         super().__init__()
         self.nfeat_post_unet=n_unet_features
         self.n_feat_wire = n_feat_wire
@@ -107,11 +109,10 @@ class Network(nn.Module):
         if skip_unets:
             n_unet_features=n_input_features
         self.features_into_GNN = 3*(n_unet_features + n_feat_wire)# + 8
-        self.GNN = GAT(
-            self.features_into_GNN, # + 8, #Input
-            8, #Hidden channels -- starting small
-            2, #N message passes -- starting small
-            out_channels=out_channels,
+        gnn_settings = [self.features_into_GNN, 8, 2]
+        self.GNN = (
+            # GCN(*gnn_settings, out_channels=out_channels) if gcn else #Currently not working
+            GAT(*gnn_settings, out_channels=out_channels)
         )
         self.out_channels=out_channels
         self.mlp = nn.Linear((n_unet_features if skip_GNN else out_channels), 1)
@@ -222,14 +223,14 @@ class Network(nn.Module):
             # #      Same question for cross face (i.e. 0,1 on face 0 and 0,1 on face 1)
             
 
-            self.nstatic_edge_attr = 10
+            self.nstatic_edge_attr = 13
             static_edges_0 = self.make_edge_attr(
-                nearest_neighbors_0, self.nstatic_edge_attr,
-                self.ray_crossings_0, 0
+                nearest_neighbors_0, self.good_indices_0, self.nstatic_edge_attr,
+                self.ray_crossings_0, self.nwires_0, 0
             )
             static_edges_1 = self.make_edge_attr(
-                nearest_neighbors_1, self.nstatic_edge_attr,
-                self.ray_crossings_1, 0
+                nearest_neighbors_1, self.good_indices_1, self.nstatic_edge_attr,
+                self.ray_crossings_1, self.nwires_1, 0
             ) 
 
             self.static_edges = torch.cat(
@@ -240,16 +241,11 @@ class Network(nn.Module):
                 ] if not one_side else [])
             )
 
-            # self.static_edges[..., 0:2] /= torch.norm(self.coords_face0.bounding_box, dim=1)
-            # self.static_edges[..., 2:4] /= torch.norm(self.coords_face0.bounding_box, dim=1)
-            # self.static_edges[..., 4:6] /= torch.norm(self.coords_face0.bounding_box, dim=1)
-            # self.static_edges[:, 6] = torch.norm(self.static_edges[:, :2], dim=1)
-
             self.nchans = [476, 476, 292, 292]
 
             self.save = True
 
-    def make_edge_attr(self, neighbors, nattr, crossings, dface=0):
+    def make_edge_attr(self, neighbors, cells, nattr, crossings, nwires, dface=0):
         edge_attrs = torch.zeros(neighbors.size(1), nattr)
         edge_attrs[:, :2] = (
             crossings[neighbors[0], 0] -
@@ -263,9 +259,12 @@ class Network(nn.Module):
             crossings[neighbors[0], 1] -
             crossings[neighbors[1], 1]
         ) #dZ, dY ki crossing
-        edge_attrs[:, 6] = torch.norm(edge_attrs[:, :2], dim=1) # r
-        edge_attrs[:, 7] = torch.norm(edge_attrs[:, 2:4], dim=1) # r
-        edge_attrs[:, 8] = torch.norm(edge_attrs[:, 4:6], dim=1) # r
+        edge_attrs[:, 6] = torch.norm(edge_attrs[:, :2], dim=1) # r for ij
+        edge_attrs[:, 7] = torch.norm(edge_attrs[:, 2:4], dim=1) # r for jk
+        edge_attrs[:, 8] = torch.norm(edge_attrs[:, 4:6], dim=1) # r for ki
+
+        edge_attrs[:, 9:12] = cells[neighbors[0]] - cells[neighbors[1]] / torch.Tensor(nwires)
+
         edge_attrs[:, -1] = dface #dFace
         return edge_attrs
     
@@ -307,8 +306,8 @@ class Network(nn.Module):
         wire_chans = self.face_plane_wires_channels[(face, plane)]
         wires = torch.zeros((x.shape[0], (hi-low), len(wire_chans), nfeat)).to(x.device)
         wires[:, :, wire_chans[:, 0], :x.shape[-1]] = x[:, low:hi, wire_chans[:,1], :]
-        wires[..., x.shape[-1]] = plane
-        wires[..., x.shape[-1]+1] = face
+        # wires[..., x.shape[-1]] = plane
+        # wires[..., x.shape[-1]+1] = face
         return wires
     
     def forward(self, x):
