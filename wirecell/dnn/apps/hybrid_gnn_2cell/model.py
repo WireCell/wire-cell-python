@@ -87,7 +87,8 @@ def get_nn_third_plane(
     '''
     
     #TODO -- consider clamping
-    base = len(coords.views) - 3
+    # base = len(coords.views) - 3
+    base=0
     #Crossing point indices in the third plane
     in_k = xover.get_indices(coords, indices_ij, i+base, j+base, k+base)
 
@@ -141,8 +142,9 @@ class Network(nn.Module):
             n_feat_wire = 2,
             detector=0,
             n_input_features=1,
-            skip_unets=False,
+            skip_unets=True,
             skip_GNN=False,
+            one_side=False,
             out_channels=4):
         super().__init__()
         self.nfeat_post_unet=n_unet_features
@@ -156,12 +158,13 @@ class Network(nn.Module):
                 for i in range(3)
         ])
         self.skip_GNN=skip_GNN
+        self.one_side=one_side
         if skip_unets:
             n_unet_features=n_input_features
 
         self.GNN = GAT(
             2*(n_unet_features + n_feat_wire) + 2, #Input
-            4, #Hidden channels -- starting small
+            8, #Hidden channels -- starting small
             2, #N message passes -- starting small
             out_channels=out_channels,
         )
@@ -270,29 +273,22 @@ class Network(nn.Module):
                 [self.coords_face0, self.good_indices_0_01, self.good_indices_0_12, self.good_indices_0_20, 0, 1, 2],
                 [self.coords_face0, self.good_indices_0_12, self.good_indices_0_20, self.good_indices_0_01, 1, 2, 0],
                 [self.coords_face0, self.good_indices_0_20, self.good_indices_0_01, self.good_indices_0_12, 2, 0, 1],
-                [self.coords_face1, self.good_indices_1_01, self.good_indices_1_12, self.good_indices_1_20, 0, 1, 2],
-                [self.coords_face1, self.good_indices_1_12, self.good_indices_1_20, self.good_indices_1_01, 1, 2, 0],
-                [self.coords_face1, self.good_indices_1_20, self.good_indices_1_01, self.good_indices_1_12, 2, 0, 1],
-            ]
+            ] + (
+                [] if one_side else
+                [
+                    [self.coords_face1, self.good_indices_1_01, self.good_indices_1_12, self.good_indices_1_20, 0, 1, 2],
+                    [self.coords_face1, self.good_indices_1_12, self.good_indices_1_20, self.good_indices_1_01, 1, 2, 0],
+                    [self.coords_face1, self.good_indices_1_20, self.good_indices_1_01, self.good_indices_1_12, 2, 0, 1],
+                ]
+            )
 
-            # third_plane_neighbors_0_012 = get_nn_third_plane(
-            #     self.coords_face0,
-            #     self.good_indices_0_01, self.good_indices_0_12, self.good_indices_0_20,
-            #     0, 1, 2, n_nearest=n_nearest_third_plane)
-            # third_plane_neighbors_0_120 = get_nn_third_plane(
-            #     self.coords_face0,
-            #     self.good_indices_0_12, self.good_indices_0_20, self.good_indices_0_01,
-            #     1, 2, 0, n_nearest=n_nearest_third_plane)
-            # third_plane_neighbors_0_201 = get_nn_third_plane(
-            #     self.coords_face0,
-            #     self.good_indices_0_20, self.good_indices_0_01, self.good_indices_0_12,
-            #     2, 0, 1, n_nearest=n_nearest_third_plane)
             third_plane_neighbors_0_012 = get_nn_third_plane(*(third_plane_setups[0]), n_nearest=n_nearest_third_plane)
             third_plane_neighbors_0_120 = get_nn_third_plane(*(third_plane_setups[1]), n_nearest=n_nearest_third_plane)
             third_plane_neighbors_0_201 = get_nn_third_plane(*(third_plane_setups[2]), n_nearest=n_nearest_third_plane)
-            third_plane_neighbors_1_012 = get_nn_third_plane(*(third_plane_setups[3]), n_nearest=n_nearest_third_plane)
-            third_plane_neighbors_1_120 = get_nn_third_plane(*(third_plane_setups[4]), n_nearest=n_nearest_third_plane)
-            third_plane_neighbors_1_201 = get_nn_third_plane(*(third_plane_setups[5]), n_nearest=n_nearest_third_plane)
+            if not one_side:
+                third_plane_neighbors_1_012 = get_nn_third_plane(*(third_plane_setups[3]), n_nearest=n_nearest_third_plane)
+                third_plane_neighbors_1_120 = get_nn_third_plane(*(third_plane_setups[4]), n_nearest=n_nearest_third_plane)
+                third_plane_neighbors_1_201 = get_nn_third_plane(*(third_plane_setups[5]), n_nearest=n_nearest_third_plane)
 
             #FACE 0
             plane3_edges_f0_01_12 = self.make_edge_attr(
@@ -329,38 +325,39 @@ class Network(nn.Module):
             )
 
             #FACE 1
-            plane3_edges_f1_01_12 = self.make_edge_attr(
-                third_plane_neighbors_1_012[(1,2)],
-                self.nstatic_edge_attr,
-                self.ray_crossings_1_01, self.ray_crossings_1_12
-            )
-            plane3_edges_f1_01_20 = self.make_edge_attr(
-                third_plane_neighbors_1_012[(2,0)],
-                self.nstatic_edge_attr,
-                self.ray_crossings_1_01, self.ray_crossings_1_20
-            )
-            
-            plane3_edges_f1_12_20 = self.make_edge_attr(
-                third_plane_neighbors_1_120[(2,0)],
-                self.nstatic_edge_attr,
-                self.ray_crossings_1_12, self.ray_crossings_1_20
-            )
-            plane3_edges_f1_12_01 = self.make_edge_attr(
-                third_plane_neighbors_1_120[(0,1)],
-                self.nstatic_edge_attr,
-                self.ray_crossings_1_12, self.ray_crossings_1_01
-            )
+            if not one_side:
+                plane3_edges_f1_01_12 = self.make_edge_attr(
+                    third_plane_neighbors_1_012[(1,2)],
+                    self.nstatic_edge_attr,
+                    self.ray_crossings_1_01, self.ray_crossings_1_12
+                )
+                plane3_edges_f1_01_20 = self.make_edge_attr(
+                    third_plane_neighbors_1_012[(2,0)],
+                    self.nstatic_edge_attr,
+                    self.ray_crossings_1_01, self.ray_crossings_1_20
+                )
+                
+                plane3_edges_f1_12_20 = self.make_edge_attr(
+                    third_plane_neighbors_1_120[(2,0)],
+                    self.nstatic_edge_attr,
+                    self.ray_crossings_1_12, self.ray_crossings_1_20
+                )
+                plane3_edges_f1_12_01 = self.make_edge_attr(
+                    third_plane_neighbors_1_120[(0,1)],
+                    self.nstatic_edge_attr,
+                    self.ray_crossings_1_12, self.ray_crossings_1_01
+                )
 
-            plane3_edges_f1_20_01 = self.make_edge_attr(
-                third_plane_neighbors_1_201[(0,1)],
-                self.nstatic_edge_attr,
-                self.ray_crossings_1_20, self.ray_crossings_1_01
-            )
-            plane3_edges_f1_20_12 = self.make_edge_attr(
-                third_plane_neighbors_1_201[(1,2)],
-                self.nstatic_edge_attr,
-                self.ray_crossings_1_20, self.ray_crossings_1_12
-            )
+                plane3_edges_f1_20_01 = self.make_edge_attr(
+                    third_plane_neighbors_1_201[(0,1)],
+                    self.nstatic_edge_attr,
+                    self.ray_crossings_1_20, self.ray_crossings_1_01
+                )
+                plane3_edges_f1_20_12 = self.make_edge_attr(
+                    third_plane_neighbors_1_201[(1,2)],
+                    self.nstatic_edge_attr,
+                    self.ray_crossings_1_20, self.ray_crossings_1_12
+                )
 
             #Account for the 'global' crossing indices
             #FACE 0
@@ -380,48 +377,55 @@ class Network(nn.Module):
             third_plane_neighbors_0_201[(1,2)][1,:] += n_0_01
 
             #FACE 1
-            third_plane_neighbors_1_012[(1,2)][0,:] += n_0_total + 0 #For clarity/explicitness
-            third_plane_neighbors_1_012[(2,0)][0,:] += n_0_total + 0 #For clarity/explicitness
-            third_plane_neighbors_1_012[(1,2)][1,:] += n_0_total + n_1_01
-            third_plane_neighbors_1_012[(2,0)][1,:] += n_0_total + n_1_01 + n_1_12
-            
-            third_plane_neighbors_1_120[(2,0)][0,:] += n_0_total + n_1_01
-            third_plane_neighbors_1_120[(0,1)][0,:] += n_0_total + n_1_01
-            third_plane_neighbors_1_120[(2,0)][1,:] += n_0_total + n_1_01 + n_1_12
-            third_plane_neighbors_1_120[(0,1)][1,:] += n_0_total + 0 #For clarity/explicitness
-            
-            third_plane_neighbors_1_201[(0,1)][0,:] += n_0_total + n_1_01 + n_1_12
-            third_plane_neighbors_1_201[(1,2)][0,:] += n_0_total + n_1_01 + n_1_12
-            third_plane_neighbors_1_201[(0,1)][1,:] += n_0_total + 0 #For clarity/explicitness
-            third_plane_neighbors_1_201[(1,2)][1,:] += n_0_total + n_1_01
+            if not one_side:
+                third_plane_neighbors_1_012[(1,2)][0,:] += n_0_total + 0 #For clarity/explicitness
+                third_plane_neighbors_1_012[(2,0)][0,:] += n_0_total + 0 #For clarity/explicitness
+                third_plane_neighbors_1_012[(1,2)][1,:] += n_0_total + n_1_01
+                third_plane_neighbors_1_012[(2,0)][1,:] += n_0_total + n_1_01 + n_1_12
+                
+                third_plane_neighbors_1_120[(2,0)][0,:] += n_0_total + n_1_01
+                third_plane_neighbors_1_120[(0,1)][0,:] += n_0_total + n_1_01
+                third_plane_neighbors_1_120[(2,0)][1,:] += n_0_total + n_1_01 + n_1_12
+                third_plane_neighbors_1_120[(0,1)][1,:] += n_0_total + 0 #For clarity/explicitness
+                
+                third_plane_neighbors_1_201[(0,1)][0,:] += n_0_total + n_1_01 + n_1_12
+                third_plane_neighbors_1_201[(1,2)][0,:] += n_0_total + n_1_01 + n_1_12
+                third_plane_neighbors_1_201[(0,1)][1,:] += n_0_total + 0 #For clarity/explicitness
+                third_plane_neighbors_1_201[(1,2)][1,:] += n_0_total + n_1_01
 
             #Neighbors between anode faces which are connected by the elec channel?
             #TODO
 
 
-            self.neighbors = torch.cat([
-                nearest_neighbors_0_01,
-                (nearest_neighbors_0_12 + n_0_01),
-                (nearest_neighbors_0_20 + n_0_01 + n_0_12),
-                
-                nearest_neighbors_1_01 + n_0_total,
-                (nearest_neighbors_1_12 + n_0_total + n_1_01),
-                (nearest_neighbors_1_20 + n_0_total + n_1_01 + n_1_12),
+            self.neighbors = torch.cat(
+                [
+                    nearest_neighbors_0_01,
+                    (nearest_neighbors_0_12 + n_0_01),
+                    (nearest_neighbors_0_20 + n_0_01 + n_0_12),
+                ] +
+                ([
+                    nearest_neighbors_1_01 + n_0_total,
+                    (nearest_neighbors_1_12 + n_0_total + n_1_01),
+                    (nearest_neighbors_1_20 + n_0_total + n_1_01 + n_1_12),
+                ] if not one_side else []) +
+                [
+                    third_plane_neighbors_0_012[(1,2)],
+                    third_plane_neighbors_0_012[(2,0)],
+                    third_plane_neighbors_0_120[(2,0)],
+                    third_plane_neighbors_0_120[(0,1)],
+                    third_plane_neighbors_0_201[(0,1)],
+                    third_plane_neighbors_0_201[(1,2)],
+                ] +
+                ([
+                    third_plane_neighbors_1_012[(1,2)],
+                    third_plane_neighbors_1_012[(2,0)],
+                    third_plane_neighbors_1_120[(2,0)],
+                    third_plane_neighbors_1_120[(0,1)],
+                    third_plane_neighbors_1_201[(0,1)],
+                    third_plane_neighbors_1_201[(1,2)],
+                ] if not one_side else []), dim=1)
 
-                third_plane_neighbors_0_012[(1,2)],
-                third_plane_neighbors_0_012[(2,0)],
-                third_plane_neighbors_0_120[(2,0)],
-                third_plane_neighbors_0_120[(0,1)],
-                third_plane_neighbors_0_201[(0,1)],
-                third_plane_neighbors_0_201[(1,2)],
-
-                third_plane_neighbors_1_012[(1,2)],
-                third_plane_neighbors_1_012[(2,0)],
-                third_plane_neighbors_1_120[(2,0)],
-                third_plane_neighbors_1_120[(0,1)],
-                third_plane_neighbors_1_201[(0,1)],
-                third_plane_neighbors_1_201[(1,2)],
-            ], dim=1)
+            print(f'TOTAL EDGES: {self.neighbors.size(1)}')
 
             #Static edge attributes -- dZ, dY, r=sqrt(dZ**2 + dY**2), dFace
             #TODO  Do things like dWire0, dWire1 make sense for things like cross-pair (i.e. 0,1 and 0,2) neighbors?
@@ -458,28 +462,29 @@ class Network(nn.Module):
                 0)            
             
 
-            self.static_edges = torch.cat([
-                static_edges_0_01,
-                static_edges_0_12,
-                static_edges_0_20,
-                static_edges_1_01,
-                static_edges_1_12,
-                static_edges_1_20,
-
-                plane3_edges_f0_01_12,
-                plane3_edges_f0_01_20,
-                plane3_edges_f0_12_20,
-                plane3_edges_f0_12_01,
-                plane3_edges_f0_20_01,
-                plane3_edges_f0_20_12,
-                
-                plane3_edges_f1_01_12,
-                plane3_edges_f1_01_20,
-                plane3_edges_f1_12_20,
-                plane3_edges_f1_12_01,
-                plane3_edges_f1_20_01,
-                plane3_edges_f1_20_12,
-            ])
+            self.static_edges = torch.cat(
+                [
+                    static_edges_0_01,
+                    static_edges_0_12,
+                    static_edges_0_20,
+                    plane3_edges_f0_01_12,
+                    plane3_edges_f0_01_20,
+                    plane3_edges_f0_12_20,
+                    plane3_edges_f0_12_01,
+                    plane3_edges_f0_20_01,
+                    plane3_edges_f0_20_12,
+                ] + ([
+                    static_edges_1_01,
+                    static_edges_1_12,
+                    static_edges_1_20,
+                    plane3_edges_f1_01_12,
+                    plane3_edges_f1_01_20,
+                    plane3_edges_f1_12_20,
+                    plane3_edges_f1_12_01,
+                    plane3_edges_f1_20_01,
+                    plane3_edges_f1_20_12,
+                ] if not one_side else [])
+            )
 
             self.static_edges[..., :2] /= torch.norm(self.coords_face0.bounding_box, dim=1)
             self.static_edges[:, 2] = torch.norm(self.static_edges[:, :2], dim=1)
@@ -505,38 +510,99 @@ class Network(nn.Module):
         #TODO -- check size of y etc
         temp_out = torch.zeros(nbatches, nchannels, y[0].size(-1)).to(the_device)
 
+        # to_scatter = [
+        #     #plane0
+        #     [y[0], self.face_plane_wires_channels[(0,0)][self.good_indices_0_01[:,0]][:,1]],
+        #     [y[2], self.face_plane_wires_channels[(0,0)][self.good_indices_0_20[:,1]][:,1]],
+            
+        #     #plane1
+        #     [y[0], self.face_plane_wires_channels[(0,1)][self.good_indices_0_01[:,1]][:,1]],
+        #     [y[1], self.face_plane_wires_channels[(0,1)][self.good_indices_0_12[:,0]][:,1]],
+            
+        #     #plane2
+        #     [y[1], self.face_plane_wires_channels[(0,2)][self.good_indices_0_12[:,1]][:,1]],
+        #     [y[2], self.face_plane_wires_channels[(0,2)][self.good_indices_0_20[:,0]][:,1]],
+        # ] + ([] if self.one_side else [
+        #     #plane0
+        #     [y[3], self.face_plane_wires_channels[(1,0)][self.good_indices_1_01[:,0]][:,1]],
+        #     [y[5], self.face_plane_wires_channels[(1,0)][self.good_indices_1_20[:,1]][:,1]],
+            
+        #     #plane1
+        #     [y[3], self.face_plane_wires_channels[(1,1)][self.good_indices_1_01[:,1]][:,1]],
+        #     [y[4], self.face_plane_wires_channels[(1,1)][self.good_indices_1_12[:,0]][:,1]],
+            
+        #     #plane2
+        #     [y[4], self.face_plane_wires_channels[(1,2)][self.good_indices_1_12[:,1]][:,1]],
+        #     [y[5], self.face_plane_wires_channels[(1,2)][self.good_indices_1_20[:,0]][:,1]],
+        # ])
+
         to_scatter = [
             #plane0
-            [y[0], self.face_plane_wires_channels[(0,0)][self.good_indices_0_01[:,0]][:,1]],
-            [y[2], self.face_plane_wires_channels[(0,0)][self.good_indices_0_20[:,1]][:,1]],
+            [
+                [y[0], y[2]],
+                [self.face_plane_wires_channels[(0,0)][self.good_indices_0_01[:,0]][:,1],
+                 self.face_plane_wires_channels[(0,0)][self.good_indices_0_20[:,1]][:,1]]
+            ],
+            # [y[0], self.face_plane_wires_channels[(0,0)][self.good_indices_0_01[:,0]][:,1]],
+            # [y[2], self.face_plane_wires_channels[(0,0)][self.good_indices_0_20[:,1]][:,1]],
             
             #plane1
-            [y[0], self.face_plane_wires_channels[(0,1)][self.good_indices_0_01[:,1]][:,1]],
-            [y[1], self.face_plane_wires_channels[(0,1)][self.good_indices_0_12[:,0]][:,1]],
+            [
+                [y[0], y[1]],
+                [self.face_plane_wires_channels[(0,1)][self.good_indices_0_01[:,1]][:,1],
+                 self.face_plane_wires_channels[(0,1)][self.good_indices_0_12[:,0]][:,1]]
+            ],
+            # [y[0], self.face_plane_wires_channels[(0,1)][self.good_indices_0_01[:,1]][:,1]],
+            # [y[1], self.face_plane_wires_channels[(0,1)][self.good_indices_0_12[:,0]][:,1]],
             
             #plane2
-            [y[1], self.face_plane_wires_channels[(0,2)][self.good_indices_0_12[:,1]][:,1]],
-            [y[2], self.face_plane_wires_channels[(0,2)][self.good_indices_0_20[:,0]][:,1]],
+            [
+                [y[1], y[2]],
+                [self.face_plane_wires_channels[(0,2)][self.good_indices_0_12[:,1]][:,1],
+                 self.face_plane_wires_channels[(0,2)][self.good_indices_0_20[:,0]][:,1]]
 
+            ],
+            # [y[1], self.face_plane_wires_channels[(0,2)][self.good_indices_0_12[:,1]][:,1]],
+            # [y[2], self.face_plane_wires_channels[(0,2)][self.good_indices_0_20[:,0]][:,1]],
+        ] + ([] if self.one_side else [
             #plane0
-            [y[3], self.face_plane_wires_channels[(1,0)][self.good_indices_1_01[:,0]][:,1]],
-            [y[5], self.face_plane_wires_channels[(1,0)][self.good_indices_1_20[:,1]][:,1]],
+            [
+                [y[3], y[5]],
+                [self.face_plane_wires_channels[(1,0)][self.good_indices_1_01[:,0]][:,1],
+                 self.face_plane_wires_channels[(1,0)][self.good_indices_1_20[:,1]][:,1]],
+
+            ],
+            # [y[3], self.face_plane_wires_channels[(1,0)][self.good_indices_1_01[:,0]][:,1]],
+            # [y[5], self.face_plane_wires_channels[(1,0)][self.good_indices_1_20[:,1]][:,1]],
             
             #plane1
-            [y[3], self.face_plane_wires_channels[(1,1)][self.good_indices_1_01[:,1]][:,1]],
-            [y[4], self.face_plane_wires_channels[(1,1)][self.good_indices_1_12[:,0]][:,1]],
+            [
+                [y[3], y[4]],
+                [self.face_plane_wires_channels[(1,1)][self.good_indices_1_01[:,1]][:,1],
+                 self.face_plane_wires_channels[(1,1)][self.good_indices_1_12[:,0]][:,1]],
+            ],
+            # [y[3], self.face_plane_wires_channels[(1,1)][self.good_indices_1_01[:,1]][:,1]],
+            # [y[4], self.face_plane_wires_channels[(1,1)][self.good_indices_1_12[:,0]][:,1]],
             
             #plane2
-            [y[4], self.face_plane_wires_channels[(1,2)][self.good_indices_1_12[:,1]][:,1]],
-            [y[5], self.face_plane_wires_channels[(1,2)][self.good_indices_1_20[:,0]][:,1]],
-        ]
+            [
+                [y[4], y[5]],
+                [self.face_plane_wires_channels[(1,2)][self.good_indices_1_12[:,1]][:,1],
+                 self.face_plane_wires_channels[(1,2)][self.good_indices_1_20[:,0]][:,1]],
+            ]
+            # [y[4], self.face_plane_wires_channels[(1,2)][self.good_indices_1_12[:,1]][:,1]],
+            # [y[5], self.face_plane_wires_channels[(1,2)][self.good_indices_1_20[:,0]][:,1]],
+        ])
 
         for yi, indices in to_scatter:
             # torch_scatter.scatter_add(
             # torch_scatter.scatter_max(
+            # print(yi[0].shape, yi[1].shape)
+            # print(indices[0].shape, indices[1].shape)
             torch_scatter.scatter_mean(
-                yi,
-                indices,
+                # yi, indices,
+                torch.cat(yi, dim=1),
+                torch.cat(indices),
                 out=temp_out,
                 dim=1
             )
@@ -625,10 +691,11 @@ class Network(nn.Module):
             ncross_1_01 = self.good_indices_1_01.size(0)
             ncross_1_12 = self.good_indices_1_12.size(0)
             ncross_1_20 = self.good_indices_1_20.size(0)
-            ncrosses = [ncross_01, ncross_12, ncross_20, ncross_1_01, ncross_1_12, ncross_1_20]
-            # ncrosses = [ncross_01, ncross_12, ncross_20]
+            # ncrosses = [ncross_01, ncross_12, ncross_20, ncross_1_01, ncross_1_12, ncross_1_20]
+            ncrosses = [ncross_01, ncross_12, ncross_20] + ([] if self.one_side else [ncross_1_01, ncross_1_12, ncross_1_20])
             ranges = [[sum(ncrosses[:i]), sum(ncrosses[:i+1])] for i in range(len(ncrosses))]
             ncross = ncross_01 + ncross_12 + ncross_20 + ncross_1_01 + ncross_1_12 + ncross_1_20
+            ncross = sum(ncrosses)
             # print(ncross_01, ncross_12, ncross_20, ncross)
 
             #in-tick crossings
@@ -692,10 +759,11 @@ class Network(nn.Module):
                     [as_wires_f0_p0, as_wires_f0_p1, self.good_indices_0_01, self.ray_crossings_0_01, self.coords_face0],
                     [as_wires_f0_p1, as_wires_f0_p2, self.good_indices_0_12, self.ray_crossings_0_12, self.coords_face0],
                     [as_wires_f0_p2, as_wires_f0_p0, self.good_indices_0_20, self.ray_crossings_0_20, self.coords_face0],
+                ] + ([] if self.one_side else [
                     [as_wires_f1_p0, as_wires_f1_p1, self.good_indices_1_01, self.ray_crossings_1_01, self.coords_face1],
                     [as_wires_f1_p1, as_wires_f1_p2, self.good_indices_1_12, self.ray_crossings_1_12, self.coords_face1],
                     [as_wires_f1_p2, as_wires_f1_p0, self.good_indices_1_20, self.ray_crossings_1_20, self.coords_face1],
-                ]
+                ])
                 for info in window_infos:
                     cross_end += len(info[2])
                     fill_window(
