@@ -6,6 +6,7 @@ from wirecell.raygrid import (
     plots
 )
 from wirecell.raygrid.coordinates import Coordinates
+import wirecell.raygrid.tiling as tiling
 from wirecell.raygrid.examples import (
     symmetric_views, random_points, random_groups, fill_activity
 )
@@ -14,6 +15,31 @@ import json
 from argparse import ArgumentParser as ap
 import numpy as np
 
+def apply_sequence(coords, nw, blobs_in, warn=False):
+    blobs_out = []
+    wires = torch.zeros(nw).to(bool)
+    for i in range(nw):
+        wires[i] = 1
+        blobs_i = tiling.apply_activity(coords, blobs_in, wires)
+        if blobs_i.size(0) > 0:
+            blobs_out.append(blobs_i)
+        elif warn:
+            print('WARNING SIZE 0 FROM BLOB')
+        wires[i] = 0
+    return torch.cat(blobs_out)
+
+def make_cells(coords, nw_0, nw_1, nw_2):
+    trivial_blobs = tiling.trivial_blobs()
+
+    all_cells = []
+    wires_0 = torch.zeros(nw_0).to(bool)
+    wires_1 = torch.zeros(nw_1).to(bool)
+    wires_2 = torch.zeros(nw_2).to(bool)
+
+    blobs = apply_sequence(coords, nw_0, trivial_blobs, warn=True)
+    blobs = apply_sequence(coords, nw_1, blobs)
+    blobs = apply_sequence(coords, nw_2, blobs)
+    return blobs[:, 2:, 0]
 
 def get_nearest(rcs, n=5):
     dist = (rcs[:, 0].unsqueeze(0) - rcs[:,0].unsqueeze(1))**2
