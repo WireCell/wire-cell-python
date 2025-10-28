@@ -91,6 +91,7 @@ class Network(nn.Module):
             skip_GNN=False,
             one_side=False,
             out_channels=4,
+            use_cells=True,
             #gcn=False, #Currently not working
         ):
         super().__init__()
@@ -172,12 +173,18 @@ class Network(nn.Module):
             self.coords_face0 = xover.coords_from_schema(store, 0)
             self.coords_face1 = xover.coords_from_schema(store, 1)
             
-            print('Making cells face 0')
-            self.good_indices_0 = xover.make_cells(self.coords_face0, *(self.nwires_0))
-            print('Done', self.good_indices_0.shape)
-            print('Making cells face 1')
-            self.good_indices_1 = xover.make_cells(self.coords_face1, *(self.nwires_1))
-            print('Done', self.good_indices_1.shape)
+            if use_cells:
+                print('Making cells face 0')
+                self.good_indices_0 = xover.make_cells(self.coords_face0, *(self.nwires_0))
+                print('Done', self.good_indices_0.shape)
+                print('Making cells face 1')
+                self.good_indices_1 = xover.make_cells(self.coords_face1, *(self.nwires_1))
+                print('Done', self.good_indices_1.shape)
+            else:
+                print('Building maps')
+                self.good_indices_0 = xover.build_map(self.coords_face0, self.nwires_0)
+                self.good_indices_1 = xover.build_map(self.coords_face1, self.nwires_1)
+                print('Done')
 
             view_base = len(self.coords_face0.views) - 3
             ray_crossings_0_01 = self.coords_face0.ray_crossing(view_base + 0, self.good_indices_0[:,0], view_base + 1, self.good_indices_0[:,1])
