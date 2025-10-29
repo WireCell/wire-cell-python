@@ -224,12 +224,15 @@ class Coordinates:
             + ray1 * self.a[view2, view1, view3]
 
 
-    def pitch_index(self, pitch, view):
+    def pitch_index(self, pitch, view, round=False):
         '''
         Return the index of the closest ray at a location in the view that
         is less than or equal to the given pitch.
         '''
-        return torch.floor(pitch/self.pitch_mag[view]).to(torch.long)
+        return (
+          torch.round(pitch/self.pitch_mag[view]).to(torch.long) if round else
+          torch.floor(pitch/self.pitch_mag[view]).to(torch.long)
+        )
 
 
     def init(self, pitches):

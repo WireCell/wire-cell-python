@@ -177,13 +177,13 @@ def build_cross(rays_i, rays_j):
     cross = cross.reshape((-1, 2))
     return cross
 
-def get_indices(coords, cross, i, j, k):
+def get_indices(coords, cross, i, j, k, round=False):
     #Find the locations in the third plane of crossing points from the first 2 planes
     #Then turn those into indices within the last plane
     base = len(coords.views) - 3
     locs = coords.pitch_location(i+base, cross[:, 0], j+base, cross[:, 1], k+base)
     # torch.save(locs, 'xover_locs.pt')
-    indices = coords.pitch_index(locs, k+base)
+    indices = coords.pitch_index(locs, k+base, round=round)
     return indices
 
 def get_good_crossers(coords, i, j, nwires):
