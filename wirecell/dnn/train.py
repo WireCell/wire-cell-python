@@ -19,7 +19,7 @@ Classifier training
     - optimizer.step()
 
 '''
-from torch import optim, no_grad, float16, autocast, amp, any, save
+from torch import optim, no_grad, float16, autocast, amp, any, save, zeros_like
 import torch.nn as nn
 import torch.cuda.memory as memory
 import torch.cuda as cuda
@@ -163,7 +163,13 @@ class Looper:
         losses = list()
         with no_grad():
             for features, labels in data:
-                loss = self.loss(features, labels)
+                # outA, outA_meta = self.A(features)
+                # nregions = outA_meta['nregions']
+                # out = torch.cat(
+                #     [self.B(outA, outA_meta, i) for i in range(nregions)],
+                #     dim=-1
+                # )
+                loss = self.loss(out, labels)
                 loss = loss.item()
                 losses.append(loss)
         return losses
@@ -176,8 +182,9 @@ class Looper:
         self.net.train()
 
         epoch_losses = list()
-        snapshot_at = 2
+        snapshot_at = 1
         snapshot_mem = True
+        loss_window = 5
         for ie, (features, labels) in enumerate(data):
 
             #Add if needed
@@ -191,22 +198,40 @@ class Looper:
             # print('edge_attr:', outA['edge_attr'].shape)
             # print('labels:', labels.shape)
             nregions = outA_meta['nregions']
-
+            # nregions=100
+            
             total_loss_val = 0.0
             total_loss_tensor = 0.0
 
-            nregions=100
+            nloss_windows = int(nregions/loss_window)
+            for iloss in range(nloss_windows):
+                print('Loss window:', iloss)
+                start = iloss*loss_window
+                end = start + loss_window
+                label_window = labels[..., start:end]
+                outB_i = zeros_like(label_window)
+                for t in range(loss_window):
+                    i = iloss*loss_window + t
+                    print('\t', t, i)
+                    if i == nregions: break
 
-            for i in range(nregions):
-                print('Region', i)
-                outB_i = self.net.B(outA, outA_meta, i)
-                # print('outB_i shape:', outB_i.shape)
-                loss_i = self.criterion(outB_i, labels[..., i])
+                    outB_i[..., t] = self.net.B(outA, outA_meta, i)
+                loss_i = self.criterion(outB_i, label_window)
+
                 total_loss_val += loss_i.item()
-                # total_loss_tensor = total_loss_tensor + loss_i
+                loss_i.backward(retain_graph=(i < (nregions-1)))
+
+
+            # for i in range(nregions):
+            #     print('Region', i)
+            #     outB_i = self.net.B(outA, outA_meta, i)
+            #     # print('outB_i shape:', outB_i.shape)
+            #     loss_i = self.criterion(outB_i, labels[..., i])
+            #     total_loss_val += loss_i.item()
+            #     # total_loss_tensor = total_loss_tensor + loss_i
                 
-                # total_loss_tensor.backward(retain_graph=(i < (nregions-1))) 
-                loss_i.backward(retain_graph=(i < (nregions-1))) 
+            #     # total_loss_tensor.backward(retain_graph=(i < (nregions-1))) 
+            #     loss_i.backward(retain_graph=(i < (nregions-1))) 
 
             self.optimizer.step()
             self.optimizer.zero_grad()

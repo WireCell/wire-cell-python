@@ -15,6 +15,25 @@ import json
 from argparse import ArgumentParser as ap
 import numpy as np
 
+def make_chanmap(chanmap_name, store, face_ids=[0,1]):
+    chanmap_npy = np.load(chanmap_name)
+
+    #maps from chanident to index in input arrays
+    chanmap = {c:i for i, c in chanmap_npy}
+    faces = [store.faces[f] for f in face_ids]
+    #Build the map to go between wire segments & channels 
+    results = {}
+    for i, face in enumerate(faces):
+        for jj, j in enumerate(face.planes):
+            plane = store.planes[j]
+            wire_chans = torch.zeros((len(plane.wires), 2), dtype=int)
+            for wi in plane.wires:
+                wire = store.wires[wi]
+                wire_chans[wire.ident, 0] = wire.ident
+                wire_chans[wire.ident, 1] = chanmap[wire.channel]
+            results[(i,jj)] = wire_chans
+    return results
+
 def apply_sequence(coords, nw, blobs_in, run=1, warn=False):
     blobs_out = []
     wires = torch.zeros(nw).to(bool)
