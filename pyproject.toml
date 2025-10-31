@@ -25,8 +25,11 @@ dependencies = [
 
 
 [project.scripts]
+# This is the "new" unified, all-in-one comand
 wcpy = "wirecell.__main__:main"
 
+# Legacy per-module command grouping.
+# Instead of extending this list, add to wirecell/__main__.py's subs list.
 wirecell-sigproc = "wirecell.sigproc.__main__:main"
 wirecell-util = "wirecell.util.__main__:main"
 wirecell-gen = "wirecell.gen.__main__:main"

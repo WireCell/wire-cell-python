@@ -339,3 +339,16 @@ class Coordinates:
             lines.append('};')
             return '\n'.join(lines)
 
+
+def coordinates_from_wires(uwires, vwires, wwires):
+    '''
+    Given an array of wires from each view, return a Coodinates instance.
+
+    The wires arrays are (N, 2, 3) with N>=2.
+
+    Only wires zero and one are used.
+    '''
+    # The views is a 3-D tensor of shape:
+    #  (N-views, 2 endpoints, 2 coordinates)
+    wires = torch.vstack((uwires[:2], vwires[:2], wwires[:2]))
+    
