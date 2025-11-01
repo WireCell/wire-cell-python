@@ -197,8 +197,10 @@ class Coordinates:
         w21 = self.ray_jump[view2, view1]
 
         # broadcast matching
-        ray1 = ray1.unsqueeze(1)
-        ray2 = ray2.unsqueeze(1)
+        if not isinstance(ray1, int):
+            ray1 = ray1.unsqueeze(1)
+        if not isinstance(ray2, int):
+            ray2 = ray2.unsqueeze(1)
 
         return r00 + ray2 * w12 + ray1 * w21;
 
