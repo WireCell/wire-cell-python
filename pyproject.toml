@@ -1,6 +1,6 @@
 [project]
 name = "wirecell"
-version = "0.1.0"
+version = "0.1.1"
 description = "Add your description here"
 requires-python = ">=3.11"
 readme = {file = "README.org", content-type = "text/org"}
@@ -28,6 +28,10 @@ dependencies = [
 [project.scripts]
 # This is the "new" unified, all-in-one comand
 wcpy = "wirecell.__main__:main"
+# Some Python tools like to find a program named after the package.
+# Warning: this is dangerously close to "wire-cell", the main program from
+# wire-cell-toolkit.
+wirecell = "wirecell.__main__:main"
 
 # Legacy per-module command grouping.
 # Instead of extending this list, add to wirecell/__main__.py's subs list.
