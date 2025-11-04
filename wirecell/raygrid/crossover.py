@@ -15,6 +15,115 @@ import json
 from argparse import ArgumentParser as ap
 import numpy as np
 
+
+def get_ordered_inverse_indices(S: torch.Tensor):
+    """
+    Finds unique elements in S and the order-preserving inverse indices.
+    
+    The inverse_indices map: S[i] -> ordered_unique_elements[j], 
+    where j is based on the order of first appearance in S.
+    
+    Args:
+        S: Tensor of shape [n1, 5, 2].
+        
+    Returns:
+        A tuple: (ordered_unique_elements, ordered_inverse_indices)
+    """
+    
+    # 1. Flatten the elements (5, 2) into (10) for row comparison
+    S_flat = S.view(S.shape[0], -1) 
+    
+    # Use torch.unique to get the unique set (sorted by value) and the inverse map (by value)
+    unique_elements_flat_val_sorted, inverse_indices_val_mapped, _ = torch.unique(
+        S_flat, 
+        dim=0, 
+        sorted=True, 
+        return_inverse=True, 
+        return_counts=True
+    )
+    
+    N_unique = unique_elements_flat_val_sorted.shape[0]
+    n1 = S.shape[0]
+    
+    # 2. Find the FIRST index of appearance for each unique element ID (which is currently value-sorted)
+    original_S_indices = torch.arange(n1, device=S.device)
+    
+    # Use scatter_reduce_ to find the minimum (first) index of appearance for each unique ID
+    # This is highly efficient and memory safe.
+    first_occurrence_indices = torch.full((N_unique,), n1, dtype=torch.long, device=S.device)
+    first_occurrence_indices.scatter_reduce_(
+        dim=0, 
+        index=inverse_indices_val_mapped, 
+        src=original_S_indices, 
+        reduce="amin"
+    )
+    
+    # 3. Get the permutation that sorts the unique IDs by their first appearance
+    sort_permutation = torch.argsort(first_occurrence_indices, descending=False)
+    
+    # Apply the permutation to the unique elements
+    ordered_unique_elements_flat = unique_elements_flat_val_sorted[sort_permutation]
+    ordered_unique_elements = ordered_unique_elements_flat.view(-1, 5, 2)
+    
+    # 4. Re-map the inverse_indices to the new order
+    # remap_indices: maps old_unique_id (value-sorted) -> new_unique_id (order-preserving index)
+    remap_indices = torch.argsort(sort_permutation) 
+    
+    # The final, order-preserving inverse indices
+    ordered_inverse_indices = remap_indices[inverse_indices_val_mapped]
+    
+    return ordered_unique_elements, ordered_inverse_indices
+
+def downsample_blobs(highres_blobs, to_run=2):
+    
+    results = highres_blobs.clone()
+    print(results.shape)
+
+    print(results[0])
+    base = results.shape[1] - 3
+    print(base)
+
+    for i in range(base, base+3):
+        max = torch.max(results[:,i])
+        print('Plane', i, max)
+        # evens = torch.where(1 - results[:, i, 0] % 2)[0]
+        # odds = torch.where(results[:, i, 0] % 2)[0]
+
+        # results[odds, i, 0] -= 1
+        # results[evens, i, 1] += 1
+        results[:, i, 0] = torch.floor(results[:, i, 0]/to_run)*to_run
+        results[:, i, 1] = torch.ceil(results[:, i, 1]/to_run)*to_run
+        results[:, i] = torch.clamp(results[:, i], 0, max)
+    
+    #Returns tuple with unique values + indices of source in unique output
+    results = get_ordered_inverse_indices(results)
+    return results[1] #but just output the indices
+
+
+
+def draw_pred_comp(p, t):
+    num_categories = 4
+    import matplotlib.colors as mcolors
+    import matplotlib.patches as mpatches
+    colors = np.array([
+        [0., 0., 0., 1.], #black
+        [1., 0., 0., 1.], #red
+        [1., 1., 1., 1.], #white
+        [0., 0., 1., 1.], #blue
+    ])
+    custom_cmap = mcolors.ListedColormap(colors)
+    bounds = np.arange(num_categories + 1)
+    norm = mcolors.BoundaryNorm(bounds, custom_cmap.N)
+    c = torch.zeros_like(t[0,0]).to(int) #Default -> missed real pixel
+    c[torch.where((t[0,0] == 0) & ((p[0,0]>.5) == 1))] = 1 #Fake pixel
+    c[torch.where((t[0,0] == 0) & ((p[0,0]<.5)))] = 2 #No prediction empty
+    c[torch.where((t[0,0] == 1) & ((p[0,0]>.5)))] = 3 #Predicted real pixel
+
+    patches = [mpatches.Patch(color=colors[i], label=l) for i, l in enumerate(['Miss', 'Fake', 'Empty', 'Real'])]
+    plt.imshow(c, cmap=custom_cmap, norm=norm, aspect='auto', interpolation='none')
+    plt.legend(handles=patches)
+    plt.show()
+
 def apply_sequence(coords, nw, blobs_in, run=1, warn=False):
     blobs_out = []
     wires = torch.zeros(nw).to(bool)
@@ -79,7 +188,7 @@ def get_center(store, wire, drift='vd'):
     ]), dim=0)
     return center
 
-def draw_schema(store, face_index, plane_indices=[0,1,2], colors=['orange','blue','red']):
+def draw_schema(store, face_index, plane_indices=[0,1,2], colors=['orange','blue','red'], highlight=dict()):
     import matplotlib.pyplot as plt
     import numpy as np
     
@@ -88,13 +197,67 @@ def draw_schema(store, face_index, plane_indices=[0,1,2], colors=['orange','blue
         global_plane = store.faces[face_index].planes[pi]
         plane = store.planes[global_plane]
         planes.append(plane)
-        for wi in plane.wires:
+        to_highlight = highlight[pi] if pi in highlight else []
+        for i, wi in enumerate(plane.wires):
+            print(i,wi)
             wire = store.wires[wi]
             head = store.points[wire.head]
             tail = store.points[wire.tail]
             xs = [tail.z, head.z]
             ys = [tail.y, head.y]
-            plt.plot(xs, ys, color=colors[pi])
+            plt.plot(xs, ys, color=colors[pi], linestyle=('dashed' if i in to_highlight else 'solid'))
+    plt.show()
+
+def draw_blobs(store, face_index, plane_indices=[0,1], colors=['orange','blue','red'], alpha=0.3):
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Rectangle
+    import numpy as np
+    from math import pi, sqrt, atan
+    coords = coords_from_schema(store, face_index)
+
+    face = store.faces[face_index]
+    plane_objs = [store.planes[p] for p in face.planes]
+    nwires = [len(p.wires) for p in plane_objs]
+    print(nwires)
+    bounds = coords.bounding_box
+
+    bl = (bounds[0][0], bounds[1][0])
+    width = abs(coords.views[1][1][0] - coords.views[1][0][0])
+    height = abs(coords.views[0][1][1] - coords.views[0][0][1])
+    print(bl, width, height)
+    fig, ax = plt.subplots()
+    rect = Rectangle(bl, width, height, facecolor='grey', edgecolor='black', alpha=0.7)
+    ax.add_patch(rect)
+
+    ax.set_xlim(bl[0] - 1., bl[0] + width + 1.)
+    ax.set_ylim(bl[1] - 1., bl[1] + height + 1.)
+
+    
+    for plane in range(2, 5):
+        pitch_mag = coords.pitch_mag[plane]
+        pitch_dir = coords.pitch_dir[plane]
+        xy = coords.views[plane][0]
+        a=0
+        # for i in range(nwires[plane-2]):
+        for i in range(100, 150):
+            this_xy = xy + i*pitch_mag*pitch_dir
+            print(xy, pitch_mag, pitch_dir)
+            r = Rectangle(
+                xy=(this_xy[0].item(), this_xy[1].item()-2000.),
+                width=coords.pitch_mag[plane],
+                height=2*sqrt(coords.pitch_mag[0]**2 + coords.pitch_mag[1]**2),
+                angle=(180./pi)*atan(coords.pitch_dir[plane][1]/coords.pitch_dir[plane][0]),
+                rotation_point=(this_xy[0].item(), this_xy[1].item()),
+                alpha=alpha,
+                color=colors[plane-2]
+            )
+            ax.add_patch(r)
+            ax.scatter(xy[0].item(), xy[1].item())
+            # xy += pitch_mag*pitch_dir
+            # break
+        # break
+    # for pi in plane_indices:
+    #         plt.plot(xs, ys, color=colors[pi])
     plt.show()
 
 def views_from_schema(store, face_index, drift='vd'):
