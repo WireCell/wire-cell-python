@@ -110,8 +110,9 @@ class Network(nn.Module):
     def __init__(
             self,
             wires_file='protodunevd-wires-larsoft-v3.json.bz2',
-            n_unet_features=2,
-            time_window=1,
+            n_unet_features=4,
+            time_window=3,
+            checkpoint=False,
             n_feat_wire = 0,
             detector=0,
             n_input_features=1,
@@ -126,6 +127,7 @@ class Network(nn.Module):
         super().__init__()
         self.nfeat_post_unet=n_unet_features
         self.n_feat_wire = n_feat_wire
+        self.checkpoint=checkpoint
         self.n_input_features=n_input_features
         self.skip_unets=skip_unets
         ##Set up the UNets
@@ -249,22 +251,6 @@ class Network(nn.Module):
 
             # #Neighbors between anode faces which are connected by the elec channel?
             # #TODO
-            # print('Checking connections')
-            # connections_0_0 = torch.cat([self.get_connected(
-            #     i, self.good_indices_0, self.good_indices_0, self.face_plane_wires_channels[0,i], self.face_plane_wires_channels[0,i]
-            # ) for i in range(3)], dim=1)
-            # print(connections_0_0.shape)
-            # print('Checking connections 2')
-            # connections_0_1 = torch.cat([self.get_connected(
-            #     i, self.good_indices_0, self.good_indices_1, self.face_plane_wires_channels[0,i], self.face_plane_wires_channels[1,i]
-            # ) for i in range(2)], dim=1)
-            # print(connections_0_1.shape)
-
-            # connections_0_1 = connections_0_1.T.to('cuda').unique(dim=0).T
-            # print(connections_0_1.shape)
-            # connections_0_0 = connections_0_0.T.to('cuda').unique(dim=0).T
-            # print(connections_0_0.shape)
-            # connections_0_1[1] += len(self.good_indices_1)
 
             self.neighbors = torch.cat(
                 [nearest_neighbors_0] +
@@ -298,11 +284,7 @@ class Network(nn.Module):
                     static_edges_0,
                 ] + ([
                     static_edges_1,
-                ] if not one_side else []) +
-                [
-                    # torch.randn(connections_0_0.size(1), 13),
-                    # torch.randn(connections_0_1.size(1), 13),
-                ]
+                ] if not one_side else [])
             )
             
 
@@ -457,11 +439,11 @@ class Network(nn.Module):
 
             #Pass through the unets
             xs = [
-                # self.unets[(i if i < 3 else 2)](xs[i]) for i in range(len(xs))
+                (self.unets[(i if i < 3 else 2)](xs[i]) if not self.checkpoint else
                 checkpoint.checkpoint(
                     self.unets[(i if i < 3 else 2)],
                     xs[i]
-                ) for i in range(len(xs))
+                )) for i in range(len(xs))
             ]
 
             print('passed through unets')
@@ -522,7 +504,7 @@ class Network(nn.Module):
         xmeta = dict(
             input_shape=input_shape,
             nbatches=nbatches,
-            nregions=nticks,
+            nregions=nticks_orig,
             nchannels=nchannels,
             the_device=the_device,
             to_pad=to_pad,
@@ -547,10 +529,11 @@ class Network(nn.Module):
         ncells = xmeta['ncells']
         nfeat = self.features_into_GNN
         the_device = xmeta['the_device']
-        # low = tick
-        # hi = low + 2*to_pad+1
-        low = 0
-        hi = 2*to_pad + 1
+        low = tick
+        hi = low + 2*to_pad+1
+        # print('Low,hi:', low, hi)
+        # low = 0
+        # hi = 2*to_pad + 1
 
         #NEW AS WIRES
         as_wires_f0_p0 = self.make_wires(x, low, hi, these_nfeats, 0, 0)
@@ -590,15 +573,13 @@ class Network(nn.Module):
 
         all_neighbors = xmeta['all_neighbors']
         edge_attr = xmeta['edge_attr']
-        y = self.GNN(window, all_neighbors, edge_attr=edge_attr)
-        # self.GNN = self.GNN.to('cuda:1')
-        # y = self.GNN(window.to('cuda:1'), all_neighbors.to('cuda:1'), edge_attr=edge_attr.to('cuda:1')).to('cuda:0')
-        # y = checkpoint.checkpoint(
-        #     self.GNN,
-        #     window,
-        #     all_neighbors,
-        #     edge_attr,
-        # )
+        # y = self.GNN(window, all_neighbors, edge_attr=edge_attr)
+        y = checkpoint.checkpoint(
+            self.GNN,
+            window,
+            all_neighbors,
+            edge_attr,
+        ) if self.checkpoint else self.GNN(window, all_neighbors, edge_attr=edge_attr)
 
         #Just get out the middle element
         y = y.reshape(nbatches, self.time_window, -1, self.out_channels)[:, int((self.time_window-1)/2), ...]
@@ -613,11 +594,12 @@ class Network(nn.Module):
         temp_out = self.mlp(temp_out).view(1,1,-1)
         
         return temp_out
+        
     def forward(self, x):
         outA, outA_meta = self.A(x)
         nregions = outA_meta['nregions']
         return torch.cat(
-            [self.B(outA, outA_meta, i) for i in range(nregions)],
+            [self.B(outA, outA_meta, i).unsqueeze(-1) for i in range(nregions)],
             dim=-1
         )
     # def forward(self, x):

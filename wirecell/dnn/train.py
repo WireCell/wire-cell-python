@@ -145,7 +145,7 @@ class Looper:
         self.net = net              # model
         self.optimizer = optimizer
         self.criterion = criterion
-
+        self.save_iter = 0
     def loss(self, features, labels):
 
         features = features.to(self._device)
@@ -155,6 +155,10 @@ class Looper:
 
         prediction = self.net(features)
         dump('prediction', prediction)
+        s = nn.Sigmoid()
+        sigpred = s(prediction)
+        # print('Pred Sigmoid:', sigpred)
+        save(sigpred, f'eval_out_{self.save_iter}.pt')
 
         loss = self.criterion(prediction, labels)
         return loss
@@ -170,6 +174,9 @@ class Looper:
                 #     dim=-1
                 # )
                 loss = self.loss(out, labels)
+                save(labels, f'eval_labels_{self.save_iter}.pt')
+                save(features, f'eval_input_{self.save_iter}.pt')
+                self.save_iter += 1
                 loss = loss.item()
                 losses.append(loss)
         return losses
@@ -184,7 +191,9 @@ class Looper:
         epoch_losses = list()
         snapshot_at = 1
         snapshot_mem = True
-        loss_window = 5
+        # if not snapshot_mem:
+        #     memory._record_memory_history(enabled=False)
+        loss_window = 1
         for ie, (features, labels) in enumerate(data):
 
             #Add if needed
@@ -204,23 +213,27 @@ class Looper:
             total_loss_tensor = 0.0
 
             nloss_windows = int(nregions/loss_window)
+            norm = 1./(labels.size(-1)*labels.size(-2))
+            print('Norm:', norm, 1./norm)
             for iloss in range(nloss_windows):
-                print('Loss window:', iloss)
+                # print('Loss window:', iloss)
                 start = iloss*loss_window
                 end = start + loss_window
                 label_window = labels[..., start:end]
                 outB_i = zeros_like(label_window)
                 for t in range(loss_window):
                     i = iloss*loss_window + t
-                    print('\t', t, i)
+                    # print('\t', t, i)
                     if i == nregions: break
 
                     outB_i[..., t] = self.net.B(outA, outA_meta, i)
-                loss_i = self.criterion(outB_i, label_window)
+                # print(outB_i, label_window)
+                loss_i = self.criterion(outB_i, label_window)*norm
 
                 total_loss_val += loss_i.item()
                 loss_i.backward(retain_graph=(i < (nregions-1)))
 
+            print('Loss:', total_loss_val)
 
             # for i in range(nregions):
             #     print('Region', i)
