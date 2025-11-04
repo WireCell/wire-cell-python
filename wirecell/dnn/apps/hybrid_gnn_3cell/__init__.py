@@ -5,6 +5,7 @@ from torch import optim
 from .model import Network
 from .data import Dataset
 from wirecell.dnn.train import Classifier as Trainer
+from wirecell.dnn.train import Looper as Trainer
 # from torch.nn import BCELoss as Criterion
 from torch.nn import BCEWithLogitsLoss as Criterion
 

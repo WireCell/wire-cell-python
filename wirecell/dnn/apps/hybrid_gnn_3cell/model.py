@@ -74,7 +74,31 @@ def get_nn_from_plane_triplet(indices, n_nearest=3):
         check_A_in_B(expanded[i], indices) for i in range(expanded.shape[0])
     ], dim=1)
     return nearest_neighbors_01
+def get_nn_from_plane_triplet_fixed(indices, negative=False, n_nearest=3):
 
+    #We are creating +- n_nearest neighbors --> 2 for each plane in the pair -> 6
+    expanded = indices.unsqueeze(0).repeat(n_nearest**3, 1, 1)
+
+    #Get the +- n nearest neighbors along each wire
+    for i in range(n_nearest):
+        for j in range(n_nearest):
+            for k in range(n_nearest):
+                expanded[(n_nearest**2)*i + n_nearest*j + k, :, 0] += (i+1)*(-1 if negative else +1)
+                expanded[(n_nearest**2)*i + n_nearest*j + k, :, 1] += (j+1)*(-1 if negative else +1)
+                expanded[(n_nearest**2)*i + n_nearest*j + k, :, 2] += (k+1)*(-1 if negative else +1)
+
+    # Now, we ned to get this in terms of the crossing indices.
+    # check_A_in_B looks for the pairs we created in "expanded"
+    # and outputs (index within A, index within B).
+    #
+    # So it ties the pair in question (index in A) to the +-nth crossing (index in B)
+    #
+    # Outside of this, we account for the fact that we concatenate all plane 
+    # pairs into one large crossing tensor
+    nearest_neighbors_01 = torch.cat([
+        check_A_in_B(expanded[i], indices) for i in range(expanded.shape[0])
+    ], dim=1)
+    return nearest_neighbors_01
 
 import math
 class Network(nn.Module):
@@ -90,8 +114,9 @@ class Network(nn.Module):
             skip_unets=False,
             skip_GNN=False,
             one_side=False,
-            out_channels=4,
+            out_channels=8,
             use_cells=True,
+            fixed_neighbors=False,
             #gcn=False, #Currently not working
         ):
         super().__init__()
@@ -110,7 +135,7 @@ class Network(nn.Module):
         if skip_unets:
             n_unet_features=n_input_features
         self.features_into_GNN = 3*(n_unet_features + n_feat_wire)# + 8
-        gnn_settings = [self.features_into_GNN, 8, 2]
+        gnn_settings = [self.features_into_GNN, 16, 4]
         self.GNN = (
             # GCN(*gnn_settings, out_channels=out_channels) if gcn else #Currently not working
             GAT(*gnn_settings, out_channels=out_channels)
@@ -209,9 +234,18 @@ class Network(nn.Module):
             # #Neighbors on either face of the anode
             n_nearest = 2
 
-            nearest_neighbors_0 = get_nn_from_plane_triplet(self.good_indices_0, n_nearest=n_nearest)
-            nearest_neighbors_1 = get_nn_from_plane_triplet(self.good_indices_1, n_nearest=n_nearest)
-
+            if not fixed_neighbors:
+                nearest_neighbors_0 = get_nn_from_plane_triplet(self.good_indices_0, n_nearest=n_nearest)
+                nearest_neighbors_1 = get_nn_from_plane_triplet(self.good_indices_1, n_nearest=n_nearest)
+            else:
+                nearest_neighbors_0 = torch.cat([
+                    get_nn_from_plane_triplet_fixed(self.good_indices_0, n_nearest=n_nearest),
+                    get_nn_from_plane_triplet_fixed(self.good_indices_0, n_nearest=n_nearest, negative=True),
+                ], dim=1)
+                nearest_neighbors_1 = torch.cat([
+                    get_nn_from_plane_triplet_fixed(self.good_indices_1, n_nearest=n_nearest),
+                    get_nn_from_plane_triplet_fixed(self.good_indices_1, n_nearest=n_nearest, negative=True),
+                ], dim=1)
 
             # #Neighbors between anode faces which are connected by the elec channel?
             # #TODO
@@ -224,6 +258,8 @@ class Network(nn.Module):
                 ] if not one_side else []), dim=1)
 
             print(f'TOTAL EDGES: {self.neighbors.size(1)}')
+            self.neighbors = self.neighbors.T.unique(dim=0).T
+            print(f'Unique EDGES: {self.neighbors.size(1)}')
 
             # #Static edge attributes -- dZ, dY, r=sqrt(dZ**2 + dY**2), dFace
             # #TODO  Do things like dWire0, dWire1 make sense for things like cross-pair (i.e. 0,1 and 0,2) neighbors?
@@ -273,7 +309,7 @@ class Network(nn.Module):
         edge_attrs[:, 9:12] = cells[neighbors[0]] - cells[neighbors[1]] / torch.Tensor(nwires)
 
         edge_attrs[:, -1] = dface #dFace
-        return edge_attrs
+        return edge_attrs.detach()
     
     def scatter_to_chans(self, y, nbatches, nchannels, the_device):
         #TODO -- check size of y etc
@@ -317,6 +353,186 @@ class Network(nn.Module):
         # wires[..., x.shape[-1]+1] = face
         return wires
     
+    def A(self, x):
+        '''
+        Input data is assumed to be of shape (nbatch, nfeatures, nchannels, nticks)
+        '''
+        input_shape = x.shape
+        nbatches = x.shape[0]
+        nticks = x.shape[-1]
+        nchannels = x.shape[-2]
+
+        the_device = x.device
+        # print('Pre unet', x.shape)
+
+        if not self.skip_unets:
+            if self.save:
+                torch.save(x, 'input_test.pt')
+            xs = [
+                x[:, :, (0 if i == 0 else sum(self.nchans[:i])):sum(self.nchans[:i+1]), :]
+                for i, nc in enumerate(self.nchans)
+            ]
+            # for x in xs: print(x.shape)
+
+            #Pass through the unets
+            xs = [
+                # self.unets[(i if i < 3 else 2)](xs[i]) for i in range(len(xs))
+                checkpoint.checkpoint(
+                    self.unets[(i if i < 3 else 2)],
+                    xs[i]
+                ) for i in range(len(xs))
+            ]
+
+            print('passed through unets')
+            # for x in xs: print(x.shape)
+
+            #Cat to get into global channel number shape
+            x = torch.cat(xs, dim=2)
+            if self.save:
+                torch.save(x, 'post_unet_test.pt')
+            # print('Post unet', x.shape)
+        n_feat_base = x.shape[1]
+        nticks_orig = x.size(-1)
+        #batch, tick, channels, features
+        to_pad = int((self.time_window-1)/2)
+        x = F.pad(x, (to_pad, to_pad))
+        nticks = x.size(-1)
+        x = x.permute(0,3,2,1)
+        #Convert from channels to wires (values duped for common elec chan)
+        these_nfeats = n_feat_base + self.n_feat_wire
+
+        for ij, tensor in self.face_plane_wires_channels.items():
+            self.face_plane_wires_channels[ij] = tensor.to(the_device)
+        
+        # nfeat = 3*(these_nfeats) + 8
+        nfeat = self.features_into_GNN
+        ncells_0 = len(self.good_indices_0)
+        ncells_1 = len(self.good_indices_1)
+        
+        ncells = ncells_0 + ncells_1
+        ranges = [[0, ncells_0], [ncells_0, ncells_0+ncells_1]]
+
+        #in-tick crossings
+        dt = self.time_window
+        n_window_neighbors = self.neighbors.size(1)
+        new_window_neighbors_size = n_window_neighbors*dt
+        all_neighbors = torch.zeros(2, new_window_neighbors_size + ncells*((dt)**2), dtype=int).to(the_device)
+        all_neighbors[:, :n_window_neighbors*(dt)] = self.neighbors.repeat(1, dt).to(the_device)
+        all_neighbors[:, new_window_neighbors_size:] = torch.arange(ncells).unsqueeze(0).repeat(2,(dt)**2).to(the_device)
+
+        for i in range(dt):
+            all_neighbors[:, i*n_window_neighbors:(i+1)*n_window_neighbors] += (i*ncells)
+
+            for j in range(dt):
+                all_neighbors[0, new_window_neighbors_size + (ncells*(j*(dt) + i)):new_window_neighbors_size + (ncells*(j*(dt) + (i+1)))] += i*ncells
+                all_neighbors[1, new_window_neighbors_size + (ncells*(j*(dt) + i)):new_window_neighbors_size + (ncells*(j*(dt) + (i+1)))] += j*ncells
+
+        n_edge_attr = self.nstatic_edge_attr + 1 #+1 for tick
+        edge_attr = torch.zeros(all_neighbors.size(1), n_edge_attr).to(the_device)
+        # #TODO -- consider batching
+        edge_attr[:new_window_neighbors_size, :-1] = self.static_edges.view(self.neighbors.size(1), -1).repeat(1*(dt), 1).to(the_device)
+        base = new_window_neighbors_size
+
+        for i in range(dt):
+            for j in range(dt):
+                ind_0 = (base + ncells*(j*(dt) + i))
+                ind_1 = ind_0 + ncells
+                edge_attr[ind_0:ind_1, -1] = (i-j)
+        xmeta = dict(
+            input_shape=input_shape,
+            nbatches=nbatches,
+            nregions=nticks,
+            nchannels=nchannels,
+            the_device=the_device,
+            to_pad=to_pad,
+            all_neighbors=all_neighbors.detach(),
+            edge_attr=edge_attr,
+            these_nfeats=these_nfeats,
+            ncells=ncells,
+            ncells_0=ncells_0,
+            ncells_1=ncells_1,
+            ranges=ranges,
+        )
+        return x, xmeta
+    def B(self, x, xmeta, tick):
+        # if self.skip_GNN:
+        #     x = x.permute(0,3,2,1)
+        #     return self.mlp(x).permute(0,3,2,1)
+        # else:
+        to_pad = xmeta['to_pad']
+        these_nfeats = xmeta['these_nfeats']
+        nbatches = xmeta['nbatches']
+        nchannels = xmeta['nchannels']
+        ncells = xmeta['ncells']
+        nfeat = self.features_into_GNN
+        the_device = xmeta['the_device']
+        # low = tick
+        # hi = low + 2*to_pad+1
+        low = 0
+        hi = 2*to_pad + 1
+
+        #NEW AS WIRES
+        as_wires_f0_p0 = self.make_wires(x, low, hi, these_nfeats, 0, 0)
+        as_wires_f0_p1 = self.make_wires(x, low, hi, these_nfeats, 0, 1)
+        as_wires_f0_p2 = self.make_wires(x, low, hi, these_nfeats, 0, 2)
+        as_wires_f1_p0 = self.make_wires(x, low, hi, these_nfeats, 1, 0)
+        as_wires_f1_p1 = self.make_wires(x, low, hi, these_nfeats, 1, 1)
+        as_wires_f1_p2 = self.make_wires(x, low, hi, these_nfeats, 1, 2)
+        ######################
+
+        dt = self.time_window
+        window = torch.zeros(
+            nbatches,
+            dt,
+            ncells,
+            nfeat,
+        ).to(the_device)
+
+
+        cross_start = 0
+        cross_end = 0
+        window_infos = [
+            [as_wires_f0_p0, as_wires_f0_p1, as_wires_f0_p2, self.good_indices_0, self.ray_crossings_0],
+        ] + ([] if self.one_side else [
+            [as_wires_f1_p0, as_wires_f1_p1, as_wires_f1_p2, self.good_indices_1, self.ray_crossings_1],
+        ])
+        for info in window_infos:
+            cross_end += len(info[3])
+            fill_window(
+                window[..., cross_start:cross_end, :],
+                these_nfeats,
+                *info
+            )
+            cross_start = cross_end
+
+        window = window.reshape(-1, nfeat)
+
+        all_neighbors = xmeta['all_neighbors']
+        edge_attr = xmeta['edge_attr']
+        y = self.GNN(window, all_neighbors, edge_attr=edge_attr)
+        # self.GNN = self.GNN.to('cuda:1')
+        # y = self.GNN(window.to('cuda:1'), all_neighbors.to('cuda:1'), edge_attr=edge_attr.to('cuda:1')).to('cuda:0')
+        # y = checkpoint.checkpoint(
+        #     self.GNN,
+        #     window,
+        #     all_neighbors,
+        #     edge_attr,
+        # )
+
+        #Just get out the middle element
+        y = y.reshape(nbatches, self.time_window, -1, self.out_channels)[:, int((self.time_window-1)/2), ...]
+
+        ranges = xmeta['ranges']
+        y = [
+            y[:, r0:r1, :] for r0, r1 in ranges
+        ]
+        temp_out = self.scatter_to_chans(y, nbatches, nchannels, the_device)
+        
+        #batch, feat, channel
+        temp_out = self.mlp(temp_out).view(1,1,-1)
+        
+        return temp_out
+
     def forward(self, x):
         '''
         Input data is assumed to be of shape (nbatch, nfeatures, nchannels, nticks)
@@ -357,28 +573,18 @@ class Network(nn.Module):
             # print('Post unet', x.shape)
 
 
-        
-
         if self.skip_GNN:
             x = x.permute(0,3,2,1)
             return self.mlp(x).permute(0,3,2,1)
         else:
             n_feat_base = x.shape[1]
             nticks_orig = x.size(-1)
-            #For ease
             #batch, tick, channels, features
             to_pad = int((self.time_window-1)/2)
             x = F.pad(x, (to_pad, to_pad))
             nticks = x.size(-1)
-            # print(x.shape)
             x = x.permute(0,3,2,1)
             #Convert from channels to wires (values duped for common elec chan)
-            #Also expand features to include 'meta' features i.e. wire seg number, elec channel
-            # n_feat_wire = 4
-            # nchan_f0_p0 = len(self.face_plane_wires_channels[0,0])
-            # nchan_f0_p1 = len(self.face_plane_wires_channels[0,1])
-            # nchan_f0_p2 = len(self.face_plane_wires_channels[0,2])
-
             these_nfeats = n_feat_base + self.n_feat_wire
 
             for ij, tensor in self.face_plane_wires_channels.items():
@@ -426,8 +632,6 @@ class Network(nn.Module):
                 hi = low + 2*to_pad+1
 
                 #NEW AS WIRES
-
-                    
                 as_wires_f0_p0 = self.make_wires(x, low, hi, these_nfeats, 0, 0)
                 as_wires_f0_p1 = self.make_wires(x, low, hi, these_nfeats, 0, 1)
                 as_wires_f0_p2 = self.make_wires(x, low, hi, these_nfeats, 0, 2)
@@ -462,21 +666,6 @@ class Network(nn.Module):
                     cross_start = cross_end
 
                 window = window.reshape(-1, nfeat)
-
-                # ##Saving roundabout
-                # roundabout_y = window.reshape(nbatches, self.time_window, -1, nfeat)[:, int((self.time_window-1)/2), ...]
-                # roundabout_y = [
-                #     roundabout_y[:, r0:r1, :] for r0, r1 in ranges
-                # ]
-                # # roundabout_y = [
-                # #     roundabout_y[:, :ncross_01, :],
-                # #     roundabout_y[:, ncross_01:ncross_01+ncross_12, :],
-                # #     roundabout_y[:, ncross_01+ncross_12:ncross_01+ncross_12+ncross_20:, :],
-                # # ]
-                # roundabout_y = self.scatter_to_chans(roundabout_y, nbatches, nchannels, the_device)
-                # roundabout[:, :, tick, :] = roundabout_y.permute(0, 2, 1)
-                # ################
-
 
                 # y = self.GNN(window, all_neighbors, edge_attr=edge_attr)
                 # self.GNN = self.GNN.to('cuda:1')

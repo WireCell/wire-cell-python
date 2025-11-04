@@ -176,11 +176,13 @@ class Looper:
         self.net.train()
 
         epoch_losses = list()
-        for features, labels in data:
+        snapshot_at = 2
+        snapshot_mem = True
+        for ie, (features, labels) in enumerate(data):
 
             #Add if needed
-            # features = features.to(self._device)
-            # labels = labels.to(self._device)
+            features = features.to(self._device)
+            labels = labels.to(self._device)
 
             outA, outA_meta = self.net.A(features)
 
@@ -192,18 +194,28 @@ class Looper:
 
             total_loss_val = 0.0
             total_loss_tensor = 0.0
-            # for i in range(nregions):
-            for i in range(100):
+
+            nregions=100
+
+            for i in range(nregions):
+                print('Region', i)
                 outB_i = self.net.B(outA, outA_meta, i)
                 # print('outB_i shape:', outB_i.shape)
                 loss_i = self.criterion(outB_i, labels[..., i])
                 total_loss_val += loss_i.item()
-                total_loss_tensor = total_loss_tensor + loss_i
+                # total_loss_tensor = total_loss_tensor + loss_i
                 
-            total_loss_tensor.backward()
+                # total_loss_tensor.backward(retain_graph=(i < (nregions-1))) 
+                loss_i.backward(retain_graph=(i < (nregions-1))) 
 
             self.optimizer.step()
             self.optimizer.zero_grad()
+            if snapshot_mem and snapshot_at == ie and cuda.is_available():
+                # try:
+                memory._dump_snapshot(f"backward_loop.pickle")
+                print('Saved backward snapshot')
+                snapshot_mem = False
+                memory._record_memory_history(enabled=None)
             # print('Total loss:', total_loss_val)
             epoch_losses.append(total_loss_val)
 
