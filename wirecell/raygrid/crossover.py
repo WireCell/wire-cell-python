@@ -94,6 +94,18 @@ def get_ordered_inverse_indices(S: torch.Tensor):
 
 def downsample_blobs(highres_blobs, to_run=2):
     
+    '''
+    Takes in blobs of some resolution and attempts to downsample to a lower resolution
+    (in terms of number of wires in each plane). It's pretty dumb so far, and any progressive
+    downsampling works best (at all?) in sequential powers of the same factor.
+
+    i.e. you should do to_run = 2 --> 4 --> 8 --> 16
+
+    This is because blobs won't 'line up' nicely otherwise
+    for example I tried doing from 16-->100 once and it made a blob span (0, 200)
+    and not (0, 100), (100, 200)
+    '''
+
     results = highres_blobs.clone()
     print(results.shape)
 
@@ -230,7 +242,7 @@ def draw_blobs(store, face_index, rays=None, plane_indices=[0,1,2], colors=['ora
     import matplotlib.pyplot as plt
     from matplotlib.patches import Rectangle
     import numpy as np
-    from math import pi, sqrt, atan, tan
+    from math import pi, sqrt, atan, tan, cos, sin
     coords = coords_from_schema(store, face_index)
 
     face = store.faces[face_index]
@@ -282,6 +294,31 @@ def draw_blobs(store, face_index, rays=None, plane_indices=[0,1,2], colors=['ora
     # for pi in plane_indices:
     #         plt.plot(xs, ys, color=colors[pi])
     plt.show()
+
+def make_poly(coords, plane, ray_low, ray_high):
+    from math import pi, sqrt, atan, tan, cos, sin
+    from shapely.geometry import Polygon
+    base=2
+    plane += base
+    pitch_mag = coords.pitch_mag[plane]
+    pitch_dir = coords.pitch_dir[plane]
+    xy = coords.views[plane][0] + ray_low*pitch_dir*pitch_mag
+    theta = atan(pitch_dir[1]/pitch_dir[0]) - pi/2
+    p0 = (xy + 10000.*torch.Tensor([cos(theta), sin(theta)]))
+    p1 = (xy - 10000.*torch.Tensor([cos(theta), sin(theta)]))
+    p2 = p0 + (ray_high - ray_low)*pitch_dir*pitch_mag
+    p3 = p1 + (ray_high - ray_low)*pitch_dir*pitch_mag
+    poly = Polygon([p0, p1, p3, p2])
+    return poly
+
+def make_poly_from_blob(coords, blob, has_trivial=False):
+
+    sub = 2 if has_trivial else 0
+    polys = [make_poly(coords, i-sub, *blob[i]) for i in range(blob.shape[0])]
+    poly = polys[0]
+    for p in polys[1:]: poly = poly.intersection(p)
+    return poly
+
 
 def views_from_schema(store, face_index, drift='vd'):
     #GEt the plane objects from the store for htis face
