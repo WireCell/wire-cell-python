@@ -1,4 +1,5 @@
 import numpy as np
+import sys
 import time
 import torch
 import torch.nn as nn
@@ -127,6 +128,7 @@ class Network(nn.Module):
         super().__init__()
         self.nfeat_post_unet=n_unet_features
         self.n_feat_wire = n_feat_wire
+        self.do_ugnn = False
         self.checkpoint=checkpoint
         self.n_input_features=n_input_features
         self.skip_unets=skip_unets
@@ -200,18 +202,25 @@ class Network(nn.Module):
             self.coords_face0 = xover.coords_from_schema(store, 0)
             self.coords_face1 = xover.coords_from_schema(store, 1)
             
-            if use_cells:
-                print('Making cells face 0')
-                self.good_indices_0 = xover.make_cells(self.coords_face0, *(self.nwires_0))
-                print('Done', self.good_indices_0.shape)
-                print('Making cells face 1')
-                self.good_indices_1 = xover.make_cells(self.coords_face1, *(self.nwires_1))
-                print('Done', self.good_indices_1.shape)
-            else:
-                print('Building maps')
-                self.good_indices_0 = xover.build_map(self.coords_face0, self.nwires_0)
-                self.good_indices_1 = xover.build_map(self.coords_face1, self.nwires_1)
-                print('Done')
+            # if use_cells:
+            print('Making cells face 0')
+            self.good_indices_0 = xover.make_cells(self.coords_face0, *(self.nwires_0), keep_shape=(self.do_ugnn))
+            print('Done', self.good_indices_0.shape)
+            print('Making cells face 1')
+            self.good_indices_1 = xover.make_cells(self.coords_face1, *(self.nwires_1), keep_shape=(self.do_ugnn))
+            print('Done', self.good_indices_1.shape)
+            if self.do_ugnn:
+                self.blobs_0_run3, self.downsampled_indices_0_3 = xover.downsample_blobs(self.good_indices_0, to_run=3)
+                self.blobs_1_run3, self.downsampled_indices_1_3 = xover.downsample_blobs(self.good_indices_1, to_run=3)
+
+                self.good_indices_0 = self.good_indices_0[:, 2:, 0]
+                self.good_indices_1 = self.good_indices_1[:, 2:, 0]
+
+            # else:
+            #     print('Building maps')
+            #     self.good_indices_0 = xover.build_map(self.coords_face0, self.nwires_0)
+            #     self.good_indices_1 = xover.build_map(self.coords_face1, self.nwires_1)
+            #     print('Done')
 
             view_base = len(self.coords_face0.views) - 3
             ray_crossings_0_01 = self.coords_face0.ray_crossing(view_base + 0, self.good_indices_0[:,0], view_base + 1, self.good_indices_0[:,1])
@@ -415,7 +424,29 @@ class Network(nn.Module):
         # wires[..., x.shape[-1]] = plane
         # wires[..., x.shape[-1]+1] = face
         return wires
-    
+    def ugnn_method(self, input):
+        '''
+        Input to this will be a list with (nbatch, (ncells_face0/ncells_face1), nfeatures) shape at the respective indices
+        '''
+
+        #Need to go from the high-res cells to lower-res cells, using the indices found in the constructor
+        print('Preparing UGNN', [i.shape for i in input])
+
+        #We scatter from the input array (which is split up by front/back cells) into the unique indices we found
+        #Mean pooling -- but could consider max pooling or something else?
+        input = torch.cat([
+            torch_scatter.scatter_mean(input[0], self.downsampled_indices_0_3.to(input[0].device), dim=1),
+            torch_scatter.scatter_mean(input[1], self.downsampled_indices_1_3.to(input[0].device), dim=1),
+        ], dim=1)
+
+        #Now with these downsampled cells, we would run through a GNN 
+        # TODO -- figure out edges + edge attributes
+        input = torch.cat([
+            input,
+            self.ugnn(input)
+        ], dim=-1)
+
+
     def A(self, x):
         '''
         Input data is assumed to be of shape (nbatch, nfeatures, nchannels, nticks)
@@ -581,13 +612,19 @@ class Network(nn.Module):
             edge_attr,
         ) if self.checkpoint else self.GNN(window, all_neighbors, edge_attr=edge_attr)
 
+
+
         #Just get out the middle element
         y = y.reshape(nbatches, self.time_window, -1, self.out_channels)[:, int((self.time_window-1)/2), ...]
-
         ranges = xmeta['ranges']
         y = [
             y[:, r0:r1, :] for r0, r1 in ranges
         ]
+        
+        if self.do_ugnn:
+            self.ugnn_method(y)    
+            sys.exit()
+
         temp_out = self.scatter_to_chans(y, nbatches, nchannels, the_device)
         
         #batch, feat, channel

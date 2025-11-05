@@ -115,7 +115,7 @@ def downsample_blobs(highres_blobs, to_run=2):
     
     #Returns tuple with unique values + indices of source in unique output
     results = get_ordered_inverse_indices(results)
-    return results[1] #but just output the indices
+    return results
 
 
 
@@ -155,7 +155,7 @@ def apply_sequence(coords, nw, blobs_in, run=1, warn=False):
         wires[i:i+run] = 0
     return torch.cat(blobs_out)
 
-def make_cells(coords, nw_0, nw_1, nw_2):
+def make_cells(coords, nw_0, nw_1, nw_2, keep_shape=False):
     trivial_blobs = tiling.trivial_blobs()
 
     all_cells = []
@@ -166,7 +166,7 @@ def make_cells(coords, nw_0, nw_1, nw_2):
     blobs = apply_sequence(coords, nw_0, trivial_blobs, warn=True)
     blobs = apply_sequence(coords, nw_1, blobs)
     blobs = apply_sequence(coords, nw_2, blobs)
-    return blobs[:, 2:, 0]
+    return (blobs if keep_shape else blobs[:, 2:, 0])
 
 def get_nearest(rcs, n=5):
     dist = (rcs[:, 0].unsqueeze(0) - rcs[:,0].unsqueeze(1))**2
