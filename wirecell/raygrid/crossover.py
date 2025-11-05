@@ -226,11 +226,11 @@ def draw_schema(store, face_index, plane_indices=[0,1,2], colors=['orange','blue
             plt.plot(xs, ys, color=colors[pi], linestyle=('dashed' if i in to_highlight else 'solid'))
     plt.show()
 
-def draw_blobs(store, face_index, plane_indices=[0,1], colors=['orange','blue','red'], alpha=0.3):
+def draw_blobs(store, face_index, rays=None, plane_indices=[0,1,2], colors=['orange','blue','red'], alpha=0.3, limits=None):
     import matplotlib.pyplot as plt
     from matplotlib.patches import Rectangle
     import numpy as np
-    from math import pi, sqrt, atan
+    from math import pi, sqrt, atan, tan
     coords = coords_from_schema(store, face_index)
 
     face = store.faces[face_index]
@@ -247,30 +247,35 @@ def draw_blobs(store, face_index, plane_indices=[0,1], colors=['orange','blue','
     rect = Rectangle(bl, width, height, facecolor='grey', edgecolor='black', alpha=0.7)
     ax.add_patch(rect)
 
-    ax.set_xlim(bl[0] - 1., bl[0] + width + 1.)
-    ax.set_ylim(bl[1] - 1., bl[1] + height + 1.)
+    if limits is None:
+        ax.set_xlim(bl[0] - 1., bl[0] + width + 1.)
+        ax.set_ylim(bl[1] - 1., bl[1] + height + 1.)
+    else:
+        ax.set_xlim(limits[0], limits[1])
+        ax.set_ylim(limits[2], limits[3])
 
-    
     for plane in range(2, 5):
         pitch_mag = coords.pitch_mag[plane]
         pitch_dir = coords.pitch_dir[plane]
         xy = coords.views[plane][0]
         a=0
-        # for i in range(nwires[plane-2]):
-        for i in range(100, 150):
+        these_rays = rays[plane-2]
+        for i in these_rays:
             this_xy = xy + i*pitch_mag*pitch_dir
-            print(xy, pitch_mag, pitch_dir)
-            r = Rectangle(
-                xy=(this_xy[0].item(), this_xy[1].item()-2000.),
-                width=coords.pitch_mag[plane],
-                height=2*sqrt(coords.pitch_mag[0]**2 + coords.pitch_mag[1]**2),
-                angle=(180./pi)*atan(coords.pitch_dir[plane][1]/coords.pitch_dir[plane][0]),
-                rotation_point=(this_xy[0].item(), this_xy[1].item()),
-                alpha=alpha,
-                color=colors[plane-2]
-            )
-            ax.add_patch(r)
-            ax.scatter(xy[0].item(), xy[1].item())
+            print(this_xy, pitch_mag, pitch_dir)
+            theta = (180./pi)*atan(coords.pitch_dir[plane][1]/coords.pitch_dir[plane][0]) - 90.
+            ax.axline(this_xy, slope=(tan(theta*pi/180.)), color=colors[plane-2])
+            # r = Rectangle(
+            #     xy=(this_xy[0].item(), this_xy[1].item()-2000.),
+            #     width=coords.pitch_mag[plane],
+            #     height=2*sqrt(coords.pitch_mag[0]**2 + coords.pitch_mag[1]**2),
+            #     angle=(180./pi)*atan(coords.pitch_dir[plane][1]/coords.pitch_dir[plane][0]),
+            #     rotation_point=(this_xy[0].item(), this_xy[1].item()),
+            #     alpha=alpha,
+            #     color=colors[plane-2]
+            # )
+            # ax.add_patch(r)
+            # ax.scatter(xy[0].item(), xy[1].item())
             # xy += pitch_mag*pitch_dir
             # break
         # break
