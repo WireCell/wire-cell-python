@@ -173,7 +173,7 @@ class Looper:
                 #     [self.B(outA, outA_meta, i) for i in range(nregions)],
                 #     dim=-1
                 # )
-                loss = self.loss(out, labels)
+                loss = self.loss(features, labels)
                 save(labels, f'eval_labels_{self.save_iter}.pt')
                 save(features, f'eval_input_{self.save_iter}.pt')
                 self.save_iter += 1
