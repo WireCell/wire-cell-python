@@ -82,8 +82,10 @@ class Coordinates:
         the view.  The relative vector from first to second point is in the
         direction of the pitch.  The magnitude of the vector is the pitch.
         '''
+        print('__init__', views.dtype)
         self.init(views)
-        self.views = views      # keep for provenance
+        print('post init', views.dtype)
+        self.views = views.to(torch.float64)      # keep for provenance
 
     @property
     def nviews(self):
@@ -239,7 +241,7 @@ class Coordinates:
         '''
         Initialize or reinitialize the coordinate system  
         '''
-        
+        pitches = pitches.to(torch.float64)
         nviews = pitches.shape[0]
 
         # 1D (l) the magnitude of the pitch of view l.
@@ -259,16 +261,16 @@ class Coordinates:
 
         # 3D (l,m,c) crossing point 2D coordinates c of "ray 0" of views l and
         # m.  
-        self.zero_crossings = torch.zeros((nviews, nviews, 2))
+        self.zero_crossings = torch.zeros((nviews, nviews, 2)).to(torch.float64)
 
         # 3D (l,m,c) difference vector coordinates c between two consecutive
         # m-view crossings along l ray direction.  between crossings of rays of
         # view m.  
-        self.ray_jump = torch.zeros((nviews, nviews, 2))
+        self.ray_jump = torch.zeros((nviews, nviews, 2)).to(torch.float64)
 
         # The Ray Grid tensor representations.
-        self.a = torch.zeros((nviews, nviews, nviews))
-        self.b = torch.zeros((nviews, nviews, nviews))        
+        self.a = torch.zeros((nviews, nviews, nviews)).to(torch.float64)
+        self.b = torch.zeros((nviews, nviews, nviews)).to(torch.float64)
 
         # Cross-view things
         for il in range(nviews):

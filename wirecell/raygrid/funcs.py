@@ -32,7 +32,7 @@ def crossing(r0, r1):
 
     denominator = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
 
-    if torch.isclose(denominator, torch.tensor(0.0)):
+    if torch.isclose(denominator, torch.tensor(0.0).to(torch.float64)):
         raise ValueError("parallel lines do not cross")
 
     t_numerator = (x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)
