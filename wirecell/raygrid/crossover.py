@@ -205,7 +205,7 @@ def scatter_crossings(coords, v1, r1, v2, r2, color='black'):
 
 def coords_from_schema(store, face_index, drift='vd'):
     views = views_from_schema(store, face_index, drift)
-    coords = Coordinates(views.to(torch.float))
+    coords = Coordinates(views.to(torch.float64))
     return coords
 
 def get_center(store, wire, drift='vd'):
@@ -258,6 +258,7 @@ def draw_blobs(store, face_index, rays=None, plane_indices=[0,1,2], colors=['ora
     fig, ax = plt.subplots()
     rect = Rectangle(bl, width, height, facecolor='grey', edgecolor='black', alpha=0.7)
     ax.add_patch(rect)
+    ax.set_aspect('equal', adjustable='box') 
 
     if limits is None:
         ax.set_xlim(bl[0] - 1., bl[0] + width + 1.)
@@ -343,10 +344,11 @@ def views_from_schema(store, face_index, drift='vd'):
         second_head = store.points[second_wire.head]
         second_tail = store.points[second_wire.tail]
 
-        first_head = np.array([first_head.x, first_head.y, first_head.z])
-        first_tail = np.array([first_tail.x, first_tail.y, first_tail.z])
+        first_head =  np.array([first_head.x, first_head.y, first_head.z])
+        first_tail =  np.array([first_tail.x, first_tail.y, first_tail.z])
         second_head = np.array([second_head.x, second_head.y, second_head.z])
         second_tail = np.array([second_tail.x, second_tail.y, second_tail.z])
+       
 
         for wi in plane.wires:
             wire = store.wires[wi]
@@ -361,6 +363,13 @@ def views_from_schema(store, face_index, drift='vd'):
         b = first_head - first_tail
         b = b / np.linalg.norm(b)
 
+        # m = b[1]/b[2] #y / z
+        # first_b = first_head[1] - m*first_head[2] #b = y - mx 
+        # second_b = second_head[1] - m*second_head[2]
+        # newpitch = abs(first_b - second_b)/sqrt(m*m + 1)
+        # print(first_head, second_head, first_tail, second_tail)
+        # print('newpitch', newpitch)
+
         pitch = np.linalg.norm(np.linalg.cross((second_head - first_head), b))
         print(pitch)
 
@@ -370,7 +379,7 @@ def views_from_schema(store, face_index, drift='vd'):
         )
 
         second_point = first_center + b
-             
+
         # print(first_center)
 
         # print(second_center)
