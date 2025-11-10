@@ -135,7 +135,7 @@ def draw_pred_comp(p, t):
     num_categories = 4
     import matplotlib.colors as mcolors
     import matplotlib.patches as mpatches
-    colors = np.array([
+    colors = torch.tensor([
         [0., 0., 0., 1.], #black
         [1., 0., 0., 1.], #red
         [1., 1., 1., 1.], #white
@@ -203,12 +203,12 @@ def scatter_crossings(coords, v1, r1, v2, r2, color='black'):
     ys = rc.detach().numpy()[:,1]
     plt.scatter(xs, ys, color=color)
 
-def coords_from_schema(store, face_index, drift='vd'):
-    views = views_from_schema(store, face_index, drift)
+def coords_from_schema(store, face_index, shift_half=True):
+    views = views_from_schema(store, face_index, shift_half=shift_half)
     coords = Coordinates(views.to(torch.float64))
     return coords
 
-def get_center(store, wire, drift='vd'):
+def get_center(store, wire):
 
     head = store.points[wire.head]
     tail = store.points[wire.tail]
@@ -321,7 +321,7 @@ def make_poly_from_blob(coords, blob, has_trivial=False):
     return poly
 
 
-def views_from_schema(store, face_index, drift='vd'):
+def views_from_schema(store, face_index, shift_half=True):
     #GEt the plane objects from the store for htis face
     planes = [store.planes[i] for i in store.faces[face_index].planes]
 
@@ -344,10 +344,10 @@ def views_from_schema(store, face_index, drift='vd'):
         second_head = store.points[second_wire.head]
         second_tail = store.points[second_wire.tail]
 
-        first_head =  np.array([first_head.x, first_head.y, first_head.z])
-        first_tail =  np.array([first_tail.x, first_tail.y, first_tail.z])
-        second_head = np.array([second_head.x, second_head.y, second_head.z])
-        second_tail = np.array([second_tail.x, second_tail.y, second_tail.z])
+        first_head =  torch.tensor([first_head.x, first_head.y, first_head.z])
+        first_tail =  torch.tensor([first_tail.x, first_tail.y, first_tail.z])
+        second_head = torch.tensor([second_head.x, second_head.y, second_head.z])
+        second_tail = torch.tensor([second_tail.x, second_tail.y, second_tail.z])
        
 
         for wi in plane.wires:
@@ -361,29 +361,44 @@ def views_from_schema(store, face_index, drift='vd'):
             max_z = max([head.z, tail.z, max_z])
 
         b = first_head - first_tail
-        b = b / np.linalg.norm(b)
+        b = b / torch.linalg.norm(b)
 
-        # m = b[1]/b[2] #y / z
-        # first_b = first_head[1] - m*first_head[2] #b = y - mx 
-        # second_b = second_head[1] - m*second_head[2]
-        # newpitch = abs(first_b - second_b)/sqrt(m*m + 1)
-        # print(first_head, second_head, first_tail, second_tail)
-        # print('newpitch', newpitch)
-
-        pitch = np.linalg.norm(np.linalg.cross((second_head - first_head), b))
+        pitch = torch.linalg.norm(torch.linalg.cross((second_head - first_head), b))
         print(pitch)
 
-        b = pitch * np.array([b[2], b[1]])
-        b = np.linalg.matmul(
-            b, [[0, -1], [1, 0]]
+        #This becomes the pitch vector
+        b = pitch * torch.tensor([b[2], b[1]])
+        b = torch.linalg.matmul(
+            b, torch.tensor([[0., -1.], [1., 0.]])
         )
 
+
+        # #Default: shift half a pitch lower so the rays bound a pitch-width centered on a wire
+        if shift_half:
+
+            #Decrement by half a pitch
+            first_head[1:] -= 0.5*b
+            first_tail[1:] -= 0.5*b
+
+            #Now we have to account for the bounds in z and y
+            first_head = torch.clamp(
+                first_head,
+                min=torch.tensor([-sys.float_info.max, min_y, min_z]),
+                max=torch.tensor([sys.float_info.max, max_y, max_z])
+            )
+            first_tail = torch.clamp(
+                first_tail,
+                min=torch.tensor([-sys.float_info.max, min_y, min_z]),
+                max=torch.tensor([sys.float_info.max, max_y, max_z])
+            )
+
+            first_center = torch.mean(torch.vstack([first_head, first_tail]), dim=0)
+            first_center = first_center[torch.tensor([2,1])]
+            print('FC:', first_center)
+
+
+
         second_point = first_center + b
-
-        # print(first_center)
-
-        # print(second_center)
-        # views.append(torch.cat([first_center.unsqueeze(0), second_center.unsqueeze(0)], dim=0).unsqueeze(0))
         views.append(torch.cat([first_center.unsqueeze(0), second_point.unsqueeze(0)], dim=0).unsqueeze(0))
 
     ul = torch.Tensor([min_z, max_y])
