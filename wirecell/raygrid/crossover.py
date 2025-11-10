@@ -166,7 +166,44 @@ def apply_sequence(coords, nw, blobs_in, run=1, warn=False):
             print('WARNING SIZE 0 FROM BLOB')
         wires[i:i+run] = 0
     return torch.cat(blobs_out)
+def shoelace_area(vertices: torch.Tensor) -> torch.Tensor:
+    """
+    Calculates the signed area of a polygon using the Shoelace formula.
 
+    A positive result indicates a counter-clockwise orientation.
+    A negative result indicates a clockwise orientation.
+
+    Args:
+        vertices (torch.Tensor): A tensor of shape (N, 2) where N is the number
+                                   of vertices, and the second dimension holds (x, y)
+                                   coordinates.
+
+    Returns:
+        torch.Tensor: A scalar tensor representing the signed area.
+    """
+    if vertices.dim() != 2 or vertices.size(1) != 2:
+        raise ValueError("Vertices tensor must have shape (N, 2).")
+
+    # 1. Separate coordinates
+    x = vertices[:, 0]
+    y = vertices[:, 1]
+
+    # 2. Use torch.roll to get the coordinates of the next vertex (x_i+1, y_i+1)
+    # The shift=-1 handles the wrap-around from N to 1.
+    x_next = torch.roll(x, shifts=-1, dims=0)
+    y_next = torch.roll(y, shifts=-1, dims=0)
+
+    # 3. Calculate the two sums for the Shoelace formula:
+    # S1 = sum(x_i * y_i+1)  (The "down/right" cross products)
+    S1 = torch.sum(x * y_next)
+
+    # S2 = sum(x_i+1 * y_i)  (The "up/left" cross products)
+    S2 = torch.sum(x_next * y)
+
+    # 4. Final Signed Area = 0.5 * (S1 - S2)
+    signed_area = 0.5 * (S1 - S2)
+
+    return abs(signed_area)
 def make_cells(coords, nw_0, nw_1, nw_2, keep_shape=False):
     trivial_blobs = tiling.trivial_blobs()
 
@@ -212,10 +249,10 @@ def get_center(store, wire):
 
     head = store.points[wire.head]
     tail = store.points[wire.tail]
-    center =  torch.mean(torch.Tensor([
+    center =  torch.mean(torch.tensor([
             [head.z, head.y],
             [tail.z, tail.y],
-    ]), dim=0)
+    ], dtype=torch.float64), dim=0)
     return center
 
 def draw_schema(store, face_index, plane_indices=[0,1,2], colors=['orange','blue','red'], highlight=dict()):
@@ -318,17 +355,187 @@ def make_poly_insitu(coords, plane, ray_low, ray_high, extent=1.e5):
     plane += base
     pitch_mag = coords.pitch_mag[plane]
     pitch_dir = coords.pitch_dir[plane]
+    ray_dir = coords.ray_dir[plane]
     xy = coords.views[plane][0] + ray_low*pitch_dir*pitch_mag
-    theta = atan(pitch_dir[1]/pitch_dir[0]) - pi/2
-    p0 = (xy + extent*torch.Tensor([cos(theta), sin(theta)]))
-    p1 = (xy - extent*torch.Tensor([cos(theta), sin(theta)]))
+    p0 = (xy + extent*ray_dir)
+    p1 = (xy - extent*ray_dir)
     p2 = p1 + (ray_high - ray_low)*pitch_dir*pitch_mag
     p3 = p0 + (ray_high - ray_low)*pitch_dir*pitch_mag
 
-    #NEED TO ORDER THESE CCW
+    #Ordered Clockwise
     poly = torch.vstack([p0.unsqueeze(0), p1.unsqueeze(0), p2.unsqueeze(0), p3.unsqueeze(0)])
 
     return poly
+
+def is_inside(points, clip_edge_start, clip_edge_end):
+    """
+    Determines if points are 'inside' the half-plane defined by the clip edge.
+    'Inside' is typically defined as the side where the cross product is positive (for counter-clockwise order).
+    
+    Args:
+        points (torch.Tensor): Tensor of shape (N, 2) for subject vertices.
+        clip_edge_start (torch.Tensor): (2,) for P_start of clip edge.
+        clip_edge_end (torch.Tensor): (2,) for P_end of clip edge.
+        
+    Returns:
+        torch.Tensor: Boolean tensor of shape (N,) where True means 'inside'.
+    """
+    # Vector from clip start to clip end: (C_end - C_start)
+    edge_vec = clip_edge_end - clip_edge_start
+    
+    # Vector from clip start to subject points: (P - C_start)
+    point_vecs = points - clip_edge_start
+    
+    # Cross product (2D equivalent: a_x * b_y - a_y * b_x)
+    # The sign of the cross product determines which side of the line the point is on.
+    cross_product = edge_vec[0] * point_vecs[:, 1] - edge_vec[1] * point_vecs[:, 0]
+    
+    # Assuming the clip polygon is ordered counter-clockwise (CCW), 
+    # a positive cross product means the point is 'inside' the polygon.
+    return cross_product >= 0
+
+def find_intersection(p1, p2, c1, c2):
+    """
+    Finds the intersection point of two line segments (p1->p2 and c1->c2).
+    
+    Args:
+        p1, p2 (torch.Tensor): Subject edge start/end, shape (2,).
+        c1, c2 (torch.Tensor): Clip edge start/end, shape (2,).
+        
+    Returns:
+        torch.Tensor: Intersection point (2,).
+    """
+    # Line 1 (Subject): P = p1 + t * (p2 - p1)
+    # Line 2 (Clip): C = c1 + u * (c2 - c1)
+    
+    dp = p2 - p1
+    dc = c2 - c1
+    
+    # Determinant D = dp_x * dc_y - dp_y * dc_x
+    D = dp[0] * dc[1] - dp[1] * dc[0]
+    
+    # If D is close to zero, lines are parallel (or collinear)
+    if torch.abs(D) < 1e-6:
+        # Handle parallel/collinear case: for simplicity, we return the start point, 
+        # but in a full implementation, you'd need more robust logic.
+        return p1
+    
+    # Vector from clip start to subject start
+    cp1 = p1 - c1
+    
+    # Solve for t (parameter along the subject edge)
+    t = (cp1[1] * dc[0] - cp1[0] * dc[1]) / D
+    
+    # Intersection point
+    intersection_point = p1 + t * dp
+    
+    return intersection_point
+
+def sutherland_hodgman_clip(subject_polygon, clip_polygon):
+    """
+    Applies the Sutherland-Hodgman algorithm.
+    
+    Args:
+        subject_polygon (torch.Tensor): (N_sub, 2)
+        clip_polygon (torch.Tensor): (N_clip, 2) - MUST BE CONVEX and CCW ORDERED.
+        
+    Returns:
+        torch.Tensor: The clipped polygon vertices (M, 2).
+    """
+    # Start with the original subject polygon
+    output_polygon = subject_polygon.clone()
+    
+    # Get the number of vertices for the clip polygon
+    num_clip_vertices = clip_polygon.shape[0]
+    
+    # 1. Iterate through each edge of the clip polygon
+    for i in range(num_clip_vertices):
+        # Clip edge: c1 -> c2
+        c1 = clip_polygon[i]
+        c2 = clip_polygon[(i + 1) % num_clip_vertices]
+        
+        input_polygon = output_polygon
+        # If the polygon shrinks to 0 or 1 point, stop
+        if input_polygon.shape[0] < 2:
+            return torch.empty((0, 2)) 
+
+        new_output_polygon = []
+        num_input_vertices = input_polygon.shape[0]
+
+        # 2. Iterate through each edge of the current subject polygon
+        for j in range(num_input_vertices):
+            # Subject edge: p1 -> p2
+            p1 = input_polygon[j]
+            p2 = input_polygon[(j + 1) % num_input_vertices]
+            
+            # Check the "inside" status of the endpoints (p1 and p2)
+            p1_inside = is_inside(p1.unsqueeze(0), c1, c2).item()
+            p2_inside = is_inside(p2.unsqueeze(0), c1, c2).item()
+            
+            # 3. Apply the Four Clipping Cases
+            
+            if p1_inside and p2_inside:
+                # Case 1: Inside -> Inside (Output P2)
+                new_output_polygon.append(p2)
+            
+            elif p1_inside and not p2_inside:
+                # Case 2: Inside -> Outside (Output Intersection I)
+                intersection = find_intersection(p1, p2, c1, c2)
+                new_output_polygon.append(intersection)
+                
+            elif not p1_inside and p2_inside:
+                # Case 4: Outside -> Inside (Output Intersection I, then P2)
+                intersection = find_intersection(p1, p2, c1, c2)
+                new_output_polygon.append(intersection)
+                new_output_polygon.append(p2)
+                
+            # Case 3: Outside -> Outside (Output None) - implicitly handled by else/no-op
+
+        # Update the subject polygon for the next clip edge
+        if not new_output_polygon:
+            output_polygon = torch.empty((0, 2))
+        else:
+            output_polygon = torch.stack(new_output_polygon)
+
+    return output_polygon
+def shoelace_area(vertices: torch.Tensor) -> torch.Tensor:
+    """
+    Calculates the signed area of a polygon using the Shoelace formula.
+
+    A positive result indicates a counter-clockwise orientation.
+    A negative result indicates a clockwise orientation.
+
+    Args:
+        vertices (torch.Tensor): A tensor of shape (N, 2) where N is the number
+                                   of vertices, and the second dimension holds (x, y)
+                                   coordinates.
+
+    Returns:
+        torch.Tensor: A scalar tensor representing the signed area.
+    """
+    if vertices.dim() != 2 or vertices.size(1) != 2:
+        raise ValueError("Vertices tensor must have shape (N, 2).")
+
+    # 1. Separate coordinates
+    x = vertices[:, 0]
+    y = vertices[:, 1]
+
+    # 2. Use torch.roll to get the coordinates of the next vertex (x_i+1, y_i+1)
+    # The shift=-1 handles the wrap-around from N to 1.
+    x_next = torch.roll(x, shifts=-1, dims=0)
+    y_next = torch.roll(y, shifts=-1, dims=0)
+
+    # 3. Calculate the two sums for the Shoelace formula:
+    # S1 = sum(x_i * y_i+1)  (The "down/right" cross products)
+    S1 = torch.sum(x * y_next)
+
+    # S2 = sum(x_i+1 * y_i)  (The "up/left" cross products)
+    S2 = torch.sum(x_next * y)
+
+    # 4. Final Signed Area = 0.5 * (S1 - S2)
+    signed_area = 0.5 * (S1 - S2)
+
+    return signed_area
 
 def make_poly_from_blob(coords, blob, has_trivial=False):
 
@@ -362,10 +569,10 @@ def views_from_schema(store, face_index, shift_half=True):
         second_head = store.points[second_wire.head]
         second_tail = store.points[second_wire.tail]
 
-        first_head =  torch.tensor([first_head.x, first_head.y, first_head.z])
-        first_tail =  torch.tensor([first_tail.x, first_tail.y, first_tail.z])
-        second_head = torch.tensor([second_head.x, second_head.y, second_head.z])
-        second_tail = torch.tensor([second_tail.x, second_tail.y, second_tail.z])
+        first_head =  torch.tensor([first_head.x, first_head.y, first_head.z], dtype=torch.float64)
+        first_tail =  torch.tensor([first_tail.x, first_tail.y, first_tail.z], dtype=torch.float64)
+        second_head = torch.tensor([second_head.x, second_head.y, second_head.z], dtype=torch.float64)
+        second_tail = torch.tensor([second_tail.x, second_tail.y, second_tail.z], dtype=torch.float64)
        
 
         for wi in plane.wires:
@@ -382,14 +589,14 @@ def views_from_schema(store, face_index, shift_half=True):
         b = b / torch.linalg.norm(b)
 
         pitch = torch.linalg.norm(torch.linalg.cross((second_head - first_head), b))
-        print('Pitchmag:', pitch)
+        # print('Pitchmag:', pitch)
 
         #This becomes the pitch vector
-        b = pitch * torch.tensor([b[2], b[1]])
+        b = pitch * torch.tensor([b[2], b[1]], dtype=torch.float64)
         b = torch.linalg.matmul(
-            b, torch.tensor([[0., -1.], [1., 0.]])
+            b, torch.tensor([[0., -1.], [1., 0.]], dtype=torch.float64)
         )
-        print('Pitch dir:', b)
+        # print('Pitch dir:', b)
 
 
         #Default: shift half a pitch lower so the rays bound a pitch-width centered on a wire
@@ -398,27 +605,44 @@ def views_from_schema(store, face_index, shift_half=True):
             #Decrement by half a pitch
             first_head = first_head[torch.tensor([2,1])]
             first_tail = first_tail[torch.tensor([2,1])]
-            print(f'Original head/tail:\n\t{first_head}\n\t{first_tail}')
-            first_head -= 0.5*b
-            first_tail -= 0.5*b
+            # print(f'Original head/tail:\n\t{first_head}\n\t{first_tail}')
+            shift = 0.5*b
+            shifted_head = first_head - shift
+            shifted_tail = first_tail - shift
 
-            print(f'Shifted head/tail:\n\t{first_head}\n\t{first_tail}')
+            # print(f'Shifted head/tail:\n\t{first_head}\n\t{first_tail}')
 
             #Now we have to account for the bounds in z and y
-            first_head = torch.clamp(
-                first_head,
+            clamped_head = torch.clamp(
+                shifted_head,
                 min=torch.tensor([min_z, min_y]),
                 max=torch.tensor([max_z, max_y])
             )
-            first_tail = torch.clamp(
-                first_tail,
+            clamped_tail = torch.clamp(
+                shifted_tail,
                 min=torch.tensor([min_z, min_y]),
                 max=torch.tensor([max_z, max_y])
             )
-            print(f'New head/tail:\n\t{first_head}\n\t{first_tail}')
+            # print(f'Clamped head/tail:\n\t{clamped_head}\n\t{clamped_tail}')
 
-            first_center = torch.mean(torch.vstack([first_head, first_tail]), dim=0)
-            print('FC:', first_center)
+
+            first_to_clamped_head = clamped_head - first_head
+            first_to_clamped_tail = clamped_tail - first_tail
+
+            ftc_unit_head = first_to_clamped_head / first_to_clamped_head.norm()
+            ftc_unit_tail = first_to_clamped_tail / first_to_clamped_tail.norm()
+
+            clamped_to_shifted_head = shifted_head - clamped_head
+            clamped_to_shifted_tail = shifted_tail - clamped_tail
+
+            big_v_head_norm = clamped_to_shifted_head.norm()**2 / first_to_clamped_head.norm()
+            big_v_tail_norm = clamped_to_shifted_tail.norm()**2 / first_to_clamped_tail.norm()
+
+            final_head = clamped_head + ftc_unit_head*big_v_head_norm
+            final_tail = clamped_tail + ftc_unit_tail*big_v_tail_norm
+
+            first_center = torch.mean(torch.vstack([final_head, final_tail]), dim=0)
+            # print('FC:', first_center)
 
 
 
