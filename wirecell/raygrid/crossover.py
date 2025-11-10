@@ -92,6 +92,11 @@ def get_ordered_inverse_indices(S: torch.Tensor):
     
     return ordered_unique_elements, ordered_inverse_indices
 
+def get_nwires(store, face_index=0):
+    face = store.faces[face_index]
+    nwires = [len(store.planes[i].wires) for i in face.planes]
+    return nwires
+
 def downsample_blobs(highres_blobs, to_run=2):
     
     '''
