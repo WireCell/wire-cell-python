@@ -382,36 +382,42 @@ def views_from_schema(store, face_index, shift_half=True):
         b = b / torch.linalg.norm(b)
 
         pitch = torch.linalg.norm(torch.linalg.cross((second_head - first_head), b))
-        print(pitch)
+        print('Pitchmag:', pitch)
 
         #This becomes the pitch vector
         b = pitch * torch.tensor([b[2], b[1]])
         b = torch.linalg.matmul(
             b, torch.tensor([[0., -1.], [1., 0.]])
         )
+        print('Pitch dir:', b)
 
 
-        # #Default: shift half a pitch lower so the rays bound a pitch-width centered on a wire
+        #Default: shift half a pitch lower so the rays bound a pitch-width centered on a wire
         if shift_half:
 
             #Decrement by half a pitch
-            first_head[1:] -= 0.5*b
-            first_tail[1:] -= 0.5*b
+            first_head = first_head[torch.tensor([2,1])]
+            first_tail = first_tail[torch.tensor([2,1])]
+            print(f'Original head/tail:\n\t{first_head}\n\t{first_tail}')
+            first_head -= 0.5*b
+            first_tail -= 0.5*b
+
+            print(f'Shifted head/tail:\n\t{first_head}\n\t{first_tail}')
 
             #Now we have to account for the bounds in z and y
             first_head = torch.clamp(
                 first_head,
-                min=torch.tensor([-sys.float_info.max, min_y, min_z]),
-                max=torch.tensor([sys.float_info.max, max_y, max_z])
+                min=torch.tensor([min_z, min_y]),
+                max=torch.tensor([max_z, max_y])
             )
             first_tail = torch.clamp(
                 first_tail,
-                min=torch.tensor([-sys.float_info.max, min_y, min_z]),
-                max=torch.tensor([sys.float_info.max, max_y, max_z])
+                min=torch.tensor([min_z, min_y]),
+                max=torch.tensor([max_z, max_y])
             )
+            print(f'New head/tail:\n\t{first_head}\n\t{first_tail}')
 
             first_center = torch.mean(torch.vstack([first_head, first_tail]), dim=0)
-            first_center = first_center[torch.tensor([2,1])]
             print('FC:', first_center)
 
 
