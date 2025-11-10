@@ -24,3 +24,5 @@ ltximg
 latexmk-out
 auto
 .aider*
+*.pt
+*.pickle
