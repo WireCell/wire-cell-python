@@ -154,6 +154,21 @@ def draw_pred_comp(p, t):
     plt.legend(handles=patches)
     plt.show()
 
+def make_poly_sequence(coords, plane, nw, blobs_in, polys_in, run=1, warn=False):
+    blobs_out = []
+    polys_out = []
+    plane_polys = {i:make_poly_insitu(coords, plane, i, i+run) for i in range(0, nw, run)}
+
+    for poly, blob in zip(polys_in, blobs_in):
+        for i, plane_poly_in in plane_polys.items():
+            new_poly = sutherland_hodgman_clip(plane_poly_in, poly)
+            if new_poly.size(0) > 0: 
+                polys_out.append(new_poly)
+                blobs_out.append(torch.cat([blob, torch.tensor([i, i+run],dtype=blob.dtype)],dim=0))
+            elif warn:
+                print('WARNING SIZE 0 FROM BLOB')
+    return polys_out, blobs_out
+
 def apply_sequence(coords, nw, blobs_in, run=1, warn=False):
     blobs_out = []
     wires = torch.zeros(nw).to(bool)
@@ -537,13 +552,71 @@ def shoelace_area(vertices: torch.Tensor) -> torch.Tensor:
 
     return signed_area
 
-def make_poly_from_blob(coords, blob, has_trivial=False):
+# def make_poly_from_blob(coords, blob, has_trivial=False):
 
+#     sub = 2 if has_trivial else 0
+#     polys = [make_poly(coords, i-sub, *blob[i]) for i in range(blob.shape[0])]
+#     poly = polys[0]
+#     for p in polys[1:]: poly = poly.intersection(p)
+#     return poly
+def make_poly_from_blob(coords, blob, has_trivial=False):
     sub = 2 if has_trivial else 0
-    polys = [make_poly(coords, i-sub, *blob[i]) for i in range(blob.shape[0])]
+    polys = [make_poly_insitu(coords, i-sub, *blob[i]) for i in range(blob.shape[0])]
     poly = polys[0]
-    for p in polys[1:]: poly = poly.intersection(p)
+    for p in polys[1:]: poly = sutherland_hodgman_clip(poly, p)
     return poly
+
+
+
+def make_all_poly_from_wires(coords, nwires_in):
+    poly_prims = [[], [], []]
+    indices = []
+    areas = []
+    centroids = []
+    polys = []
+    trivial_blob = make_poly_from_blob(coords, torch.tensor([[0,1], [0,1]], dtype=torch.long), has_trivial=True)
+    for 
+
+
+def make_all_poly(coords, blobs, nwires_in):
+    poly_prims = []
+    for i, nwires in enumerate(nwires_in):
+        poly_prims.append([])
+        for j in range(nwires):
+            poly_prims[-1].append(
+                make_poly_insitu(coords, i, j, j+1)
+            )
+    trivial_blob = make_poly_from_blob(coords, torch.tensor([[0,1], [0,1]], dtype=torch.long), has_trivial=True)
+    polys = []
+    for iblob, blob in enumerate(blobs):
+        if not iblob % 1000: print(iblob, end='\r')
+        i = blob[2, 0]
+        j = blob[3, 0]
+        k = blob[4, 0]
+        these_polys = [poly_prims[0][i], poly_prims[1][j], poly_prims[2][k]]
+        polys.append(trivial_blob)
+        for poly in these_polys:
+            polys[-1] = sutherland_hodgman_clip(polys[-1], poly)
+        # polys.append(
+        #     poly_prims[0][i].intersection(poly_prims[1][j]).intersection(poly_prims[2][k])
+        # )
+        if polys[-1].size(0) == 0: print('Empty', i, j, k, blob)
+
+def get_centroids_and_areas(coords, blobs):
+
+
+    areas = []
+    centroids = []
+    trivial_blob = make_poly_from_blob(coords, torch.tensor([[0,1], [0,1]], dtype=torch.long), has_trivial=True)
+    for i, blob in enumerate(blobs):
+        if not (i % 1000): print(i, end='\r')
+        poly = make_poly_from_blob(coords, blob[2:], has_trivial=False)
+        poly = sutherland_hodgman_clip(poly, trivial_blob)
+        # areas.append(shoelace_area(poly))
+        # centroids.append(torch.mean(poly, dim=0))
+    areas = torch.vstack(areas)
+    centroids = torch.cat(centroids)
+    return areas, centroids       
 
 
 def views_from_schema(store, face_index, shift_half=True):

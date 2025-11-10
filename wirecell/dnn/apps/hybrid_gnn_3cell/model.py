@@ -204,23 +204,24 @@ class Network(nn.Module):
             
             # if use_cells:
             print('Making cells face 0')
-            self.good_indices_0 = xover.make_cells(self.coords_face0, *(self.nwires_0), keep_shape=(self.do_ugnn))
+            self.good_indices_0 = xover.make_cells(self.coords_face0, *(self.nwires_0), keep_shape=True)
             print('Done', self.good_indices_0.shape)
             print('Making cells face 1')
-            self.good_indices_1 = xover.make_cells(self.coords_face1, *(self.nwires_1), keep_shape=(self.do_ugnn))
+            self.good_indices_1 = xover.make_cells(self.coords_face1, *(self.nwires_1), keep_shape=True)
             print('Done', self.good_indices_1.shape)
             if self.do_ugnn:
                 self.blobs_0_run3, self.downsampled_indices_0_3 = xover.downsample_blobs(self.good_indices_0, to_run=3)
                 self.blobs_1_run3, self.downsampled_indices_1_3 = xover.downsample_blobs(self.good_indices_1, to_run=3)
 
-                self.good_indices_0 = self.good_indices_0[:, 2:, 0]
-                self.good_indices_1 = self.good_indices_1[:, 2:, 0]
+            #Get areas and centers
+            print('Getting areas and centroids')
+            all_polys = xover.make_all_poly(self.coords_face0, self.good_indices_0, self.nwires_0)
+            # areas_and_centroids = xover.get_centroids_and_areas(self.coords_face0, self.good_indices_0)
+            print('Done')
 
-            # else:
-            #     print('Building maps')
-            #     self.good_indices_0 = xover.build_map(self.coords_face0, self.nwires_0)
-            #     self.good_indices_1 = xover.build_map(self.coords_face1, self.nwires_1)
-            #     print('Done')
+            self.good_indices_0 = self.good_indices_0[:, 2:, 0]
+            self.good_indices_1 = self.good_indices_1[:, 2:, 0]
+
 
             view_base = len(self.coords_face0.views) - 3
             ray_crossings_0_01 = self.coords_face0.ray_crossing(view_base + 0, self.good_indices_0[:,0], view_base + 1, self.good_indices_0[:,1])
