@@ -312,6 +312,24 @@ def make_poly(coords, plane, ray_low, ray_high):
     poly = Polygon([p0, p1, p3, p2])
     return poly
 
+def make_poly_insitu(coords, plane, ray_low, ray_high, extent=1.e5):
+    from math import pi, sqrt, atan, tan, cos, sin
+    base=2
+    plane += base
+    pitch_mag = coords.pitch_mag[plane]
+    pitch_dir = coords.pitch_dir[plane]
+    xy = coords.views[plane][0] + ray_low*pitch_dir*pitch_mag
+    theta = atan(pitch_dir[1]/pitch_dir[0]) - pi/2
+    p0 = (xy + extent*torch.Tensor([cos(theta), sin(theta)]))
+    p1 = (xy - extent*torch.Tensor([cos(theta), sin(theta)]))
+    p2 = p1 + (ray_high - ray_low)*pitch_dir*pitch_mag
+    p3 = p0 + (ray_high - ray_low)*pitch_dir*pitch_mag
+
+    #NEED TO ORDER THESE CCW
+    poly = torch.vstack([p0.unsqueeze(0), p1.unsqueeze(0), p2.unsqueeze(0), p3.unsqueeze(0)])
+
+    return poly
+
 def make_poly_from_blob(coords, blob, has_trivial=False):
 
     sub = 2 if has_trivial else 0
