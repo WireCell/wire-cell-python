@@ -626,19 +626,23 @@ def get_inside_crossings(coords, blobs):
     pairs = pairs.unsqueeze(0).unsqueeze(2).repeat(insides.shape[0], 1, insides.shape[2], 1)
     blob_inds = torch.arange(blobs.shape[0]).unsqueeze(1).unsqueeze(2).repeat(1, insides.shape[1], insides.shape[2])
     return dict(
-        xings=xings[insides], pairs=pairs[insides], indices=blob_inds[insides], insides=insides
+        xings=xings[insides], pairs=pairs[insides], indices=blob_inds[insides], insides=insides, ncells=insides.shape[0]
     )
 
 
-def merge_cells(cells, rcs, inside_crossings, verbose=False):
+def merge_crossings(coords, inside_crossings, verbose=False):
     seen = 0
     centroids = []
     areas = []
     merged_cells = []
     inds = inside_crossings['indices']
+    pairs = inside_crossings['pairs']
+    xings = inside_crossings['xings']
+    ncells = inside_crossings['ncells']
+    rcs = coords.ray_crossing(pairs[:,0], xings[:,0], pairs[:,1], xings[:,1])
     unique_inds, counts = torch.unique(inds, return_counts=True)
     max_count = max(counts).item()
-    for i in range(cells.shape[0]):
+    for i in range(ncells):
     # for i in range(100):
         
         where = torch.where(inds[seen:seen+max_count] == i)
@@ -655,8 +659,20 @@ def merge_cells(cells, rcs, inside_crossings, verbose=False):
         _, sorted_inds = torch.sort(angles)
         areas.append(shoelace_area(merged[sorted_inds]))
 
+    #Normalize area and centroids
+    areas = torch.stack(areas).to(torch.float32)
+    mean_area = torch.mean(areas)
+    areas -= mean_area
+    areas /= mean_area
+
+    centroids = torch.stack(centroids).to(torch.float32)
+    max_cent = torch.max(centroids, dim=0)
+    min_cent = torch.min(centroids, dim=0)
+    centroids -= (max_cent.values + min_cent.values)/2.0
+    centroids *= (2./(max_cent.values - min_cent.values))
+
     return dict(
-        merged_cells=merged_cells,
+        crossings=merged_cells,
         centroids=centroids,
         areas=areas,
     )

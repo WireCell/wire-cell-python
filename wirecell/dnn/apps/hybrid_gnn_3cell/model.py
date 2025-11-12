@@ -34,12 +34,15 @@ def check_A_in_B(A, B):
         A_indices_in_B_tensor.unsqueeze(0),
     ])
 
-def fill_window(w, nfeat, first_wires, second_wires, third_wires, indices, crossings):
+def fill_window(w, nfeat, first_wires, second_wires, third_wires, indices, crossings, merged_crossings):
     
     w[..., :(nfeat)] = first_wires[:, :, indices[:,0], :]
     w[..., (nfeat):2*(nfeat)] = second_wires[:, :, indices[:,1], :]
     w[..., 2*(nfeat):3*(nfeat)] = third_wires[:, :, indices[:,2], :]
-    # start = 3*(nfeat)
+    start = 3*(nfeat)
+
+    w[..., start] = merged_crossings['areas']
+    start += 1
     # w[..., start:start+2] = crossings[:, 0].view(1, 1, -1, 2).repeat(w.shape[0], w.shape[1], 1, 1).to(w.device)
     # start += 2
     # w[..., start:start+2] = crossings[:, 1].view(1, 1, -1, 2).repeat(w.shape[0], w.shape[1], 1, 1).to(w.device)
@@ -47,6 +50,7 @@ def fill_window(w, nfeat, first_wires, second_wires, third_wires, indices, cross
     # w[..., start:start+2] = crossings[:, 2].view(1, 1, -1, 2).repeat(w.shape[0], w.shape[1], 1, 1).to(w.device)
     # start += 2
     # w[..., start:start+2] = torch.mean(crossings, dim=1).view(1,1,-1,2).repeat(w.shape[0], w.shape[1], 1, 1).to(w.device)
+    
 
 def get_nn_from_plane_triplet(indices, n_nearest=3):
 
@@ -122,7 +126,7 @@ class Network(nn.Module):
             one_side=False,
             out_channels=8,
             use_cells=True,
-            fixed_neighbors=False,
+            fixed_neighbors=True,
             #gcn=False, #Currently not working
         ):
         super().__init__()
@@ -142,7 +146,7 @@ class Network(nn.Module):
         self.one_side=one_side
         if skip_unets:
             n_unet_features=n_input_features
-        self.features_into_GNN = 3*(n_unet_features + n_feat_wire)# + 8
+        self.features_into_GNN = 3*(n_unet_features + n_feat_wire) + 1# + 8
         gnn_settings = [self.features_into_GNN, 16, 4]
         self.GNN = (
             # GCN(*gnn_settings, out_channels=out_channels) if gcn else #Currently not working
@@ -214,9 +218,15 @@ class Network(nn.Module):
                 self.blobs_1_run3, self.downsampled_indices_1_3 = xover.downsample_blobs(self.good_indices_1, to_run=3)
 
             #Get areas and centers
-            print('Getting areas and centroids')
-            all_polys = xover.make_all_poly(self.coords_face0, self.good_indices_0, self.nwires_0)
-            # areas_and_centroids = xover.get_centroids_and_areas(self.coords_face0, self.good_indices_0)
+            print('Getting areas and centroids -- Face 0')
+            inside_crossings_0 = xover.get_inside_crossings(self.coords_face0, self.good_indices_0)
+            self.merged_crossings_0 = xover.merge_crossings(self.coords_face0, inside_crossings_0, verbose=True)
+            print()
+            print('Done')
+            print('Getting areas and centroids -- Face 1')
+            inside_crossings_1 = xover.get_inside_crossings(self.coords_face1, self.good_indices_1)
+            self.merged_crossings_1 = xover.merge_crossings(self.coords_face1, inside_crossings_1, verbose=True)
+            print()
             print('Done')
 
             self.good_indices_0 = self.good_indices_0[:, 2:, 0]
@@ -246,6 +256,7 @@ class Network(nn.Module):
             # #Neighbors on either face of the anode
             n_nearest = 2
 
+            print('Getting neighbors')
             if not fixed_neighbors:
                 nearest_neighbors_0 = get_nn_from_plane_triplet(self.good_indices_0, n_nearest=n_nearest)
                 nearest_neighbors_1 = get_nn_from_plane_triplet(self.good_indices_1, n_nearest=n_nearest)
@@ -277,17 +288,25 @@ class Network(nn.Module):
             # #Static edge attributes -- dZ, dY, r=sqrt(dZ**2 + dY**2), dFace
             # #TODO  Do things like dWire0, dWire1 make sense for things like cross-pair (i.e. 0,1 and 0,2) neighbors?
             # #      Same question for cross face (i.e. 0,1 on face 0 and 0,1 on face 1)
-            
-
-            self.nstatic_edge_attr = 13
-            static_edges_0 = self.make_edge_attr(
+            # self.nstatic_edge_attr = 13
+            # static_edges_0 = self.make_edge_attr(
+            #     nearest_neighbors_0, self.good_indices_0, self.nstatic_edge_attr,
+            #     self.ray_crossings_0, self.nwires_0, 0
+            # )
+            # static_edges_1 = self.make_edge_attr(
+            #     nearest_neighbors_1, self.good_indices_1, self.nstatic_edge_attr,
+            #     self.ray_crossings_1, self.nwires_1, 0
+            # )
+            self.nstatic_edge_attr = 7
+            static_edges_0 = self.make_edge_attr_new(
                 nearest_neighbors_0, self.good_indices_0, self.nstatic_edge_attr,
-                self.ray_crossings_0, self.nwires_0, 0
+                self.merged_crossings_0, self.nwires_0, 0
             )
-            static_edges_1 = self.make_edge_attr(
+            static_edges_1 = self.make_edge_attr_new(
                 nearest_neighbors_1, self.good_indices_1, self.nstatic_edge_attr,
-                self.ray_crossings_1, self.nwires_1, 0
-            ) 
+                self.merged_crossings_1, self.nwires_1, 0
+            )
+
 
             self.static_edges = torch.cat(
                 [
@@ -383,7 +402,18 @@ class Network(nn.Module):
 
         edge_attrs[:, -1] = dface #dFace
         return edge_attrs.detach()
-    
+
+    def make_edge_attr_new(self, neighbors, cells, nattr, merged_crossings, nwires, dface=0):
+        edge_attrs = torch.zeros(neighbors.size(1), nattr)
+        centroids = merged_crossings['centroids']
+        edge_attrs[:, :2] = (
+            centroids[neighbors[0]] -
+            centroids[neighbors[1]]
+        )
+        edge_attrs[:, 3:6] = cells[neighbors[0]] - cells[neighbors[1]] / torch.Tensor(nwires)
+
+        edge_attrs[:, -1] = dface #dFace
+        return edge_attrs.detach()
     def scatter_to_chans(self, y, nbatches, nchannels, the_device):
         #TODO -- check size of y etc
         temp_out = torch.zeros(nbatches, nchannels, y[0].size(-1)).to(the_device)
@@ -588,9 +618,9 @@ class Network(nn.Module):
         cross_start = 0
         cross_end = 0
         window_infos = [
-            [as_wires_f0_p0, as_wires_f0_p1, as_wires_f0_p2, self.good_indices_0, self.ray_crossings_0],
+            [as_wires_f0_p0, as_wires_f0_p1, as_wires_f0_p2, self.good_indices_0, self.ray_crossings_0, self.merged_crossings_0],
         ] + ([] if self.one_side else [
-            [as_wires_f1_p0, as_wires_f1_p1, as_wires_f1_p2, self.good_indices_1, self.ray_crossings_1],
+            [as_wires_f1_p0, as_wires_f1_p1, as_wires_f1_p2, self.good_indices_1, self.ray_crossings_1, self.merged_crossings_1],
         ])
         for info in window_infos:
             cross_end += len(info[3])
