@@ -334,7 +334,7 @@ def blob_insides(coords, blobs, crossings):
         v1_final, r1_final,
         v2_final, r2_final,
         v3_flat,
-        rbegin3_flat, rend3_flat
+        rbegin3_flat, rend3_flat,
     )
 
     # 5. Reshape results back
@@ -559,8 +559,8 @@ def crossing_in_other(coords, v1, r1, v2, r2, v3, rbegin3, rend3, nudge=1e-3):
     pinds_lo = coords.pitch_index(pitches+nudge, v3)
     pinds_hi = coords.pitch_index(pitches-nudge, v3)
 
-    pinds = coords.pitch_index(pitches, v3)
-    in_other = (pinds >= rbegin3) & (pinds < rend3)
+    # pinds = coords.pitch_index(pitches, v3)
+    in_other = (pinds_lo >= rbegin3) & (pinds_hi < rend3)
 
     return in_other
 
