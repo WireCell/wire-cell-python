@@ -164,14 +164,22 @@ def make_poly_sequence(coords, plane, nw, blobs_in, polys_in, run=1, warn=False)
     polys_out = []
     plane_polys = {i:make_poly_insitu(coords, plane, i, i+run) for i in range(0, nw, run)}
 
+    a = 0
     for poly, blob in zip(polys_in, blobs_in):
+        b = 0
+        print(a)
         for i, plane_poly_in in plane_polys.items():
+            if not b % 10: print(b, end='\r')
+            # print(i, plane_poly_in, poly, blob)
             new_poly = sutherland_hodgman_clip(plane_poly_in, poly)
             if new_poly.size(0) > 0: 
                 polys_out.append(new_poly)
-                blobs_out.append(torch.cat([blob, torch.tensor([i, i+run],dtype=blob.dtype)],dim=0))
+                blobs_out.append(torch.cat([blob, torch.tensor([[i, i+run]],dtype=blob.dtype)],dim=0))
             elif warn:
                 print('WARNING SIZE 0 FROM BLOB')
+            b += 1
+        print()
+        a += 1
     return polys_out, blobs_out
 
 def apply_sequence(coords, nw, blobs_in, run=1, warn=False):
@@ -226,11 +234,6 @@ def shoelace_area(vertices: torch.Tensor) -> torch.Tensor:
     return abs(signed_area)
 def make_cells(coords, nw_0, nw_1, nw_2, keep_shape=False):
     trivial_blobs = tiling.trivial_blobs()
-
-    all_cells = []
-    wires_0 = torch.zeros(nw_0).to(bool)
-    wires_1 = torch.zeros(nw_1).to(bool)
-    wires_2 = torch.zeros(nw_2).to(bool)
 
     blobs = apply_sequence(coords, nw_0, trivial_blobs, warn=True)
     blobs = apply_sequence(coords, nw_1, blobs)
@@ -557,13 +560,107 @@ def shoelace_area(vertices: torch.Tensor) -> torch.Tensor:
 
     return signed_area
 
-# def make_poly_from_blob(coords, blob, has_trivial=False):
 
-#     sub = 2 if has_trivial else 0
-#     polys = [make_poly(coords, i-sub, *blob[i]) for i in range(blob.shape[0])]
-#     poly = polys[0]
-#     for p in polys[1:]: poly = poly.intersection(p)
-#     return poly
+def merge_close_points(points: torch.Tensor, epsilon: float) -> torch.Tensor:
+    """
+    Merges points in a tensor that are closer than a specified epsilon 
+    by replacing the cluster with its centroid.
+    
+    Args:
+        points (torch.Tensor): Input tensor of shape (N, D), where N is the 
+                               number of points and D is the dimension (e.g., 2).
+        epsilon (float): The maximum distance threshold for points to be merged.
+        
+    Returns:
+        torch.Tensor: The merged set of points (centroids).
+    """
+    # Use float64 for better precision in distance calculations
+    points = points.to(torch.float64) 
+    
+    # Initialize the list for the final merged points
+    merged_points = []
+    
+    # Create a mask to track which points have already been processed/merged
+    is_merged = torch.zeros(points.shape[0], dtype=torch.bool, device=points.device)
+    
+    # Simple, sequential clustering loop (best done on CPU for sequential logic)
+    for i in range(points.shape[0]):
+        if is_merged[i]:
+            continue
+        
+        # 1. Calculate Squared Distance: D_ij^2 = ||P_i - P_j||^2
+        # Vectorized calculation of differences between the current point P_i and all others
+        diff = points[i] - points
+        
+        # Squared Euclidean distance
+        # Shape (N, D) -> (N,)
+        sq_distances = torch.sum(diff ** 2, dim=1)
+        
+        # 2. Identify Neighbors: Find all points within the epsilon radius
+        # Note: we use epsilon^2 to avoid the slow torch.sqrt() operation
+        neighbors_mask = sq_distances <= (epsilon ** 2)
+        
+        # Get the actual points and indices that belong to this cluster
+        cluster_points = points[neighbors_mask]
+        
+        # 3. Merge: Calculate the centroid (average) of the cluster
+        # Shape (K, D) -> (D,)
+        centroid = cluster_points.mean(dim=0)
+        
+        # 4. Update: Mark all points in this cluster as processed
+        is_merged[neighbors_mask] = True
+        
+        # 5. Store the centroid
+        merged_points.append(centroid)
+
+    # Stack the centroids back into a single tensor
+    if not merged_points:
+        return torch.empty((0, points.shape[1]), dtype=points.dtype, device=points.device)
+        
+    return torch.stack(merged_points)
+
+def get_inside_crossings(coords, blobs):
+    xings = tiling.blob_crossings(blobs)
+    insides = tiling.blob_insides(coords, blobs, xings)
+    pairs = tiling.strip_pairs(blobs.shape[1])
+    pairs = pairs.unsqueeze(0).unsqueeze(2).repeat(insides.shape[0], 1, insides.shape[2], 1)
+    blob_inds = torch.arange(blobs.shape[0]).unsqueeze(1).unsqueeze(2).repeat(1, insides.shape[1], insides.shape[2])
+    return dict(
+        xings=xings[insides], pairs=pairs[insides], indices=blob_inds[insides], insides=insides
+    )
+
+
+def merge_cells(cells, rcs, inside_crossings, verbose=False):
+    seen = 0
+    centroids = []
+    areas = []
+    merged_cells = []
+    inds = inside_crossings['indices']
+    unique_inds, counts = torch.unique(inds, return_counts=True)
+    max_count = max(counts).item()
+    for i in range(cells.shape[0]):
+    # for i in range(100):
+        
+        where = torch.where(inds[seen:seen+max_count] == i)
+        vs_0 = rcs[seen:seen+max_count][where]
+        if verbose and not i % 1000:
+            print(i, where[0].shape, seen, end='\r')
+        seen += where[0].shape[0]
+        merged = merge_close_points(vs_0, 1.e-9)
+        if len(merged) < 3: print('ERROR') #TODO -- throw
+        centroid = torch.mean(merged, dim=0)
+        centroids.append(centroid)
+        diffs = centroid - merged
+        angles = torch.atan2(diffs[:,1], diffs[:,0])
+        _, sorted_inds = torch.sort(angles)
+        areas.append(shoelace_area(merged[sorted_inds]))
+
+    return dict(
+        merged_cells=merged_cells,
+        centroids=centroids,
+        areas=areas,
+    )
+
 def make_poly_from_blob(coords, blob, has_trivial=False):
     sub = 2 if has_trivial else 0
     polys = [make_poly_insitu(coords, i-sub, *blob[i]) for i in range(blob.shape[0])]
@@ -571,16 +668,6 @@ def make_poly_from_blob(coords, blob, has_trivial=False):
     for p in polys[1:]: poly = sutherland_hodgman_clip(poly, p)
     return poly
 
-
-
-def make_all_poly_from_wires(coords, nwires_in):
-    poly_prims = [[], [], []]
-    indices = []
-    areas = []
-    centroids = []
-    polys = []
-    trivial_blob = make_poly_from_blob(coords, torch.tensor([[0,1], [0,1]], dtype=torch.long), has_trivial=True)
-    for 
 
 
 def make_all_poly(coords, blobs, nwires_in):
@@ -602,9 +689,6 @@ def make_all_poly(coords, blobs, nwires_in):
         polys.append(trivial_blob)
         for poly in these_polys:
             polys[-1] = sutherland_hodgman_clip(polys[-1], poly)
-        # polys.append(
-        #     poly_prims[0][i].intersection(poly_prims[1][j]).intersection(poly_prims[2][k])
-        # )
         if polys[-1].size(0) == 0: print('Empty', i, j, k, blob)
 
 def get_centroids_and_areas(coords, blobs):
