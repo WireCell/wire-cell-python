@@ -609,7 +609,7 @@ class Network(nn.Module):
         outputs = []
         for i, encoder in enumerate(self.UGNN_encoding):
             #Pass through encoding step
-            print('Window:', window.shape)
+            # print('Window:', window.shape)
             if i == 0:
                 input = window.reshape(-1, window.shape[-1])
             else:
@@ -618,7 +618,7 @@ class Network(nn.Module):
                 #     torch_scatter.scatter_mean(outputs[-1][:len(self.UGNN_indices_0[i])], self.UGNN_indices_0[i].to(output[-1].device), dim=1),
                 #     torch_scatter.scatter_mean(outputs[-1][len(self.UGNN_indices_0[i]):], self.UGNN_indices_1[i].to(output[-1].device), dim=1)
                 # ], dim=1)
-                print(outputs[-1].shape)
+                # print(outputs[-1].shape)
 
                 prev_len = outputs[-1].shape[0]
 
@@ -626,12 +626,12 @@ class Network(nn.Module):
                 target_len = len(self.UGNN_blobs_0[i]) + len(self.UGNN_blobs_1[i])
                 
                 nindices = len(self.UGNN_indices[i-1])
-                print(nindices, prev_len, target_len)
+                # print(nindices, prev_len, target_len)
                 time_window_indices = torch.zeros((self.time_window*nindices),dtype=torch.long)
                 for j in range(self.time_window):
                     time_window_indices[j*nindices:(j+1)*nindices] = (self.UGNN_indices[i-1] + j*target_len)
                 input = torch_scatter.scatter_mean(outputs[-1], time_window_indices.to(outputs[-1].device), dim=0)
-                print(input.shape)
+                # print(input.shape)
             output = encoder(
                 input,
                 neighbors[i],
@@ -639,15 +639,24 @@ class Network(nn.Module):
             )
             
             outputs.append(output)
-        print('Outputs!')
-        for op in outputs:
-            print(op.shape)
+        # print('Outputs!')
+        # for op in outputs:
+        #     print(op.shape)
         
         output = outputs.pop(-1)
         if len(self.UGNN_decoding) > 0: #Special case: a single encoding layer i.e. not a UGNN
             for i, decoder in enumerate(self.UGNN_decoding):
+
+                full_indices = self.UGNN_indices[-(1+i)].repeat(3)
+                nindices = self.UGNN_indices[-(1+i)].shape[0]
+                ncells = (len(self.UGNN_blobs_0[-(1+i)]) + len(self.UGNN_blobs_1[-(1+i)]))
+                full_indices[nindices:2*nindices] += ncells
+                full_indices[2*nindices:3*nindices] += 2*ncells
+                # print(len(full_indices), torch.max(full_indices))
+                
+
                 #This upsamples from the previous layer
-                output = output[self.UGNN_indices[-(1+i)]] ##NEED TO ACCOUNT FOR time window here!!!
+                output = output[full_indices] ##NEED TO ACCOUNT FOR time window here!!!
 
                 #This combines with the current layer
                 output = torch.cat([
@@ -856,8 +865,9 @@ class Network(nn.Module):
         if self.do_ugnn:
             neighbors = xmeta['UGNN_all_neighbors']
             edge_attr = xmeta['UGNN_edge_attr']
-            self.ugnn_method(window, neighbors, edge_attr)
-            sys.exit()
+            y = self.ugnn_method(window, neighbors, edge_attr)
+            # print('UGNN output:', y.shape)
+            # sys.exit()
         else:
             window = window.reshape(-1, nfeat)
             all_neighbors = xmeta['all_neighbors']
