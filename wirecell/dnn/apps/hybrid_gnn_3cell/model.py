@@ -169,14 +169,10 @@ class Network(nn.Module):
             decoding_output_chans = []
             self.runs = []
         else:
-            # encoding_message_passes = [4, 4, 4]
-            # encoding_hidden_chans = [16, 16, 32]
-            # encoding_output_chans = [16, 32, 64]
-            encoding_message_passes = [2,2]
-            encoding_hidden_chans = [8, 8]
-            encoding_output_chans = [4, 8]
-            self.runs = [3]
-            # self.runs = [3, 9]
+            encoding_message_passes = [4, 4, 4]
+            encoding_hidden_chans = [16, 16, 32]
+            encoding_output_chans = [16, 32, 64]
+            self.runs = [3, 9]
             
             # decoding_message_passes = [4]
             # decoding_hidden_chans = [16]
