@@ -658,6 +658,7 @@ def merge_crossings(coords, inside_crossings, verbose=False):
         angles = torch.atan2(diffs[:,1], diffs[:,0])
         _, sorted_inds = torch.sort(angles)
         areas.append(shoelace_area(merged[sorted_inds]))
+        merged_cells.append(merged[sorted_inds])
 
     #Normalize area and centroids
     areas = torch.stack(areas).to(torch.float32)
@@ -675,6 +676,9 @@ def merge_crossings(coords, inside_crossings, verbose=False):
         crossings=merged_cells,
         centroids=centroids,
         areas=areas,
+        mean_area=mean_area,
+        max_centroid=max_cent.values,
+        min_centroid=min_cent.values,
     )
 
 def make_poly_from_blob(coords, blob, has_trivial=False):
