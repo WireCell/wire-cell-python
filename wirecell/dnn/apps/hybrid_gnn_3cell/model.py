@@ -120,8 +120,8 @@ class Network(nn.Module):
     def __init__(
             self,
             wires_file='protodunevd-wires-larsoft-v3.json.bz2',
-            n_unet_features=4,
-            time_window=3,
+            n_unet_features=2,
+            time_window=1,
             checkpoint=False,
             n_feat_wire = 0,
             detector=0,
@@ -129,7 +129,7 @@ class Network(nn.Module):
             skip_unets=False,
             skip_GNN=False,
             one_side=False,
-            out_channels=16,
+            # out_channels=16,
             use_cells=True,
             fixed_neighbors=True,
             #gcn=False, #Currently not working
@@ -152,13 +152,13 @@ class Network(nn.Module):
         if skip_unets:
             n_unet_features=n_input_features
         self.features_into_GNN = 3*(n_unet_features + n_feat_wire) + 1# + 8
-        gnn_settings = [self.features_into_GNN, 16, 4]
-        self.GNN = (
-            # GCN(*gnn_settings, out_channels=out_channels) if gcn else #Currently not working
-            GAT(*gnn_settings, out_channels=out_channels)
-        )
+        # gnn_settings = [self.features_into_GNN, 16, 4]
+        # self.GNN = (
+        #     # GCN(*gnn_settings, out_channels=out_channels) if gcn else #Currently not working
+        #     GAT(*gnn_settings, out_channels=out_channels)
+        # )
 
-        single_layer_UGNN = True
+        single_layer_UGNN = False
         if single_layer_UGNN:
             encoding_message_passes = [4]
             encoding_hidden_chans = [16]
@@ -169,10 +169,14 @@ class Network(nn.Module):
             decoding_output_chans = []
             self.runs = []
         else:
-            encoding_message_passes = [4, 4, 4]
-            encoding_hidden_chans = [16, 16, 32]
-            encoding_output_chans = [16, 32, 64]
-            self.runs = [3, 9]
+            # encoding_message_passes = [4, 4, 4]
+            # encoding_hidden_chans = [16, 16, 32]
+            # encoding_output_chans = [16, 32, 64]
+            encoding_message_passes = [2,2]
+            encoding_hidden_chans = [8, 8]
+            encoding_output_chans = [4, 8]
+            self.runs = [3]
+            # self.runs = [3, 9]
             
             # decoding_message_passes = [4]
             # decoding_hidden_chans = [16]
@@ -604,6 +608,10 @@ class Network(nn.Module):
         # wires[..., x.shape[-1]] = plane
         # wires[..., x.shape[-1]+1] = face
         return wires
+
+    def checkpointed_gnn_call(self, gnn, window, neighbors, edge_attr):
+        return gnn(window, neighbors, edge_attr=edge_attr)
+
     def ugnn_method(self, window, neighbors, edge_attr):
         '''
         '''
@@ -633,11 +641,27 @@ class Network(nn.Module):
                     time_window_indices[j*nindices:(j+1)*nindices] = (self.UGNN_indices[i-1] + j*target_len)
                 input = torch_scatter.scatter_mean(outputs[-1], time_window_indices.to(outputs[-1].device), dim=0)
                 # print(input.shape)
-            output = encoder(
-                input,
-                neighbors[i],
-                edge_attr=edge_attr[i]
-            )
+
+            if self.checkpoint:
+                output = checkpoint.checkpoint(
+                    # self.GNN,
+                    # window,
+                    # all_neighbors,
+                    # None, #-- Do we need this for the checkpointing????
+                    # edge_attr,
+                    self.checkpointed_gnn_call,
+                    encoder,
+                    input,
+                    neighbors[i],
+                    edge_attr[i],
+                )
+            else:
+                output = encoder(
+                    input,
+                    neighbors[i],
+                    edge_attr=edge_attr[i]
+                )
+            
             
             outputs.append(output)
         # print('Outputs!')
@@ -648,7 +672,7 @@ class Network(nn.Module):
         if len(self.UGNN_decoding) > 0: #Special case: a single encoding layer i.e. not a UGNN
             for i, decoder in enumerate(self.UGNN_decoding):
 
-                full_indices = self.UGNN_indices[-(1+i)].repeat(3)
+                full_indices = self.UGNN_indices[-(1+i)].repeat(self.time_window)
                 nindices = self.UGNN_indices[-(1+i)].shape[0]
                 ncells = (len(self.UGNN_blobs_0[-(1+i)]) + len(self.UGNN_blobs_1[-(1+i)]))
                 full_indices[nindices:2*nindices] += ncells
@@ -664,12 +688,25 @@ class Network(nn.Module):
                     output, #upsampled
                     outputs.pop(-1) #'current' layer
                 ], dim=-1)
-
-                output = decoder(
-                    output,
-                    neighbors[-(1+i)],
-                    edge_attr=edge_attr[(-(1+i))]
-                )
+                if self.checkpoint:
+                    output = checkpoint.checkpoint(
+                        # self.GNN,
+                        # window,
+                        # all_neighbors,
+                        # None, #-- Do we need this for the checkpointing????
+                        # edge_attr,
+                        self.checkpointed_gnn_call,
+                        decoder,
+                        output,
+                        neighbors[-(1+i)],
+                        edge_attr[-(1+i)]
+                    )
+                else:
+                    output = decoder(
+                        output,
+                        neighbors[-(1+i)],
+                        edge_attr=edge_attr[-(1+i)]
+                    )
         return output
 
     def A(self, x):
@@ -733,30 +770,30 @@ class Network(nn.Module):
 
         #in-tick crossings
         dt = self.time_window
-        n_window_neighbors = self.neighbors.size(1)
-        new_window_neighbors_size = n_window_neighbors*dt
-        all_neighbors = torch.zeros(2, new_window_neighbors_size + ncells*((dt)**2), dtype=int).to(the_device)
-        all_neighbors[:, :n_window_neighbors*(dt)] = self.neighbors.repeat(1, dt).to(the_device)
-        all_neighbors[:, new_window_neighbors_size:] = torch.arange(ncells).unsqueeze(0).repeat(2,(dt)**2).to(the_device)
+        # n_window_neighbors = self.neighbors.size(1)
+        # new_window_neighbors_size = n_window_neighbors*dt
+        # all_neighbors = torch.zeros(2, new_window_neighbors_size + ncells*((dt)**2), dtype=int).to(the_device)
+        # all_neighbors[:, :n_window_neighbors*(dt)] = self.neighbors.repeat(1, dt).to(the_device)
+        # all_neighbors[:, new_window_neighbors_size:] = torch.arange(ncells).unsqueeze(0).repeat(2,(dt)**2).to(the_device)
 
-        for i in range(dt):
-            all_neighbors[:, i*n_window_neighbors:(i+1)*n_window_neighbors] += (i*ncells)
+        # for i in range(dt):
+        #     all_neighbors[:, i*n_window_neighbors:(i+1)*n_window_neighbors] += (i*ncells)
 
-            for j in range(dt):
-                all_neighbors[0, new_window_neighbors_size + (ncells*(j*(dt) + i)):new_window_neighbors_size + (ncells*(j*(dt) + (i+1)))] += i*ncells
-                all_neighbors[1, new_window_neighbors_size + (ncells*(j*(dt) + i)):new_window_neighbors_size + (ncells*(j*(dt) + (i+1)))] += j*ncells
+        #     for j in range(dt):
+        #         all_neighbors[0, new_window_neighbors_size + (ncells*(j*(dt) + i)):new_window_neighbors_size + (ncells*(j*(dt) + (i+1)))] += i*ncells
+        #         all_neighbors[1, new_window_neighbors_size + (ncells*(j*(dt) + i)):new_window_neighbors_size + (ncells*(j*(dt) + (i+1)))] += j*ncells
 
-        n_edge_attr = self.nstatic_edge_attr + 1 #+1 for tick
-        edge_attr = torch.zeros(all_neighbors.size(1), n_edge_attr).to(the_device)
-        # #TODO -- consider batching
-        edge_attr[:new_window_neighbors_size, :-1] = self.static_edges.view(self.neighbors.size(1), -1).repeat(1*(dt), 1).to(the_device)
-        base = new_window_neighbors_size
+        # n_edge_attr = self.nstatic_edge_attr + 1 #+1 for tick
+        # edge_attr = torch.zeros(all_neighbors.size(1), n_edge_attr).to(the_device)
+        # # #TODO -- consider batching
+        # edge_attr[:new_window_neighbors_size, :-1] = self.static_edges.view(self.neighbors.size(1), -1).repeat(1*(dt), 1).to(the_device)
+        # base = new_window_neighbors_size
 
-        for i in range(dt):
-            for j in range(dt):
-                ind_0 = (base + ncells*(j*(dt) + i))
-                ind_1 = ind_0 + ncells
-                edge_attr[ind_0:ind_1, -1] = (i-j)
+        # for i in range(dt):
+        #     for j in range(dt):
+        #         ind_0 = (base + ncells*(j*(dt) + i))
+        #         ind_1 = ind_0 + ncells
+        #         edge_attr[ind_0:ind_1, -1] = (i-j)
 
         UGNN_all_neighbors = []
         UGNN_edge_attr = []
@@ -798,8 +835,8 @@ class Network(nn.Module):
             nchannels=nchannels,
             the_device=the_device,
             to_pad=to_pad,
-            all_neighbors=all_neighbors.detach(),
-            edge_attr=edge_attr,
+            # all_neighbors=all_neighbors.detach(),
+            # edge_attr=edge_attr,
             UGNN_all_neighbors=UGNN_all_neighbors,
             UGNN_edge_attr=UGNN_edge_attr,
             these_nfeats=these_nfeats,
@@ -863,22 +900,23 @@ class Network(nn.Module):
 
 
         # y = self.GNN(window, all_neighbors, edge_attr=edge_attr)
-        if self.do_ugnn:
-            neighbors = xmeta['UGNN_all_neighbors']
-            edge_attr = xmeta['UGNN_edge_attr']
-            y = self.ugnn_method(window, neighbors, edge_attr)
+        # if self.do_ugnn:
+        neighbors = xmeta['UGNN_all_neighbors']
+        edge_attr = xmeta['UGNN_edge_attr']
+        y = self.ugnn_method(window, neighbors, edge_attr)
             # print('UGNN output:', y.shape)
             # sys.exit()
-        else:
-            window = window.reshape(-1, nfeat)
-            all_neighbors = xmeta['all_neighbors']
-            edge_attr = xmeta['edge_attr']
-            y = checkpoint.checkpoint(
-                self.GNN,
-                window,
-                all_neighbors,
-                edge_attr,
-            ) if self.checkpoint else self.GNN(window, all_neighbors, edge_attr=edge_attr)
+        # else:
+        #     window = window.reshape(-1, nfeat)
+        #     all_neighbors = xmeta['all_neighbors']
+        #     edge_attr = xmeta['edge_attr']
+        #     y = checkpoint.checkpoint(
+        #         self.GNN,
+        #         window,
+        #         all_neighbors,
+        #         None, #-- Do we need to set edge_weights=None for the checkpointing????
+        #         edge_attr,
+        #     ) if self.checkpoint else self.GNN(window, all_neighbors, edge_attr=edge_attr)
 
 
         #Just get out the middle element
