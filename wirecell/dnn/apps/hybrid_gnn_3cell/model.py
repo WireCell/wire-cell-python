@@ -158,11 +158,11 @@ class Network(nn.Module):
             GAT(*gnn_settings, out_channels=out_channels)
         )
 
-        single_layer_UGNN = False
+        single_layer_UGNN = True
         if single_layer_UGNN:
-            ugnn_message_passes = [4]
-            ugnn_hidden_chans = [16]
-            ugnn_output_chans = [16]
+            encoding_message_passes = [4]
+            encoding_hidden_chans = [16]
+            encoding_output_chans = [8]
 
             decoding_message_passes = []
             decoding_hidden_chans = []
@@ -207,8 +207,8 @@ class Network(nn.Module):
         print(self.UGNN_encoding)
         print(self.UGNN_decoding)
 
-        self.out_channels=out_channels
-        self.mlp = nn.Linear((n_unet_features if skip_GNN else out_channels), 1)
+        self.out_channels=encoding_output_chans[0]
+        self.mlp = nn.Linear((n_unet_features if skip_GNN else self.out_channels), 1)
         with torch.no_grad():
 
             self.time_window = time_window
@@ -390,18 +390,19 @@ class Network(nn.Module):
             ray_crossings_1_12 = self.coords_face1.ray_crossing(view_base + 1, self.good_indices_1[:,1], view_base + 2, self.good_indices_1[:,2])
             ray_crossings_1_20 = self.coords_face1.ray_crossing(view_base + 2, self.good_indices_1[:,2], view_base + 0, self.good_indices_1[:,0])
 
-            self.ray_crossings_0 = torch.cat(
-                [ray_crossings_0_01.unsqueeze(1), ray_crossings_0_12.unsqueeze(1), ray_crossings_0_20.unsqueeze(1)],
-                dim=1
-            )
-            self.ray_crossings_1 = torch.cat(
-                [ray_crossings_1_01.unsqueeze(1), ray_crossings_1_12.unsqueeze(1), ray_crossings_1_20.unsqueeze(1)],
-                dim=1
-            )
+            # self.ray_crossings_0 = torch.cat(
+            #     [ray_crossings_0_01.unsqueeze(1), ray_crossings_0_12.unsqueeze(1), ray_crossings_0_20.unsqueeze(1)],
+            #     dim=1
+            # )
+            # self.ray_crossings_1 = torch.cat(
+            #     [ray_crossings_1_01.unsqueeze(1), ray_crossings_1_12.unsqueeze(1), ray_crossings_1_20.unsqueeze(1)],
+            #     dim=1
+            # )
 
-            self.ray_crossings_0 /= torch.norm(self.coords_face0.bounding_box, dim=1)
-            self.ray_crossings_1 /= torch.norm(self.coords_face1.bounding_box, dim=1)
-
+            # self.ray_crossings_0 /= torch.norm(self.coords_face0.bounding_box, dim=1)
+            # self.ray_crossings_1 /= torch.norm(self.coords_face1.bounding_box, dim=1)
+            self.ray_crossings_0 = None
+            self.ray_crossings_1 = None
             # #Neighbors on either face of the anode
             n_nearest = 2
 
