@@ -30,7 +30,7 @@ def unitify(val, unit=""):
 def unitify_parse(string):
     '''
     Parse a string with unit expressions and return its value.  String
-    assumed to be a comman separated list of scalar values.  A list is
+    assumed to be a comma-separated list of scalar values.  A list is
     returned.
     '''
 
