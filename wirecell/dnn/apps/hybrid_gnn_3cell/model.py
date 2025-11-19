@@ -4,7 +4,7 @@ import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch_scatter
+# import torch_scatter
 from torch_geometric.data import Data
 from torch_geometric.nn import GAT, GCN
 from wirecell.dnn.models.unet import UNet
@@ -120,8 +120,8 @@ class Network(nn.Module):
     def __init__(
             self,
             wires_file='protodunevd-wires-larsoft-v3.json.bz2',
-            n_unet_features=2,
-            time_window=1,
+            n_unet_features=4,
+            time_window=3,
             checkpoint=False,
             n_feat_wire = 0,
             detector=0,
@@ -357,10 +357,16 @@ class Network(nn.Module):
                 print()
                 print('Static edges', self.UGNN_static_edges[-1].shape)
 
-
+            #Account for duplicate neighbors
             for i in range(len(self.UGNN_neighbors)):
                 self.UGNN_neighbors[i], inds = self.UGNN_neighbors[i].T.unique(dim=0, return_inverse=True)
-                self.UGNN_static_edges[i] = torch_scatter.scatter_mean(self.UGNN_static_edges[i], inds, dim=0)
+                temp_static_edges = torch.zeros((self.UGNN_neighbors[i].shape[0],self.UGNN_static_edges[i].shape[1]))
+                print(temp_static_edges.shape, inds.shape, self.UGNN_static_edges[i].shape)
+                inds = inds.unsqueeze(1).repeat(1, self.UGNN_static_edges[i].shape[1])
+                self.UGNN_static_edges[i] = temp_static_edges.scatter_reduce(0, inds, self.UGNN_static_edges[i], reduce='mean', include_self=False)
+                # test = temp_static_edges.scatter_reduce_(0, inds, self.UGNN_static_edges[i], reduce='mean', include_self=False)
+                # self.UGNN_static_edges[i] = torch_scatter.scatter_mean(self.UGNN_static_edges[i], inds, dim=0)
+                # print(torch.all(test == self.UGNN_static_edges[i]))
                 self.UGNN_neighbors[i] = self.UGNN_neighbors[i].T
 
             #Get areas and centers
@@ -406,36 +412,36 @@ class Network(nn.Module):
             # #Neighbors on either face of the anode
             n_nearest = 2
 
-            print('Getting neighbors')
-            if not fixed_neighbors:
-                nearest_neighbors_0 = get_nn_from_plane_triplet(self.good_indices_0, self.nwires_0, n_nearest=n_nearest)
-                nearest_neighbors_1 = get_nn_from_plane_triplet(self.good_indices_1, self.nwires_1, n_nearest=n_nearest)
-            else:
-                nearest_neighbors_0 = torch.cat([
-                    get_nn_from_plane_triplet_fixed(self.good_indices_0, self.nwires_0, n_nearest=n_nearest),
-                    get_nn_from_plane_triplet_fixed(self.good_indices_0, self.nwires_1, n_nearest=n_nearest, negative=True),
-                ], dim=1)
-                nearest_neighbors_1 = torch.cat([
-                    get_nn_from_plane_triplet_fixed(self.good_indices_1, self.nwires_0, n_nearest=n_nearest),
-                    get_nn_from_plane_triplet_fixed(self.good_indices_1, self.nwires_1, n_nearest=n_nearest, negative=True),
-                ], dim=1)
+            # print('Getting neighbors')
+            # if not fixed_neighbors:
+            #     nearest_neighbors_0 = get_nn_from_plane_triplet(self.good_indices_0, self.nwires_0, n_nearest=n_nearest)
+            #     nearest_neighbors_1 = get_nn_from_plane_triplet(self.good_indices_1, self.nwires_1, n_nearest=n_nearest)
+            # else:
+            #     nearest_neighbors_0 = torch.cat([
+            #         get_nn_from_plane_triplet_fixed(self.good_indices_0, self.nwires_0, n_nearest=n_nearest),
+            #         get_nn_from_plane_triplet_fixed(self.good_indices_0, self.nwires_1, n_nearest=n_nearest, negative=True),
+            #     ], dim=1)
+            #     nearest_neighbors_1 = torch.cat([
+            #         get_nn_from_plane_triplet_fixed(self.good_indices_1, self.nwires_0, n_nearest=n_nearest),
+            #         get_nn_from_plane_triplet_fixed(self.good_indices_1, self.nwires_1, n_nearest=n_nearest, negative=True),
+            #     ], dim=1)
 
 
 
-            # #Neighbors between anode faces which are connected by the elec channel?
-            # #TODO
+            # # #Neighbors between anode faces which are connected by the elec channel?
+            # # #TODO
 
-            self.neighbors = torch.cat(
-                [nearest_neighbors_0] +
-                ([
-                    nearest_neighbors_1 + len(self.good_indices_0),
-                ] if not one_side else []) + [
-                    # connections_0_1
-                ], dim=1)
+            # self.neighbors = torch.cat(
+            #     [nearest_neighbors_0] +
+            #     ([
+            #         nearest_neighbors_1 + len(self.good_indices_0),
+            #     ] if not one_side else []) + [
+            #         # connections_0_1
+            #     ], dim=1)
             
             
 
-            print(f'TOTAL EDGES: {self.neighbors.size(1)}')
+            # print(f'TOTAL EDGES: {self.neighbors.size(1)}')
             # self.neighbors = self.neighbors.T.unique(dim=0).T
             
 
@@ -443,34 +449,34 @@ class Network(nn.Module):
             # #TODO  Do things like dWire0, dWire1 make sense for things like cross-pair (i.e. 0,1 and 0,2) neighbors?
             # #      Same question for cross face (i.e. 0,1 on face 0 and 0,1 on face 1)
             # self.nstatic_edge_attr = 13
-            self.nstatic_edge_attr = 7
-            static_edges_0 = self.make_edge_attr_new(
-                nearest_neighbors_0, self.good_indices_0, self.nstatic_edge_attr,
-                self.merged_crossings_0, self.nwires_0, 0
-            )
-            static_edges_1 = self.make_edge_attr_new(
-                nearest_neighbors_1, self.good_indices_1, self.nstatic_edge_attr,
-                self.merged_crossings_1, self.nwires_1, 0
-            )
+            # self.nstatic_edge_attr = 7
+            # static_edges_0 = self.make_edge_attr_new(
+            #     nearest_neighbors_0, self.good_indices_0, self.nstatic_edge_attr,
+            #     self.merged_crossings_0, self.nwires_0, 0
+            # )
+            # static_edges_1 = self.make_edge_attr_new(
+            #     nearest_neighbors_1, self.good_indices_1, self.nstatic_edge_attr,
+            #     self.merged_crossings_1, self.nwires_1, 0
+            # )
 
 
-            self.static_edges = torch.cat(
-                [
-                    static_edges_0,
-                ] + ([
-                    static_edges_1,
-                ] if not one_side else [])
-            )
+            # self.static_edges = torch.cat(
+            #     [
+            #         static_edges_0,
+            #     ] + ([
+            #         static_edges_1,
+            #     ] if not one_side else [])
+            # )
             
 
             
 
-            #Get the unique neighbors
-            self.neighbors, inds = self.neighbors.T.unique(dim=0, return_inverse=True)
-            self.static_edges = torch_scatter.scatter_mean(self.static_edges, inds, dim=0)
-            self.neighbors = self.neighbors.T
-            print(f'Unique EDGES: {self.neighbors.size(1)}')
-            torch.save(self.neighbors, 'neighbors.pt')
+            # #Get the unique neighbors
+            # self.neighbors, inds = self.neighbors.T.unique(dim=0, return_inverse=True)
+            # self.static_edges = torch_scatter.scatter_mean(self.static_edges, inds, dim=0)
+            # self.neighbors = self.neighbors.T
+            # print(f'Unique EDGES: {self.neighbors.size(1)}')
+            # torch.save(self.neighbors, 'neighbors.pt')
 
 
             self.nchans = [476, 476, 292, 292]
@@ -566,7 +572,7 @@ class Network(nn.Module):
     def scatter_to_chans(self, y, nbatches, nchannels, the_device):
         #TODO -- check size of y etc
         temp_out = torch.zeros(nbatches, nchannels, y[0].size(-1)).to(the_device)
-
+        # temp_out2 = temp_out.clone()
         to_scatter = [
             #plane0
             [y[0], self.face_plane_wires_channels[(0,0)][self.good_indices_0[:,0]][:,1]],
@@ -588,14 +594,23 @@ class Network(nn.Module):
         ])
 
         for yi, indices in to_scatter:
+            # print(yi.shape, indices.shape)
             # torch_scatter.scatter_add(
             # torch_scatter.scatter_max(
-            torch_scatter.scatter_mean(
-                yi, indices,
-                out=temp_out,
-                dim=1
+            # torch_scatter.scatter_mean(
+            #     yi, indices,
+            #     out=temp_out,
+            #     dim=1
+            # )
+            temp_out = temp_out.scatter_reduce(
+                1,
+                indices.unsqueeze(1).unsqueeze(0).repeat(1, 1, yi.shape[-1]),
+                yi,
+                'mean',
+                include_self=True,
             )
 
+        # print(temp_out - temp_out2)
         return temp_out
     def make_wires(self, x, low, hi, nfeat, face, plane):
         wire_chans = self.face_plane_wires_channels[(face, plane)]
@@ -635,7 +650,14 @@ class Network(nn.Module):
                 time_window_indices = torch.zeros((self.time_window*nindices),dtype=torch.long)
                 for j in range(self.time_window):
                     time_window_indices[j*nindices:(j+1)*nindices] = (self.UGNN_indices[i-1] + j*target_len)
-                input = torch_scatter.scatter_mean(outputs[-1], time_window_indices.to(outputs[-1].device), dim=0)
+                device = outputs[-1].device
+                # input = torch_scatter.scatter_mean(outputs[-1], time_window_indices.to(device), dim=0)
+                input = torch.zeros((target_len*self.time_window, outputs[-1].shape[1]), device=device)
+                time_window_indices = time_window_indices.unsqueeze(1).repeat(1, outputs[-1].shape[1])
+                input = input.scatter_reduce(0, time_window_indices.to(device), outputs[-1], reduce='mean', include_self=False)
+                # print(test.dtype, input.dtype)
+                # print(test == input)
+                # print(torch.max(torch.abs(test - input)))
                 # print(input.shape)
 
             if self.checkpoint:
