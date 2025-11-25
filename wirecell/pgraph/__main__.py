@@ -254,6 +254,8 @@ def uses_to_params(uses):
     return ret
 
 @cli.command("dotify")
+@click.option("-P","--wpath", default="", type=str,
+              help="A :-separated path to add to WIRECELL_PATH")
 @click.option("--dpath", default=None, type=str,
               help="A dot-delimited path into the data structure to locate a graph-like object")
 @click.option("--npath", default=None, type=str,
@@ -269,7 +271,7 @@ def uses_to_params(uses):
 @jsonnet_loader("in-file")
 @click.argument("out-file")
 @click.pass_context
-def cmd_dotify(ctx, dpath, npath, epath, params, services, graph_options, in_file, out_file):
+def cmd_dotify(ctx, wpath, dpath, npath, epath, params, services, graph_options, in_file, out_file):
     '''
     Convert a WCT cfg to a GraphViz dot or rendered file.
 
@@ -307,6 +309,11 @@ def cmd_dotify(ctx, dpath, npath, epath, params, services, graph_options, in_fil
     but only numbered by existing edges.  This can hide mistakes due missing
     edges.  The required information is lost as part of the pgraph.main() call.
     '''
+    wirecell_path = os.environ.get("WIRECELL_PATH","")
+    if wirecell_path:
+        wpath = wirecell_path + ":" + wpath
+    os.environ["WIRECELL_PATH"] = wpath
+
     try: 
         dat = resolve_path(in_file, dpath)
     except Exception:
