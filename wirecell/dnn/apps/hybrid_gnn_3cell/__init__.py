@@ -6,7 +6,7 @@ from .model import Network
 from .data import Dataset
 # from wirecell.dnn.train import Classifier as Trainer
 from wirecell.dnn.train import Looper as Trainer
-# from torch.nn import BCELoss as Criterion
+from torch.nn import BCELoss # as Criterion
 from torch.nn import BCEWithLogitsLoss #as Criterion
 
 
@@ -14,7 +14,6 @@ def Optimizer(params):
     return optim.SGD(params, lr=0.1, momentum=0.9, weight_decay=0.0005)
 
 def Criterion():
-    return BCEWithLogitsLoss(reduction='sum')
-
-
+    return BCELoss(reduction='sum')
+    # return BCEWithLogitsLoss(reduction='sum')
 

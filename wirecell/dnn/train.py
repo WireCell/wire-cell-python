@@ -19,7 +19,7 @@ Classifier training
     - optimizer.step()
 
 '''
-from torch import optim, no_grad, float16, autocast, amp, any, save, zeros_like
+from torch import optim, no_grad, float16, autocast, amp, any, save, zeros_like, zeros, cat
 import torch.nn as nn
 import torch.cuda.memory as memory
 import torch.cuda as cuda
@@ -48,16 +48,20 @@ class Classifier:
         dump('labels', labels)
 
         prediction = self.net(features)
+        labels = self.net.make_label_nodes(labels)
         dump('prediction', prediction)
 
 
         # print('Pred:', prediction)
         with no_grad():
-            s = nn.Sigmoid()
-            sigpred = s(prediction)
+            # s = nn.Sigmoid()
+            # sigpred = s(prediction)
             # print('Pred Sigmoid:', sigpred)
             if self.do_save:
-                save(sigpred, f'eval_out_{self.save_iter}.pt')
+                save(prediction, f'eval_out_{self.save_iter}.pt')
+                save(labels, f'eval_labels_{self.save_iter}.pt')
+                save(features, f'eval_input_{self.save_iter}.pt')
+                self.save_iter += 1
 
         # print('Labels:', labels)
         # print('Any in Labels:', any(labels))
@@ -77,9 +81,7 @@ class Classifier:
             for ie, (features, labels) in enumerate(data):
                 loss = self.loss(features, labels)
                 
-                save(labels, f'eval_labels_{self.save_iter}.pt')
-                save(features, f'eval_input_{self.save_iter}.pt')
-                self.save_iter += 1
+
                 loss = loss.item()
                 print('Eval Loss:', loss)
                 losses.append(loss)
@@ -155,12 +157,21 @@ class Looper:
 
         prediction = self.net(features)
         dump('prediction', prediction)
-        s = nn.Sigmoid()
-        sigpred = s(prediction)
+        # s = nn.Sigmoid()
+        # sigpred = s(prediction)
         # print('Pred Sigmoid:', sigpred)
-        save(sigpred, f'eval_out_{self.save_iter}.pt')
+        save(prediction[0], f'eval_out_{self.save_iter}.pt')
 
-        loss = self.criterion(prediction, labels)
+        loss = self.criterion(prediction[0], labels)
+
+        print('Labels:', labels.shape)
+        label_nodes = self.net.make_label_nodes(labels)
+        print('Labels:', label_nodes.shape)
+        print('Node pred:', prediction[1].shape)
+        node_norm = 1./(prediction[1].size(-2)*labels.size(-1))
+        # print('Node norm:', node_norm)
+        loss += self.criterion(prediction[1], label_nodes) #*node_norm
+        
         return loss
 
     def evaluate(self, data):
@@ -193,7 +204,7 @@ class Looper:
         snapshot_mem = True
         # if not snapshot_mem:
         #     memory._record_memory_history(enabled=False)
-        loss_window = 1
+        loss_window = 3
         for ie, (features, labels) in enumerate(data):
 
             #Add if needed
@@ -215,20 +226,35 @@ class Looper:
             nloss_windows = int(nregions/loss_window)
             norm = 1./(labels.size(-1)*labels.size(-2))
             print('Norm:', norm, 1./norm)
+            
             for iloss in range(nloss_windows):
                 # print('Loss window:', iloss)
                 start = iloss*loss_window
                 end = start + loss_window
                 label_window = labels[..., start:end]
                 outB_i = zeros_like(label_window)
+                nodes_outB_i = []
                 for t in range(loss_window):
                     i = iloss*loss_window + t
                     # print('\t', t, i)
                     if i == nregions: break
-
-                    outB_i[..., t] = self.net.B(outA, outA_meta, i)
+                    res = self.net.B(outA, outA_meta, i)
+                    outB_i[..., t] = res[0]
+                    # print('node out', res[1].shape)
+                    nodes_outB_i.append(res[1])
+                    
                 # print(outB_i, label_window)
                 loss_i = self.criterion(outB_i, label_window)*norm
+                # print('loss_i', loss_i)
+                nodes_outB_i = cat(nodes_outB_i)
+                # print('Nodes out', nodes_outB_i.shape)
+                
+                label_nodes = self.net.make_label_nodes(label_window).permute(2,1,0)
+                # print('Labels:', label_nodes.shape)
+                node_norm = 1./(nodes_outB_i.size(-2)*labels.size(-1))
+                # print('Node norm:', node_norm)
+                loss_i += self.criterion(nodes_outB_i, label_nodes)*node_norm
+                # print(loss_i_nodes)
 
                 total_loss_val += loss_i.item()
                 loss_i.backward(retain_graph=(i < (nregions-1)))

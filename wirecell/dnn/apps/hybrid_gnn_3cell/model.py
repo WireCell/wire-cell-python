@@ -173,7 +173,7 @@ class Network(nn.Module):
         single_layer_UGNN = True
         
         self.scramble=False
-        self.random_neighbors=True
+        self.random_neighbors=False
         self.nrandom_neighbors = int(1775227/2) #100
         self.nscramble = 100000 #150000
 
@@ -237,6 +237,7 @@ class Network(nn.Module):
 
         self.out_channels=encoding_output_chans[0]
         self.mlp = nn.Linear((n_unet_features if skip_GNN else self.out_channels), 1)
+        self.sigmoid = nn.Sigmoid()
         with torch.no_grad():
 
             self.time_window = time_window
@@ -622,7 +623,7 @@ class Network(nn.Module):
                 1,
                 indices.unsqueeze(1).unsqueeze(0).repeat(1, 1, yi.shape[-1]),
                 yi,
-                'mean',
+                'amax',
                 include_self=True,
             )
 
@@ -631,7 +632,17 @@ class Network(nn.Module):
     def make_wires(self, x, low, hi, nfeat, face, plane):
         wire_chans = self.face_plane_wires_channels[(face, plane)]
         wires = torch.zeros((x.shape[0], (hi-low), len(wire_chans), nfeat)).to(x.device)
+        # print(x.shape, wires.shape)
         wires[:, :, wire_chans[:, 0], :x.shape[-1]] = x[:, low:hi, wire_chans[:,1], :]
+        # wires[..., x.shape[-1]] = plane
+        # wires[..., x.shape[-1]+1] = face
+        return wires
+
+    def make_wires_labels(self, x, low, hi, face, plane):
+        wire_chans = self.face_plane_wires_channels[(face, plane)]
+        wires = torch.zeros((x.shape[0], 1, len(wire_chans), x.shape[-1])).to(x.device)
+        # print(x.shape, wires.shape)
+        wires[:, :, wire_chans[:, 0]] = x[:, :, wire_chans[:,1]]
         # wires[..., x.shape[-1]] = plane
         # wires[..., x.shape[-1]+1] = face
         return wires
@@ -938,23 +949,95 @@ class Network(nn.Module):
         #Just get out the middle element
         y = y.reshape(nbatches, self.time_window, -1, self.out_channels)[:, int((self.time_window-1)/2), ...]
         ranges = xmeta['ranges']
+
+        # print('Y shape:', y.shape)
+        y = self.mlp(y)
+        y = self.sigmoid(y)
+        # print('Post mlp shape:', y.shape)
+
+        #Split up to batches, node-range, features
         y = [
             y[:, r0:r1, :] for r0, r1 in ranges
         ]
-        
 
+        #Now go from the GNN nodes back to channels-view       
+        #Output is batches, features, channels 
         temp_out = self.scatter_to_chans(y, nbatches, nchannels, the_device)
+        # print('Scattered', temp_out.shape)
         
         #batch, feat, channel
-        temp_out = self.mlp(temp_out).view(1,1,-1)
+        # temp_out = self.mlp(temp_out).view(1,1,-1)
         
-        return temp_out
+        return (
+            temp_out.view(1,1,-1),
+            torch.cat(y, dim=1)
+        )
+    
+    def make_label_nodes(self, labels):
+        '''
+        We get the labels in a shape of (batch, feat=1, channels, ticks) -- some tick window is assumed.
+
+        So we need to go from channels view to the wires then nodes view.
+        '''
+        # print('Labels shape', labels.shape)
+        low = 0
+        hi = labels.shape[-1]
+        as_wires_f0_p0 = self.make_wires_labels(labels, low, hi, 0, 0)
+        as_wires_f0_p1 = self.make_wires_labels(labels, low, hi, 0, 1)
+        as_wires_f0_p2 = self.make_wires_labels(labels, low, hi, 0, 2)
+        as_wires_f1_p0 = self.make_wires_labels(labels, low, hi, 1, 0)
+        as_wires_f1_p1 = self.make_wires_labels(labels, low, hi, 1, 1)
+        as_wires_f1_p2 = self.make_wires_labels(labels, low, hi, 1, 2)
+
+        # print(as_wires_f0_p0.shape)
+        dt = labels.shape[-1]
+        ncells_0 = len(self.good_indices_0)
+        ncells_1 = len(self.good_indices_1)
         
+        ncells = ncells_0 + ncells_1
+        window = torch.zeros(
+            labels.shape[0],
+            dt,
+            ncells,
+            3,
+        ).to(labels.device)
+
+
+        cross_start = 0
+        cross_end = 0
+        window_infos = [
+            [as_wires_f0_p0, as_wires_f0_p1, as_wires_f0_p2, self.good_indices_0],
+            [as_wires_f1_p0, as_wires_f1_p1, as_wires_f1_p2, self.good_indices_1],
+        ]
+        for info in window_infos:
+            cross_end += len(info[3])
+            # print('window', window[..., cross_start:cross_end, 0].shape)
+            # print('info', info[0][:, :, info[-1][:,0], :].shape)
+            window[..., cross_start:cross_end, 0] = info[0][:, :, info[-1][:,0], 0]
+            window[..., cross_start:cross_end, 1] = info[1][:, :, info[-1][:,1], 0]
+            window[..., cross_start:cross_end, 2] = info[2][:, :, info[-1][:,2], 0]
+            cross_start = cross_end
+        window = torch.max(window, dim=-1).values.permute(0,2,1)
+        # print(window.shape)
+        return window
+
     def forward(self, x):
         outA, outA_meta = self.A(x)
         nregions = outA_meta['nregions']
-        return torch.cat(
-            [self.B(outA, outA_meta, i).unsqueeze(-1) for i in range(nregions)],
-            dim=-1
-        )
+        chan_results = []
+        node_results = []
+        for i in range(nregions):
+            res = self.B(outA, outA_meta, i)
+            chan_results.append(res[0].unsqueeze(-1))
+            node_results.append(res[1])
+        
+        return [
+            torch.cat(chan_results, dim=-1),
+            torch.cat(node_results, dim=-1)
+        ]
+
+        # return torch.cat(
+        #     [self.B(outA, outA_meta, i)[0].unsqueeze(-1) for i in range(nregions)],
+        #     dim=-1
+        # )
     
