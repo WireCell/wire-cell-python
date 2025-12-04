@@ -263,8 +263,8 @@ def scatter_crossings(coords, v1, r1, v2, r2, color='black'):
     ys = rc.detach().numpy()[:,1]
     plt.scatter(xs, ys, color=color)
 
-def coords_from_schema(store, face_index, shift_half=True):
-    views = views_from_schema(store, face_index, shift_half=shift_half)
+def coords_from_schema(store, face_index, shift_half=True, left_handed=False):
+    views = views_from_schema(store, face_index, shift_half=shift_half, left_handed=left_handed)
     coords = Coordinates(views.to(torch.float64))
     return coords
 
@@ -728,7 +728,7 @@ def get_centroids_and_areas(coords, blobs):
     return areas, centroids       
 
 
-def views_from_schema(store, face_index, shift_half=True):
+def views_from_schema(store, face_index, shift_half=True, left_handed=False):
     #GEt the plane objects from the store for htis face
     planes = [store.planes[i] for i in store.faces[face_index].planes]
 
@@ -775,9 +775,14 @@ def views_from_schema(store, face_index, shift_half=True):
 
         #This becomes the pitch vector
         b = pitch * torch.tensor([b[2], b[1]], dtype=torch.float64)
-        b = torch.linalg.matmul(
-            b, torch.tensor([[0., -1.], [1., 0.]], dtype=torch.float64)
-        )
+        if left_handed:
+            b = torch.linalg.matmul(
+                b, torch.tensor([[0., 1.], [-1., 0.]], dtype=torch.float64)
+            )
+        else:
+            b = torch.linalg.matmul(
+                b, torch.tensor([[0., -1.], [1., 0.]], dtype=torch.float64)
+            )
         # print('Pitch dir:', b)
 
 
