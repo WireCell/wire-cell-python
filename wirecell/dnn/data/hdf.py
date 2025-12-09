@@ -173,6 +173,7 @@ class Single(Dataset):
             keys.append(key)
             # takes about 5%
             ten = torch.tensor(d[:], requires_grad = False).to(dtype=self._dtype)
+            log.debug(f'Appending {ten.shape}')
             tens.append(ten)
         # this about 15% 
         ten = torch.stack(tens, axis=2)  # (ntick, nchan, nlayer)

@@ -53,8 +53,7 @@ class Rec:
 
     # default_params = Params(DimParams((476, 952), 1), DimParams((0,6000), 10), 4000)
     default_params = Params(DimParams((0, 1536), 1), DimParams((0,6000), 10), 4000)
-
-    def __init__(self,  params: Params = None):
+    def __init__(self,  params: Params = None, transpose: bool = False):
         '''
         Arguments:
 
@@ -62,6 +61,7 @@ class Rec:
 
         '''
         self._params = params or self.default_params
+        self.do_transpose = transpose
 
     def crop(self, x):
         print('In crop, x:', x.shape)
@@ -77,6 +77,9 @@ class Rec:
         return x.reshape(sh).mean(4).mean(2) # (imgch, elech_rebinned, ticks_rebinned)
         
     def transform(self, x):
+        if self.do_transpose:
+            print('TRANSPOSING', x.shape)
+            x = x.permute(0,2,1)
         x = self.crop(x)
         x = self.rebin(x)
         x = x/self._params.norm
@@ -103,16 +106,15 @@ class Tru(Rec):
 
     # default_params = Params(DimParams((476, 952), 1), DimParams((0,6000), 10), 200)
     default_params = Params(DimParams((0, 1536), 1), DimParams((0,6000), 10), 200)
-
-    def __init__(self, params: Params = None,  threshold: float = 0.5):
+    def __init__(self, params: Params = None,  transpose : bool = False, threshold: float = 0.5):
         '''
         Arguments (see Rec for more):
 
         - threshold :: threshold for array values to be set to 0 or 1.
         '''
-        super().__init__(params or self.default_params)
+        super().__init__(params=(params or self.default_params), transpose=transpose)
         self.threshold = threshold
-
+        
     def __call__(self, x):
         x = self.transform(x)
         return (x > self.threshold).to(torch.float32)
