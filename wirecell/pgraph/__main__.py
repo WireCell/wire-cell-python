@@ -131,7 +131,12 @@ def dotify(edge_dat, attrs, params=True, services=True, graph_options=dict(rankd
             
 
     def get(edge, end):
-        tn = edge[end]["node"]
+        try:
+            tn = edge[end]["node"]
+        except KeyError:
+            print(f'{end=}')
+            print(json.dumps(edge[end], indent=4))
+            raise
         try:
             n = nodes[tn]
         except KeyError:
@@ -141,11 +146,21 @@ def dotify(edge_dat, attrs, params=True, services=True, graph_options=dict(rankd
         n.add_port(end, p)
         return n,p
     
+    rankdir = graph_options.get("rankdir", "LR")
+    if rankdir == "TB":
+        tc = ":s"
+        hc = ":n"
+    else:
+        tc = ":e"
+        hc = ":w"
+        
+
+
     edges = list()
     for edge in edge_dat:
-        t,tp = get(edge, "tail")
-        h,hp = get(edge, "head")
-        e = '"%s":out%d -> "%s":in%d' % (t.dot_name(),tp, h.dot_name(),hp)
+        t, tp = get(edge, "tail")
+        h, hp = get(edge, "head")
+        e = '"%s":out%d%s -> "%s":in%d%s' % (t.dot_name(), tp, tc, h.dot_name(), hp, hc)
         edges.append(e);
 
     # Try to find non DFP node components referenced.

@@ -154,7 +154,7 @@ def wave(dat, out, tier='orig', unit='ADC', interactive=False, **kwds):
 
         chwaves = numpy.array(chwaves, dtype=float)
         chss = numpy.sum(chwaves ** 2, axis=1)
-        print(numpy.any(chss < 0))
+        #print(numpy.any(chss < 0))
         rms = numpy.sqrt(chss/chwaves.shape[1])
         chans = numpy.linspace(chmin, chmax+1, chwaves.shape[0], endpoint=True)
         ax2.step(rms, chans)
