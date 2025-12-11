@@ -23,8 +23,6 @@ class Rec(hdf.Single):
     OmnibusSigProc in HDF5 "frame file" form.
     '''
 
-    # file_re = r'.*g4-rec-[r]?(\d+)\.h5'
-    file_re = r'.*g4-rec-[r]?(\d{8}T\d{6}Z)\.h5'
     path_res = tuple(
         r'/(\d+)/%s\d'%tag for tag in [
             'frame_loose_lf',
@@ -37,8 +35,10 @@ class Rec(hdf.Single):
                  file_re=None, path_res=None,
                  trparams: TrParams = Trut.default_params, cache=False,
                  transpose=False,
+                 det='hd',
                 ):
 
+        file_re = r'.*g4-rec-[r]?(\d+)\.h5' if det == 'vd' else r'.*g4-rec-[r]?(\d{8}T\d{6}Z)\.h5'
         dom = hdf.Domain(hdf.ReMatcher(file_re or self.file_re,
                                        path_res or self.path_res),
                          transform=Rect(params=trparams, transpose=transpose),
@@ -54,21 +54,25 @@ class Tru(hdf.Single):
     This consists of the target ROI
     '''
 
-    # file_re = r'.*g4-tru-[r]?(\d+)\.h5'
-    file_re = r'.*g4-tru-[r]?(\d{8}T\d{6}Z)\_cleaned\.h5'
 
+    file_re = r'.*g4-tru-[r]?(\d+)\.h5'
     # path_res = tuple(
     #     r'/(\d+)/%s\d'%tag for tag in ['frame_ductor']
     # )
-    path_res = tuple(
-        r'/(\d+)/%s\d'%tag for tag in ['frame_deposplat']
-    )
+
+    # file_re = r'.*g4-tru-[r]?(\d{8}T\d{6}Z)\_cleaned\.h5'
+    # path_res = tuple(
+    #     r'/(\d+)/%s\d'%tag for tag in ['frame_deposplat']
+    # )
     def __init__(self, paths, threshold = 0.5,
                  file_re=None, path_res=None,
                  trparams: TrParams = Trut.default_params, cache=False,
-                 transpose=False, 
+                 transpose=False, det='hd',
                 ):
-
+        file_re = r'.*g4-tru-[r]?(\d+)\.h5' if det == 'vd' else r'.*g4-tru-[r]?(\d{8}T\d{6}Z)\_cleaned\.h5'
+        path_res = tuple(
+            r'/(\d+)/%s\d'%tag for tag in ['frame_ductor' if det=='vd' else 'frame_deposplat']
+        )
         dom = hdf.Domain(hdf.ReMatcher(file_re or self.file_re,
                                        path_res or self.path_res),
                          transform=Trut(params=trparams, transpose=transpose, threshold=threshold),
@@ -116,10 +120,15 @@ class Dataset(hdf.Multi):
                              file_re=wash('rec_file_re'),
                              path_res=wash('rec_path_res'),
                              transpose=((wash('transpose')=='True') or False),
-                             trparams=trparams,),
+                             trparams=trparams,
+                             det=wash('det'),
+                            ),
                          Tru(paths, threshold, cache=cache,
                              file_re=wash('tru_file_re'),
                              path_res=wash('tru_path_res'),
                              transpose=((wash('transpose')=='True') or False),
-                             trparams=trparams,))
+                             trparams=trparams,
+                             det=wash('det'),
+                            )
+                        )
 
