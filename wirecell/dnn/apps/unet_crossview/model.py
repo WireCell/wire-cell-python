@@ -62,6 +62,8 @@ class Network(nn.Module):
             det_type='hd',
             cells_file='pdhd_cells.pt',
 
+            scatter_out=False,
+
             n_unet_features=4,
             # time_window=3,
             checkpoint=True,
@@ -102,6 +104,8 @@ class Network(nn.Module):
         self.sigmoid = nn.Sigmoid()
         self.relu = nn.ReLU()
         self.xview_activation = self.relu
+
+        self.scatter_out = scatter_out
 
         self.network_style = 'U'
         if self.network_style is not None:
@@ -455,21 +459,48 @@ class Network(nn.Module):
 
     def B(self, x, xmeta, tick):
         xi = x[..., tick].unsqueeze(-1)
-#         print('Got xi:', torch.cuda.memory_allocated(0) / (1024**2))
-        xview = self.calculate_crossview(xi).to(x.device)
-#         print('Made xview:', torch.cuda.memory_allocated(0) / (1024**2))
-        xi = torch.cat([
-            xi,
-            xview
-        ], dim=1)
-#         print('Catted:', torch.cuda.memory_allocated(0) / (1024**2))
-        return xi
-        
+        if self.scatter_out:
+            xview = self.calculate_crossview(xi).to(x.device)
+        else:
+            xview_0, xview_1 = self.make_all_wires(xi, do_cat=False)
+            xview = torch.cat([
+                xview_0.to(x.device),
+                xview_1.to(x.device),
+            ], dim=-2)
+        # xi = torch.cat([
+        #     xi,
+        #     xview
+        # ], dim=1)
+        return (xi, xview)
+    
+
+    def xview_wires_loop(self, x, do_cat=True):
+        xview = torch.zeros(x.shape[0], 3*x.shape[1], (len(self.good_indices_0) + len(self.good_indices_1)), x.shape[-1]).to(x.device)
+        for i in range(x.shape[-1]):
+            # print(i)
+            xi = x[..., i].unsqueeze(-1)
+            xv = torch.cat(self.make_all_wires(xi, do_cat=do_cat), dim=-2)
+            # print(xv_0.shape, xv_1.shape)
+            # xview.append(
+            #     torch.cat([xv_0, xv_1], dim=-2)
+            # )
+            # print(xview.shape, xview[..., i].shape)
+            xview[..., i] = xv[..., 0]
+            # xview[..., i] = torch.cat([xv_0, xv_1], dim=-2)
+        # xview = torch.cat(xview, dim=-1)
+        return xview
+
     def forward(self, x):
         x, xmeta = self.A(x)
-        # x = self.calculate_crossview(x) #Currently out of memory on a single 6090 if trying to do this 
-        x = self.crossview_loop(x)
-        return x.to(xmeta['device'])
+        if self.scatter_out:
+            x = self.crossview_loop(x).to(xmeta['device'])
+            return (x[:, 0].unsqueeze(0), x[:, 1:])
+        else:
+            xview = self.xview_wires_loop(x, do_cat=False)
+            # print(xview.element_size() * xview.nelement())
+            return x, xview
+
+        # return x.to(xmeta['device'])
 
     def call_mlp(self, x):
         x = self.mlp(
@@ -510,7 +541,39 @@ class Network(nn.Module):
             input,
             torch.cat(crossview_chans, dim=-1)
         ], dim=1)
-        return x #.to('cuda:0')
+        return x
+
+    def make_all_wires(self, xi, do_cat=True):
+        the_device = xi.device
+        # crossview_chans = []
+        self.good_indices_0 = self.good_indices_0.to(the_device)
+        self.good_indices_1 = self.good_indices_1.to(the_device)
+        for k, v in self.face_plane_wires_channels.items():
+            self.face_plane_wires_channels[k] = v.to(the_device)
+        # for i in range(input.shape[-1]):
+            # xi = input[..., i].unsqueeze(-1)
+            # print(xi.shape)
+
+            #These are called 'as_wires' but are really cells on each face
+        if do_cat:
+            as_wires_f0 = torch.zeros((xi.shape[0], 3*xi.shape[1], self.good_indices_0.shape[0], xi.shape[-1])).to(the_device)
+            as_wires_f0[:, 0] = self.make_wires(xi, 0, 0)[:, :, self.good_indices_0[:, 0]]
+            as_wires_f0[:, 1] = self.make_wires(xi, 0, 1)[:, :, self.good_indices_0[:, 1]]
+            as_wires_f0[:, 2] = self.make_wires(xi, 0, 2)[:, :, self.good_indices_0[:, 2]]
+
+            as_wires_f1 = torch.zeros((xi.shape[0], 3*xi.shape[1], self.good_indices_1.shape[0], xi.shape[-1])).to(the_device)
+            as_wires_f1[:, 0] = self.make_wires(xi, 1, 0)[:, :, self.good_indices_1[:, 0]]
+            as_wires_f1[:, 1] = self.make_wires(xi, 1, 1)[:, :, self.good_indices_1[:, 1]]
+            as_wires_f1[:, 2] = self.make_wires(xi, 1, 2)[:, :, self.good_indices_1[:, 2]]
+        else:
+            as_wires_f0 = self.make_wires(xi, 0, 0)[:, :, self.good_indices_0[:, 0]]
+            as_wires_f0 *= self.make_wires(xi, 0, 1)[:, :, self.good_indices_0[:, 1]]
+            as_wires_f0 *= self.make_wires(xi, 0, 2)[:, :, self.good_indices_0[:, 2]]
+
+            as_wires_f1 =  self.make_wires(xi, 1, 0)[:, :, self.good_indices_1[:, 0]]
+            as_wires_f1 *= self.make_wires(xi, 1, 1)[:, :, self.good_indices_1[:, 1]]
+            as_wires_f1 *= self.make_wires(xi, 1, 2)[:, :, self.good_indices_1[:, 2]]
+        return as_wires_f0, as_wires_f1
 
     def calculate_crossview(self, xi, call_special=False):
         #Now we have to construct MP3 and MP2
@@ -531,22 +594,8 @@ class Network(nn.Module):
         self.good_indices_1 = self.good_indices_1.to(the_device)
         for k, v in self.face_plane_wires_channels.items():
             self.face_plane_wires_channels[k] = v.to(the_device)
-        # for i in range(input.shape[-1]):
-            # xi = input[..., i].unsqueeze(-1)
-            # print(xi.shape)
 
-            #These are called 'as_wires' but are really cells on each face
-        as_wires_f0 = torch.cat([
-            self.make_wires(xi, 0, 0)[:, :, self.good_indices_0[:, 0]],
-            self.make_wires(xi, 0, 1)[:, :, self.good_indices_0[:, 1]],
-            self.make_wires(xi, 0, 2)[:, :, self.good_indices_0[:, 2]]
-        ], dim=1)
-
-        as_wires_f1 = torch.cat([
-            self.make_wires(xi, 1, 0)[:, :, self.good_indices_1[:, 0]],
-            self.make_wires(xi, 1, 1)[:, :, self.good_indices_1[:, 1]],
-            self.make_wires(xi, 1, 2)[:, :, self.good_indices_1[:, 2]]
-        ], dim=1)
+        as_wires_f0, as_wires_f1 = self.make_all_wires(xi)
 
         #This mixes the information between the three planes
         if call_special:
@@ -582,5 +631,11 @@ class Network(nn.Module):
         So we need to go from channels view to the wires then nodes view.
         '''
         with torch.no_grad():
-            return self.crossview_loop(labels)
+            if self.scatter_out:
+                labels = self.crossview_loop(labels)
+                return (labels[:, 0].unsqueeze(0), labels[:, 1:])
+            else:
+                label_wires = torch.cat(self.make_all_wires(labels, do_cat=False), dim=-2)
+                # print('LW shapes', label_wires_0.shape, label_wires_1.shape)
+                return labels, label_wires
         # return self.calculate_crossview(labels)

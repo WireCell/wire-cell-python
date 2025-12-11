@@ -62,18 +62,20 @@ class Classifier:
             # sigpred = s(prediction)
             # print('Pred Sigmoid:', sigpred)
             if self.do_save:
-                save(prediction, f'eval_out_{self.save_iter}.pt')
-                save(labels, f'eval_labels_{self.save_iter}.pt')
-                save(features, f'eval_input_{self.save_iter}.pt')
+                save((prediction[0] if type(prediction) == tuple else prediction), f'eval_out_{self.save_iter}.pt')
+                save((labels[0] if type(labels) == tuple else labels), f'eval_labels_{self.save_iter}.pt')
+                save((features[0] if type(features) == tuple else features), f'eval_input_{self.save_iter}.pt')
                 self.save_iter += 1
 
         # print('Labels:', labels)
         # print('Any in Labels:', any(labels))
-        print('Labels shape:', labels.shape)
-        print('Prediction shape:', prediction.shape)
-        print('lables dtype', labels.dtype)
-        print('prediction dtype', prediction.dtype)
-        loss = self.criterion(prediction.to(self._device).to(float32), labels.to(float32))
+        # print('Labels shape:', labels.shape)
+        # print('Prediction shape:', prediction.shape)
+        # print('lables dtype', labels.dtype)
+        # print('prediction dtype', prediction.dtype)
+        prediction = tuple(p.to(self._device).to(float32) for p in prediction)
+        labels = tuple(p.to(self._device).to(float32) for p in labels)
+        loss = self.criterion(prediction, labels)
         return loss
 
     def evaluate(self, data):
@@ -303,6 +305,8 @@ class Looper2:
         self.use_amp = True
         self.scaler = amp.GradScaler(device, enabled=self.use_amp)
         self.save_iter = 0
+        self.do_loop_eval = True
+
     def loss(self, features, labels):
         with autocast(
                 self._device,
@@ -342,15 +346,74 @@ class Looper2:
                 #     [self.B(outA, outA_meta, i) for i in range(nregions)],
                 #     dim=-1
                 # )
-                loss = self.loss(features, labels)
+                loss = self.loop_loss(features, labels, training=False, save_pred=True) if self.do_loop_eval else self.loss(features, labels).item()
                 save(labels, f'eval_labels_{self.save_iter}.pt')
                 save(features, f'eval_input_{self.save_iter}.pt')
                 self.save_iter += 1
-                loss = loss.item()
+                # loss = loss.item()
                 losses.append(loss)
         return losses
 
+    def loop_loss(self, features, labels, loss_window=1, training=False, save_pred=False):
+        
 
+        with autocast(
+            self._device,
+            dtype=bfloat16,
+            enabled=self.use_amp):
+
+            #Add if needed
+            features = features.to(self._device)
+            labels = labels.to(self._device)
+
+            outA, outA_meta = self.net.A(features)
+
+        nregions = outA_meta['nregions']
+        
+        total_loss_val = 0.0
+        total_loss_tensor = 0.0
+
+        nloss_windows = int(nregions/loss_window)
+        norm = 1./labels.size(-1)
+        print('Norm:', norm, 1./norm)
+        if save_pred:
+            prediction = []
+
+        for iloss in range(nloss_windows):
+            print('Loss window:', iloss)
+            with autocast(
+                self._device,
+                dtype=bfloat16,
+                enabled=self.use_amp):
+                start = iloss*loss_window
+                end = start + loss_window
+                label_window = labels[..., start:end]
+                outB_i = []
+                nodes_outB_i = []
+                for t in range(loss_window):
+                    i = iloss*loss_window + t
+                    if i == nregions: break
+                    res = self.net.B(outA, outA_meta, i)
+                    outB_i.append(res)
+
+                outB_i = (
+                    cat([b[0] for b in outB_i], dim=-1).to(self._device).to(float32),
+                    cat([b[1] for b in outB_i], dim=-1).to(self._device).to(float32),
+                )
+                if save_pred:
+                    prediction.append(outB_i[0])
+
+                label_nodes = self.net.make_label_nodes_full(label_window) #.permute(2,1,0)
+                label_nodes = tuple(n.to(float32) for n in label_nodes)
+            loss_i = self.criterion(outB_i, label_nodes, do_norm=True)*norm
+
+            total_loss_val += loss_i.item()
+            if training: self.scaler.scale(loss_i).backward(retain_graph=(i < (nregions-1)))
+
+        if save_pred:
+            save(cat(prediction, dim=-1), f'eval_out_{self.save_iter}.pt')
+            # self.save_iter += 1
+        return total_loss_val
     def epoch(self, data):
         '''
         Train over the batches of the data, return list of losses at each batch.
@@ -360,86 +423,59 @@ class Looper2:
         epoch_losses = list()
         snapshot_at = 1
         snapshot_mem = True
-        # if not snapshot_mem:
-        #     memory._record_memory_history(enabled=False)
-        loss_window = 150
+        loss_window = 50
         for ie, (features, labels) in enumerate(data):
 
-            with autocast(
-                self._device,
-                dtype=bfloat16,
-                enabled=self.use_amp):
+            # with autocast(
+            #     self._device,
+            #     dtype=bfloat16,
+            #     enabled=self.use_amp):
 
-                #Add if needed
-                features = features.to(self._device)
-                labels = labels.to(self._device)
+            #     #Add if needed
+            #     features = features.to(self._device)
+            #     labels = labels.to(self._device)
 
-                outA, outA_meta = self.net.A(features)
-                # print('outA', outA.dtype)
-                # print('Called A, mem:', cuda.memory_allocated(0) / (1024**2))
+            #     outA, outA_meta = self.net.A(features)
 
-            # print('all_crossings:', outA['all_crossings'].shape)
-            # print('all_neighbors:', outA['all_neighbors'].shape)
-            # print('edge_attr:', outA['edge_attr'].shape)
-            # print('labels:', labels.shape)
-            nregions = outA_meta['nregions']
-            # nregions=100
+            # nregions = outA_meta['nregions']
             
-            total_loss_val = 0.0
-            total_loss_tensor = 0.0
+            # total_loss_val = 0.0
+            # total_loss_tensor = 0.0
 
-            nloss_windows = int(nregions/loss_window)
-            norm = 1./(labels.size(-1)*labels.size(-2))
-            print('Norm:', norm, 1./norm)
+            # nloss_windows = int(nregions/loss_window)
+            # norm = 1./labels.size(-1)
+            # print('Norm:', norm, 1./norm)
             
-            for iloss in range(nloss_windows):
-                print('Loss window:', iloss)
-                with autocast(
-                    self._device,
-                    dtype=bfloat16,
-                    enabled=self.use_amp):
-                    start = iloss*loss_window
-                    end = start + loss_window
-                    label_window = labels[..., start:end]
-                    # outB_i = zeros_like(label_window)
-                    outB_i = []
-                    nodes_outB_i = []
-                    for t in range(loss_window):
-                        i = iloss*loss_window + t
-                        if i == nregions: break
-                        res = self.net.B(outA, outA_meta, i)
-                        # outB_i[..., t] = res[0]
-                        outB_i.append(res)
-                        # nodes_outB_i.append(res[1])
-                    outB_i = cat(outB_i, dim=-1)
-                    # loss_i = self.criterion(outB_i, label_window)*norm
-                    # nodes_outB_i = cat(nodes_outB_i)
-                    # print('Called B, mem:', cuda.memory_allocated(0) / (1024**2))
-                    label_nodes = self.net.make_label_nodes_full(label_window) #.permute(2,1,0)
-#                 print('Made Label nodes, mem:', cuda.memory_allocated(0) / (1024**2))
-                # print('LABEL NODES', label_nodes.shape)
-                # print('OUTB', outB_i.shape)
-                # node_norm = 1./(outB_i.size(-2)*labels.size(-1))
-                loss_i = self.criterion(outB_i.to(self._device).to(float32), label_nodes.to(float32))*norm
+            # for iloss in range(nloss_windows):
+            #     print('Loss window:', iloss)
+            #     with autocast(
+            #         self._device,
+            #         dtype=bfloat16,
+            #         enabled=self.use_amp):
+            #         start = iloss*loss_window
+            #         end = start + loss_window
+            #         label_window = labels[..., start:end]
+            #         outB_i = []
+            #         nodes_outB_i = []
+            #         for t in range(loss_window):
+            #             i = iloss*loss_window + t
+            #             if i == nregions: break
+            #             res = self.net.B(outA, outA_meta, i)
+            #             outB_i.append(res)
 
-                total_loss_val += loss_i.item()
-#                 print('Called loss, mem:', cuda.memory_allocated(0) / (1024**2))
-                # loss_i.backward(retain_graph=(i < (nregions-1)))
-                self.scaler.scale(loss_i).backward(retain_graph=(i < (nregions-1)))
-#                 print('Called backward, mem:', cuda.memory_allocated(0) / (1024**2))
+            #         outB_i = (
+            #             cat([b[0] for b in outB_i], dim=-1).to(self._device).to(float32),
+            #             cat([b[1] for b in outB_i], dim=-1).to(self._device).to(float32),
+            #         )
 
-            print('Loss:', total_loss_val)
+            #         label_nodes = self.net.make_label_nodes_full(label_window) #.permute(2,1,0)
+            #         label_nodes = tuple(n.to(float32) for n in label_nodes)
+            #     loss_i = self.criterion(outB_i, label_nodes, do_norm=True)*norm
 
-            # for i in range(nregions):
-            #     print('Region', i)
-            #     outB_i = self.net.B(outA, outA_meta, i)
-            #     # print('outB_i shape:', outB_i.shape)
-            #     loss_i = self.criterion(outB_i, labels[..., i])
             #     total_loss_val += loss_i.item()
-            #     # total_loss_tensor = total_loss_tensor + loss_i
-                
-            #     # total_loss_tensor.backward(retain_graph=(i < (nregions-1))) 
-            #     loss_i.backward(retain_graph=(i < (nregions-1))) 
+            #     self.scaler.scale(loss_i).backward(retain_graph=(i < (nregions-1)))
+            total_loss_val = self.loop_loss(features, labels, loss_window=loss_window, training=True)
+            print('Loss:', total_loss_val)
 
             # self.optimizer.step()
             self.scaler.step(self.optimizer)
