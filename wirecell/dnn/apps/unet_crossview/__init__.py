@@ -4,7 +4,7 @@ from torch import optim, tensor, float32 as tf32
 ## The "app" API
 from .model import Network
 from .data import Dataset
-from wirecell.dnn.train import Looper2 as Trainer
+from wirecell.dnn.trainers.train import Looper2 as Trainer
 # from wirecell.dnn.train import Classifier as Trainer
 # from torch.nn import BCEWithLogitsLoss as Criterion
 # from torch.nn import BCELoss as Criterion
