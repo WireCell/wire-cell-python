@@ -50,41 +50,35 @@ class Network(nn.Module):
     def __init__(
             self,
  
-            # wires_file='protodunevd-wires-larsoft-v3.json.bz2',
-            # chanmap_file='chanmap_1536.npy',
-            # nchans=[476, 476, 292, 292],
-            # det_type='vd',
-            # cells_file=None,
+            wires_file='protodunevd-wires-larsoft-v3.json.bz2',
+            chanmap_file='chanmap_1536.npy',
+            nchans=[476, 476, 292, 292],
+            det_type='vd',
+            cells_file=None,
  
-            wires_file='protodunehd-wires-larsoft-v1.json.bz2',
-            chanmap_file=2560,
-            nchans=[800, 800, 480, 480],
-            det_type='hd',
-            cells_file='pdhd_cells.pt',
+            # wires_file='protodunehd-wires-larsoft-v1.json.bz2',
+            # chanmap_file=2560,
+            # nchans=[800, 800, 480, 480],
+            # det_type='hd',
+            # cells_file='pdhd_cells.pt',
 
+            mp_out=False,
             scatter_out=False,
+            output_as_tuple=False,
 
             n_unet_features=4,
-            # time_window=3,
             checkpoint=True,
             n_feat_wire = 0,
             detector=0,
             n_input_features=1,
-            # skip_unets=True,
-            # skip_GNN=False,
-            # one_side=False,
-            # out_channels=16,
-            # use_cells=True,
-            # fixed_neighbors=True,
-            #gcn=False, #Currently not working
+
+            network_style='U',
         ):
         super().__init__()
         self.nfeat_post_unet=n_unet_features
         self.n_feat_wire = n_feat_wire
         self.checkpoint=checkpoint
         self.n_input_features=n_input_features
-        # self.skip_unets=skip_unets
-        ##Set up the UNets
         
         self.do_call_first_unets = True
         self.do_call_second_unets = True
@@ -106,8 +100,10 @@ class Network(nn.Module):
         self.xview_activation = self.relu
 
         self.scatter_out = scatter_out
+        self.mp_out = mp_out
+        self.output_as_tuple = output_as_tuple
 
-        self.network_style = 'U'
+        self.network_style = network_style
         if self.network_style is not None:
             if self.network_style == 'U-MP-U':
                 self.do_call_first_unets = True
@@ -249,33 +245,6 @@ class Network(nn.Module):
             self.nchans = nchans #[476, 476, 292, 292]
 
             self.save = True
-    
-    # def fill_window_mp(self, first_wires, second_wires, third_wires, indices, type='mp3'):
-    #     w = second_wires*third_wires
-
-    #     if type == 'mp3':
-    #         w = w*first_wires
-    #     elif type == 'mp2':
-    #         w = 1 - w*first_wires
-    #     return w
-            
-    # def fill_window(self, w, nfeat, first_wires, second_wires, third_wires, indices, crossings, merged_crossings):
-        
-    #     w[..., :(nfeat)] = first_wires[:, :, indices[:,0], :]
-    #     w[..., (nfeat):2*(nfeat)] = second_wires[:, :, indices[:,1], :]
-    #     w[..., 2*(nfeat):3*(nfeat)] = third_wires[:, :, indices[:,2], :]
-    #     start = 3*(nfeat)
-
-    #     if not self.skip_area:
-    #         w[..., start] = merged_crossings['areas']
-    #         start += 1
-        # w[..., start:start+2] = crossings[:, 0].view(1, 1, -1, 2).repeat(w.shape[0], w.shape[1], 1, 1).to(w.device)
-        # start += 2
-        # w[..., start:start+2] = crossings[:, 1].view(1, 1, -1, 2).repeat(w.shape[0], w.shape[1], 1, 1).to(w.device)
-        # start += 2
-        # w[..., start:start+2] = crossings[:, 2].view(1, 1, -1, 2).repeat(w.shape[0], w.shape[1], 1, 1).to(w.device)
-        # start += 2
-        # w[..., start:start+2] = torch.mean(crossings, dim=1).view(1,1,-1,2).repeat(w.shape[0], w.shape[1], 1, 1).to(w.device)
     
 
     def scatter_to_chans(self, y, nbatches, nchannels, the_device):
@@ -428,10 +397,6 @@ class Network(nn.Module):
             else: split_device = 'cpu'
             self.unets2 = nn.ModuleList([ui.to(self.unet2_device) for ui in self.unets2])
 
-        # # if not self.skip_unets:
-        # if self.save:
-        #     torch.save(x, 'input_test.pt')
-
         if self.do_call_first_unets:
             print('Calling first UNets')
             # print(torch.cuda.memory_allocated(0) / (1024**2))
@@ -459,19 +424,20 @@ class Network(nn.Module):
 
     def B(self, x, xmeta, tick):
         xi = x[..., tick].unsqueeze(-1)
-        if self.scatter_out:
-            xview = self.calculate_crossview(xi).to(x.device)
+        
+        if self.mp_out:
+            if self.scatter_out:
+                xview = self.calculate_crossview(xi).to(x.device)
+            else:
+                xview_0, xview_1 = self.make_all_wires(xi, do_cat=False)
+                xview = torch.cat([
+                    xview_0.to(x.device),
+                    xview_1.to(x.device),
+                ], dim=-2)
+
+            return (xi, xview)
         else:
-            xview_0, xview_1 = self.make_all_wires(xi, do_cat=False)
-            xview = torch.cat([
-                xview_0.to(x.device),
-                xview_1.to(x.device),
-            ], dim=-2)
-        # xi = torch.cat([
-        #     xi,
-        #     xview
-        # ], dim=1)
-        return (xi, xview)
+            return (xi,) if self.output_as_tuple else xi
     
 
     def xview_wires_loop(self, x, do_cat=True):
@@ -492,15 +458,16 @@ class Network(nn.Module):
 
     def forward(self, x):
         x, xmeta = self.A(x)
-        if self.scatter_out:
-            x = self.crossview_loop(x).to(xmeta['device'])
-            return (x[:, 0].unsqueeze(0), x[:, 1:])
+        if self.mp_out:
+            if self.scatter_out:
+                x = self.crossview_loop(x).to(xmeta['device'])
+                return (x[:, 0].unsqueeze(0), x[:, 1:])
+            else:
+                xview = self.xview_wires_loop(x, do_cat=False)
+                # print(xview.element_size() * xview.nelement())
+                return x, xview
         else:
-            xview = self.xview_wires_loop(x, do_cat=False)
-            # print(xview.element_size() * xview.nelement())
-            return x, xview
-
-        # return x.to(xmeta['device'])
+            return (x,) if self.output_as_tuple else x
 
     def call_mlp(self, x):
         x = self.mlp(
@@ -631,11 +598,13 @@ class Network(nn.Module):
         So we need to go from channels view to the wires then nodes view.
         '''
         with torch.no_grad():
-            if self.scatter_out:
-                labels = self.crossview_loop(labels)
-                return (labels[:, 0].unsqueeze(0), labels[:, 1:])
+            if self.mp_out:
+                if self.scatter_out:
+                    labels = self.crossview_loop(labels)
+                    return (labels[:, 0].unsqueeze(0), labels[:, 1:])
+                else:
+                    label_wires = torch.cat(self.make_all_wires(labels, do_cat=False), dim=-2)
+                    # print('LW shapes', label_wires_0.shape, label_wires_1.shape)
+                    return labels, label_wires
             else:
-                label_wires = torch.cat(self.make_all_wires(labels, do_cat=False), dim=-2)
-                # print('LW shapes', label_wires_0.shape, label_wires_1.shape)
-                return labels, label_wires
-        # return self.calculate_crossview(labels)
+                return (labels,) if self.output_as_tuple else labels
