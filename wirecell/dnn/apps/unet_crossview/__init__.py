@@ -2,7 +2,7 @@
 from torch import optim, tensor, float32 as tf32
 
 ## The "app" API
-from .model import Network
+from wirecell.dnn.models.unet_crossview import UNetCrossView as Network
 from .data import Dataset
 # from wirecell.dnn.trainers.train import Looper as Trainer
 

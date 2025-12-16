@@ -15,7 +15,7 @@ import torch.utils.checkpoint as checkpoint
 
 import math
 
-class Network(nn.Module):
+class UNetCrossView(nn.Module):
     
     def determine_mlp_n_in(self):
         if self.do_call_first_unets:
