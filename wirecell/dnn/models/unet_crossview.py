@@ -4,9 +4,9 @@ import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch_scatter
-from torch_geometric.data import Data
-from torch_geometric.nn import GAT, GCN
+# import torch_scatter
+# from torch_geometric.data import Data
+# from torch_geometric.nn import GAT, GCN
 from wirecell.dnn.models.unet import UNet
 from wirecell.raygrid.coordinates import Coordinates
 from wirecell.raygrid import crossover as xover
