@@ -165,6 +165,13 @@ class UNetCrossView(nn.Module):
                 self.unets2 = nn.ModuleList([UNet(n_channels=self.second_unet_n_in, n_classes=1,
                                    batch_norm=True, bilinear=True, padding=True)])
 
+            unets2_size = 0
+            for m in self.unets2:
+                for param in m.parameters():
+                    unets2_size += param.nelement() * param.element_size()
+                for buffer in m.buffers():
+                    unets2_size += buffer.nelement() * buffer.element_size()
+            print('TOTAL UNETS2 SIZE', unets2_size)
 
         with torch.no_grad():
 
@@ -524,6 +531,7 @@ class UNetCrossView(nn.Module):
             #These are called 'as_wires' but are really cells on each face
         if do_cat:
             as_wires_f0 = torch.zeros((xi.shape[0], 3*xi.shape[1], self.good_indices_0.shape[0], xi.shape[-1])).to(the_device)
+            # as_wires_f0[:, 0] = self.make_wires(xi, 0, 0)[:, :, self.good_indices_0[:, 0]]
             as_wires_f0[:, 0] = self.make_wires(xi, 0, 0)[:, :, self.good_indices_0[:, 0]]
             as_wires_f0[:, 1] = self.make_wires(xi, 0, 1)[:, :, self.good_indices_0[:, 1]]
             as_wires_f0[:, 2] = self.make_wires(xi, 0, 2)[:, :, self.good_indices_0[:, 2]]
@@ -551,11 +559,13 @@ class UNetCrossView(nn.Module):
         # input = input.to('cuda:1')
         mem0 = torch.cuda.memory_allocated(0) / (1024**3)
         mem1 = torch.cuda.memory_allocated(1) / (1024**3)
+        the_device = xi.device
         if self.split_xview_loop and self.training:
-            xi = xi.to('cuda:0' if (mem0 < self.split_at) else 'cuda:1')
+            the_device = 'cuda:0' if (mem0 < self.split_at) else 'cuda:1'
+            xi = xi.to(the_device)
         nbatches = xi.shape[0]
         nchannels = xi.shape[-2]
-        the_device = xi.device
+        # the_device = xi.device
         # crossview_chans = []
         self.good_indices_0 = self.good_indices_0.to(the_device)
         self.good_indices_1 = self.good_indices_1.to(the_device)
@@ -567,8 +577,9 @@ class UNetCrossView(nn.Module):
         #This mixes the information between the three planes
         if call_special:
             if self.special_style == 'mlp':
-                as_wires_f0 = self.call_mlp(as_wires_f0)
-                as_wires_f1 = self.call_mlp(as_wires_f1)
+                print(the_device, as_wires_f0.device, as_wires_f1.device)
+                as_wires_f0 = self.call_mlp(as_wires_f0.to(next(self.mlp.parameters()).device)).to(the_device)
+                as_wires_f1 = self.call_mlp(as_wires_f1.to(next(self.mlp.parameters()).device)).to(the_device)
             elif self.special_style == 'threshold':
                 # print('Calling threshold')
                 as_wires_f0 = self.call_threshold_like(as_wires_f0)

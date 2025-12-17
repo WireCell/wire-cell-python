@@ -196,6 +196,7 @@ class Looper:
         return losses
 
     def loop_loss(self, features, labels, loss_window=1, training=False, save_pred=False):
+        print('loop loss device', self._device)
         with autocast(
             self._device,
             dtype=bfloat16,
@@ -219,7 +220,7 @@ class Looper:
             prediction = []
 
         for iloss in range(nloss_windows):
-            print('Loss window:', iloss)
+            print('Loss window:', iloss, self._device)
             with autocast(
                 self._device,
                 dtype=bfloat16,
