@@ -6,8 +6,8 @@ from wirecell.dnn.models.unet_crossview import UNetCrossView
 from .data import Dataset
 
 DO_LOOPER=False
-MP_OUT=True
-DO_LOOPER = DO_LOOPER or MP_OUT #Not enough memory if doing mp out
+MP_OUT=False
+# DO_LOOPER = DO_LOOPER or MP_OUT #Not enough memory if doing mp out
 if DO_LOOPER:
     from wirecell.dnn.trainers.train import Looper as Trainer
 else:
@@ -31,7 +31,7 @@ def Network():
         output_as_tuple=False,
 
         n_unet_features=4,
-        checkpoint=True,
+        checkpoint=False,
         n_feat_wire = 0,
         detector=0,
         n_input_features=1,

@@ -84,6 +84,7 @@ class Scatter(torch.autograd.Function):
     @staticmethod
     @torch.no_grad()
     def backward(ctx, grad_output):
+        print('CALLING BACKWARD')
         def project(chunk_in, ind):
             res = chunk_in.new_zeros((F_in, curr_R, len(ind)))
             res[..., ind[:,0]] = chunk_in[..., ind[:,1]]
@@ -182,6 +183,7 @@ class Scatter(torch.autograd.Function):
                 # print(f"Grad Z1 Sum: {grad_z1.abs().sum().item()}")
                 # print(f"Grad C Flat Sum: {grad_c_flat.abs().sum().item()}")
 
+        print('BACKWARD DONE')
         return grad_input, grad_w1, grad_b1, grad_w2, grad_b2, None, None, None, None, None
     
 

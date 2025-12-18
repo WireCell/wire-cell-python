@@ -8,6 +8,7 @@ import torch.nn.functional as F
 # from torch_geometric.data import Data
 # from torch_geometric.nn import GAT, GCN
 from wirecell.dnn.models.unet import UNet
+from wirecell.dnn.models.scatter import TripleScatterModule
 from wirecell.raygrid.coordinates import Coordinates
 from wirecell.raygrid import crossover as xover
 from wirecell.util.wires import schema, persist
@@ -137,6 +138,9 @@ class UNetCrossView(nn.Module):
 
         mlp_n_in = self.determine_mlp_n_in()
         
+
+        self.new_scatter = TripleScatterModule(int(mlp_n_in/3), 8, self.mlp_n_out, 40)
+
         if self.special_style == 'feedthrough':
             self.do_call_special=False
         elif self.special_style == 'mlp' and self.do_call_special:
@@ -380,9 +384,19 @@ class UNetCrossView(nn.Module):
     def mp_step(self, x):
         # x = self.sigmoid(x)
         x = self.xview_activation(x)
-        x = self.crossview_loop(x, call_special=self.do_call_special)
+        xi = x[0].permute(0, 2, 1)
+        print('CALLING NEW SCATTER on', x.shape)
+        xi = self.new_scatter(
+            xi,
+            [self.face_plane_wires_channels[0,0], self.face_plane_wires_channels[1,0]],
+            [self.face_plane_wires_channels[0,1], self.face_plane_wires_channels[1,1]],
+            [self.face_plane_wires_channels[0,2], self.face_plane_wires_channels[1,2]],
+            [self.good_indices_0.T, self.good_indices_1.T]
+        ).unsqueeze(0)
+        # x = self.crossview_loop(x, call_special=self.do_call_special)
         # x = self.calculate_crossview(x, call_special=self.do_call_special)
-        return x
+        print('DONE', xi.shape)
+        return torch.cat([x, xi.permute(0,1,3,2)], dim=1)
 
     def A(self, x):
         '''
