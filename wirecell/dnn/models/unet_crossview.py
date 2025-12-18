@@ -139,7 +139,7 @@ class UNetCrossView(nn.Module):
         mlp_n_in = self.determine_mlp_n_in()
         
 
-        self.new_scatter = TripleScatterModule(int(mlp_n_in/3), 8, self.mlp_n_out, 40)
+        self.new_scatter = TripleScatterModule(int(mlp_n_in/3), 4, self.mlp_n_out, 8)
 
         if self.special_style == 'feedthrough':
             self.do_call_special=False
