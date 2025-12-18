@@ -3,7 +3,7 @@ from argparse import ArgumentParser as ap
 import torch
 
 from wirecell.util.wires import schema, persist
-
+import torch.autograd.profiler as profiler
 if __name__ == '__main__':
     parser = ap()
     parser.add_argument('--fin', help='Input features', type=int, default=1)
@@ -61,13 +61,26 @@ if __name__ == '__main__':
             print('Sent to', device)
         else:
             print('WARNING CUDA NOT AVAILABLE -- DEFAULTING TO CPU')
+    elif device != 'cpu':
+        raise RuntimeError('Need to provide either cpu, gpu, or cuda:N to --device')
+    
+
+    ind0 = [face_plane_wires_channels[0,0].to(device), face_plane_wires_channels[1,0].to(device)]
+    ind1 = [face_plane_wires_channels[0,1].to(device), face_plane_wires_channels[1,1].to(device)]
+    ind2 = [face_plane_wires_channels[0,2].to(device), face_plane_wires_channels[1,2].to(device)]
+    mix_ind = [good_indices_0.to(device).T, good_indices_1.to(device).T]
+
+    input = input.to(device)
+    print('Calling model forward')
+    with profiler.profile(with_stack=True, profile_memory=True) as prof:
+        y = tsm(input, ind0, ind1, ind2, mix_ind)
+    print(prof.key_averages(group_by_stack_n=5).table(sort_by='self_cpu_time_total', row_limit=5))
+    print('Done')
 
 
-    ind0 = [face_plane_wires_channels[0,0], face_plane_wires_channels[1,0]]
-    ind1 = [face_plane_wires_channels[0,1], face_plane_wires_channels[1,1]]
-    ind2 = [face_plane_wires_channels[0,2], face_plane_wires_channels[1,2]]
-    mix_ind = [good_indices_0.T, good_indices_1.T]
-
-    print('Calling model once')
-
-    tsm(input, ind0, ind1, ind2, mix_ind)
+    loss = y.sum()
+    print('Calling backward')
+    with profiler.profile(with_stack=True, profile_memory=True) as prof:
+        loss.backward()
+    print(prof.key_averages(group_by_stack_n=5).table(sort_by='self_cpu_time_total', row_limit=5))
+    print('Done')
