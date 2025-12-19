@@ -15,7 +15,7 @@ else:
 
 
 def Optimizer(params):
-    return optim.SGD(params, lr=0.01, momentum=0.9, weight_decay=0.0005)
+    return optim.SGD(params, lr=0.1, momentum=0.9, weight_decay=0.0005)
 
 def Network():
     return UNetCrossView(
@@ -25,7 +25,6 @@ def Network():
         nchans=[800, 800, 480, 480],
         det_type='hd',
         cells_file='pdhd_cells.pt',
-
         mp_out=MP_OUT,
         scatter_out=False,
         output_as_tuple=False,

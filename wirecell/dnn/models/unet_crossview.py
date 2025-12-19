@@ -26,7 +26,7 @@ class UNetCrossView(nn.Module):
         return mlp_n_in
 
     def determine_unets2_n_in(self):
-        if self.do_call_mp and self.special_style == 'mlp':
+        if self.do_call_mp and self.special_style in ['mlp', 'new_scatter']:
             if self.do_call_first_unets:
                 return self.first_unet_n_out + self.mlp_n_out
             else:
@@ -91,8 +91,8 @@ class UNetCrossView(nn.Module):
 
         self.do_call_special = True
         self.split_second_unets = True
-        self.special_style = 'mlp' #mlp, threshold, or feedthrough
-        self.good_specials = ['mlp', 'threshold', 'feedthrough']
+        self.special_style = 'new_scatter' #mlp, threshold, or feedthrough
+        self.good_specials = ['mlp', 'threshold', 'feedthrough', 'new_scatter']
         if self.special_style not in self.good_specials:
             raise Exception(f'Unknown Special Style {self.special_style}. Can only select one of {(", ").join(self.good_specials)}')
         self.mlp_n_out = 4 #Only used if special_style set to mlp
@@ -139,7 +139,9 @@ class UNetCrossView(nn.Module):
         mlp_n_in = self.determine_mlp_n_in()
         
 
-        self.new_scatter = TripleScatterModule(int(mlp_n_in/3), 4, self.mlp_n_out, 8)
+        self.new_scatter = TripleScatterModule(
+            int(mlp_n_in/3), 16, self.mlp_n_out,
+            chunk_size=16, do_max=False)
 
         if self.special_style == 'feedthrough':
             self.do_call_special=False
@@ -383,7 +385,6 @@ class UNetCrossView(nn.Module):
 
     def mp_step(self, x):
         # x = self.sigmoid(x)
-        x = self.xview_activation(x)
         xi = x[0].permute(0, 2, 1)
         print('CALLING NEW SCATTER on', x.shape)
         xi = self.new_scatter(
@@ -396,6 +397,7 @@ class UNetCrossView(nn.Module):
         # x = self.crossview_loop(x, call_special=self.do_call_special)
         # x = self.calculate_crossview(x, call_special=self.do_call_special)
         print('DONE', xi.shape)
+        xi = self.xview_activation(xi)
         return torch.cat([x, xi.permute(0,1,3,2)], dim=1)
 
     def A(self, x):
@@ -406,7 +408,7 @@ class UNetCrossView(nn.Module):
         nbatches = x.shape[0]
         nticks = x.shape[-1]
         nchannels = x.shape[-2]
-
+        print('INPUT DTYPE', x.dtype)
         the_device = x.device
         self.good_indices_0 = self.good_indices_0.to(the_device)
         self.good_indices_1 = self.good_indices_1.to(the_device)

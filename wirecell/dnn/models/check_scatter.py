@@ -4,7 +4,7 @@ import torch
 
 from wirecell.util.wires import schema, persist
 import torch.autograd.profiler as profiler
-def verify_spatial_logic():
+def verify_spatial_logic(do_sum=False):
     # Use small dimensions so gradcheck finishes quickly
     # Use double precision (float64) for numerical stability in testing
     F_in, R, C = 2, 4, 8
@@ -38,7 +38,7 @@ def verify_spatial_logic():
     def func(inp, weight1, bias1, weight2, bias2):
         return Scatter.apply(
             inp, weight1, bias1, weight2, bias2, 
-            ind1, ind2, ind3, mix_ind, chunk_size
+            ind1, ind2, ind3, mix_ind, chunk_size, (not do_sum)
         )
 
     print("Running gradcheck...")
@@ -88,7 +88,7 @@ def verify_spatial_logic2(args):
     def func(inp, weight1, bias1, weight2, bias2):
         return Scatter.apply(
             inp, weight1, bias1, weight2, bias2, 
-            ind1, ind2, ind3, mix_ind, chunk_size
+            ind1, ind2, ind3, mix_ind, chunk_size, (not args.do_sum)
         )
 
     print("Running gradcheck...")
@@ -142,10 +142,13 @@ def check_time(args):
     chanmap = make_chanmap(args.chanmap)
     face_plane_wires_channels = make_wire_chans(args.schema, chanmap)
 
-    input = torch.randn((args.fin, args.ticks, len(chanmap)))
+    input = torch.randn(
+        (args.fin, args.ticks, len(chanmap)),
+        dtype=(torch.bfloat16 if args.bfloat16 else torch.float32)
+    )
     print('made input of size', input.shape)
 
-    tsm = TripleScatterModule(args.fin, args.hidden, args.fout, chunk_size=args.chunk)
+    tsm = TripleScatterModule(args.fin, args.hidden, args.fout, chunk_size=args.chunk, do_max=not args.do_sum)
     print('Made model')
 
     print('Checking device')
@@ -168,17 +171,22 @@ def check_time(args):
     mix_ind = [good_indices_0.to(device).T, good_indices_1.to(device).T]
 
     input = input.to(device)
+    torch.cuda.synchronize()
     print('Calling model forward')
     with profiler.profile(with_stack=True, profile_memory=True) as prof:
         y = tsm(input, ind0, ind1, ind2, mix_ind)
+        torch.cuda.synchronize()
     print(prof.key_averages(group_by_stack_n=5).table(sort_by='self_cpu_time_total', row_limit=5))
     print('Done')
 
 
+    print('Summing')
     loss = y.sum()
+    torch.cuda.synchronize()
     print('Calling backward')
     with profiler.profile(with_stack=True, profile_memory=True) as prof:
         loss.backward()
+        torch.cuda.synchronize()
     print(prof.key_averages(group_by_stack_n=5).table(sort_by='self_cpu_time_total', row_limit=5))
     print('Done')
 
@@ -189,10 +197,20 @@ def check_time(args):
     print(prof.key_averages(group_by_stack_n=5).table(sort_by='self_cpu_time_total', row_limit=5))
     print('Done')
 
+    print(f'Running forward + backward {args.n} times')
+    with profiler.profile(with_stack=True, profile_memory=True) as prof:
+        for i in range(args.n):
+            y = tsm(input, ind0, ind1, ind2, mix_ind)
+            l = y.sum()
+            l.backward()
+    print(prof.key_averages(group_by_stack_n=5).table(sort_by='self_cpu_time_total', row_limit=5))
+    print('Done')
+
 if __name__ == '__main__':
     parser = ap()
     subparsers = parser.add_subparsers(dest='command')
     verify_parser = subparsers.add_parser('verify')
+    verify_parser.add_argument('--do-sum', help='Whether to do sum or max', action='store_true')
     
     verify2_parser = subparsers.add_parser('verify2')
     verify2_parser.add_argument('--fin', help='Input features', type=int, default=1)
@@ -204,8 +222,10 @@ if __name__ == '__main__':
     verify2_parser.add_argument('--chanmap', help='Chan map file OR number of wires for 1:1 map')
     verify2_parser.add_argument('--cells', help='Cells file (optional)', default=None)
     verify2_parser.add_argument('--device', help='Which device to run on', default='cpu')
+    verify2_parser.add_argument('--do-sum', help='Whether to do sum or max', action='store_true')
     
     time_parser = subparsers.add_parser('time')
+    time_parser.add_argument('-n', help='Number of iterations', type=int, default=1)
     time_parser.add_argument('--fin', help='Input features', type=int, default=1)
     time_parser.add_argument('--hidden', help='Hidden features', type=int, default=8)
     time_parser.add_argument('--fout', help='Output features', type=int, default=1)
@@ -215,11 +235,13 @@ if __name__ == '__main__':
     time_parser.add_argument('--chanmap', help='Chan map file OR number of wires for 1:1 map')
     time_parser.add_argument('--cells', help='Cells file (optional)', default=None)
     time_parser.add_argument('--device', help='Which device to run on', default='cpu')
+    time_parser.add_argument('--do-sum', help='Whether to do sum or max', action='store_true')
+    time_parser.add_argument('--bfloat16', help='Run with bfloat16 inputs', action='store_true')
     args = parser.parse_args()
 
     if args.command == 'time':
         check_time(args)
     elif args.command == 'verify':
-        verify_spatial_logic()
+        verify_spatial_logic(args.do_sum)
     elif args.command == 'verify2':
         verify_spatial_logic2(args)
