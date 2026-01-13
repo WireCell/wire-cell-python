@@ -141,7 +141,7 @@ class UNetCrossView(nn.Module):
 
         self.new_scatter = TripleScatterModule(
             int(mlp_n_in/3), 16, self.mlp_n_out,
-            chunk_size=16, do_max=False)
+            chunk_size=16)
 
         if self.special_style == 'feedthrough':
             self.do_call_special=False
@@ -215,6 +215,8 @@ class UNetCrossView(nn.Module):
             #Build the map to go between wire segments & channels 
             self.face_plane_wires_channels = {}
             for i, face in enumerate(self.faces):
+                if i == 0: self.nplanes = len(face.planes)
+
                 for jj, j in enumerate(face.planes):
                     plane = store.planes[j]
                     wire_chans = torch.zeros((len(plane.wires), 2), dtype=int)
@@ -222,9 +224,11 @@ class UNetCrossView(nn.Module):
                         wire = store.wires[wi]
                         wire_chans[wire.ident, 0] = wire.ident
                         wire_chans[wire.ident, 1] = chanmap[wire.channel]
-                    self.face_plane_wires_channels[(i,jj)] = torch.tensor(wire_chans, dtype=torch.int)
-                    print("FPWC size", self.face_plane_wires_channels[(i,jj)].dtype)
-            
+                    # self.face_plane_wires_channels[(i,jj)] = torch.tensor(wire_chans, dtype=torch.int)
+                    self.face_plane_wires_channels[i*self.nplanes + jj] = torch.tensor(wire_chans, dtype=torch.int)
+                    # print("FPWC size", self.face_plane_wires_channels[(i,jj)].dtype)
+                    print("FPWC size", self.face_plane_wires_channels[i*self.nplanes + jj].dtype)
+
 
             # face_to_plane_to_nwires = {
             #     i:[len(store.planes[p].wires) for j,p in enumerate(self.faces[i].planes)] for i in face_ids
@@ -389,9 +393,12 @@ class UNetCrossView(nn.Module):
         print('CALLING NEW SCATTER on', x.shape)
         xi = self.new_scatter(
             xi,
-            [self.face_plane_wires_channels[0,0], self.face_plane_wires_channels[1,0]],
-            [self.face_plane_wires_channels[0,1], self.face_plane_wires_channels[1,1]],
-            [self.face_plane_wires_channels[0,2], self.face_plane_wires_channels[1,2]],
+            # [self.face_plane_wires_channels[0,0], self.face_plane_wires_channels[1,0]],
+            # [self.face_plane_wires_channels[0,1], self.face_plane_wires_channels[1,1]],
+            # [self.face_plane_wires_channels[0,2], self.face_plane_wires_channels[1,2]],
+            [self.face_plane_wires_channels[0], self.face_plane_wires_channels[self.nplanes + 0]],
+            [self.face_plane_wires_channels[1], self.face_plane_wires_channels[self.nplanes + 1]],
+            [self.face_plane_wires_channels[2], self.face_plane_wires_channels[self.nplanes + 2]],
             [self.good_indices_0.T, self.good_indices_1.T]
         ).unsqueeze(0)
         # x = self.crossview_loop(x, call_special=self.do_call_special)

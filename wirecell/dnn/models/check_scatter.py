@@ -38,7 +38,7 @@ def verify_spatial_logic(do_sum=False):
     def func(inp, weight1, bias1, weight2, bias2):
         return Scatter.apply(
             inp, weight1, bias1, weight2, bias2, 
-            ind1, ind2, ind3, mix_ind, chunk_size, (not do_sum)
+            ind1, ind2, ind3, mix_ind, chunk_size
         )
 
     print("Running gradcheck...")
@@ -148,7 +148,7 @@ def check_time(args):
     )
     print('made input of size', input.shape)
 
-    tsm = TripleScatterModule(args.fin, args.hidden, args.fout, chunk_size=args.chunk, do_max=not args.do_sum)
+    tsm = TripleScatterModule(args.fin, args.hidden, args.fout, chunk_size=args.chunk)
     print('Made model')
 
     print('Checking device')
