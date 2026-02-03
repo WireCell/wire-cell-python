@@ -35,13 +35,15 @@ class Rec(hdf.Single):
                  file_re=None, path_res=None,
                  trparams: TrParams = Trut.default_params, cache=False,
                  transpose=False,
+                 baseline=False,
                  det='hd',
                 ):
 
-        file_re = r'.*g4-rec-[r]?(\d+)\.h5' if det == 'vd' else r'.*g4-rec-[r]?(\d{8}T\d{6}Z)\.h5'
+        # file_re = r'.*g4-rec-[r]?(\d{8}T\d{6}Z)\.h5' #Old inputs
+        file_re = r'.*sigproc-spng-cosmics_([0-9])\.h5'
         dom = hdf.Domain(hdf.ReMatcher(file_re or self.file_re,
                                        path_res or self.path_res),
-                         transform=Rect(params=trparams, transpose=transpose),
+                         transform=Rect(params=trparams, transpose=transpose, baseline=baseline),
                          cache=cache, grad=True,
                          name="dnnroirec")
         super().__init__(dom, paths)
@@ -55,7 +57,7 @@ class Tru(hdf.Single):
     '''
 
 
-    file_re = r'.*g4-tru-[r]?(\d+)\.h5'
+    # file_re = r'.*g4-tru-[r]?(\d+)\.h5'
     # path_res = tuple(
     #     r'/(\d+)/%s\d'%tag for tag in ['frame_ductor']
     # )
@@ -69,9 +71,10 @@ class Tru(hdf.Single):
                  trparams: TrParams = Trut.default_params, cache=False,
                  transpose=False, det='hd',
                 ):
-        file_re = r'.*g4-tru-[r]?(\d+)\.h5' if det == 'vd' else r'.*g4-tru-[r]?(\d{8}T\d{6}Z)\_cleaned\.h5'
+        # file_re = r'.*g4-tru-[r]?(\d{8}T\d{6}Z)\_cleaned\.h5'
+        file_re = r'.*splat-cosmics_([0-9])\.h5'
         path_res = tuple(
-            r'/(\d+)/%s\d'%tag for tag in ['frame_ductor' if det=='vd' else 'frame_deposplat']
+            r'/(\d+)/%s\d'%tag for tag in ['frame_deposplat']
         )
         dom = hdf.Domain(hdf.ReMatcher(file_re or self.file_re,
                                        path_res or self.path_res),
@@ -120,6 +123,7 @@ class Dataset(hdf.Multi):
                              file_re=wash('rec_file_re'),
                              path_res=wash('rec_path_res'),
                              transpose=((wash('transpose')=='True') or False),
+                             baseline=((wash('baseline')=='True') or False),
                              trparams=trparams,
                              det=wash('det'),
                             ),

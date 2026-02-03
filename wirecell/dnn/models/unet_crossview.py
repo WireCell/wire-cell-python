@@ -8,7 +8,7 @@ import torch.nn.functional as F
 # from torch_geometric.data import Data
 # from torch_geometric.nn import GAT, GCN
 from wirecell.dnn.models.unet import UNet
-from wirecell.dnn.models.scatter import TripleScatterModule
+from wirecell.dnn.models.scatter import TripleScatterModule, TripleScatterModuleNoAG
 from wirecell.raygrid.coordinates import Coordinates
 from wirecell.raygrid import crossover as xover
 from wirecell.util.wires import schema, persist
@@ -28,7 +28,7 @@ class UNetCrossView(nn.Module):
     def determine_unets2_n_in(self):
         if self.do_call_mp and self.special_style in ['mlp', 'new_scatter']:
             if self.do_call_first_unets:
-                return self.first_unet_n_out + self.mlp_n_out
+                return self.first_unet_n_out + self.mlp_n_out + self.n_input_features
             else:
                 return self.n_input_features + self.mlp_n_out
         elif self.do_call_mp and self.special_style == 'threshold':
@@ -42,8 +42,10 @@ class UNetCrossView(nn.Module):
             else:
                 return 4*self.n_input_features
         else:
+            if (not self.do_call_special) and self.do_call_first_unets:
+                return self.first_unet_n_out + self.n_input_features
             if self.do_call_first_unets:
-                return 4*self.first_unet_n_out
+                return 4*self.first_unet_n_out #???
             else:
                 return self.n_input_features
 
@@ -95,10 +97,10 @@ class UNetCrossView(nn.Module):
         self.good_specials = ['mlp', 'threshold', 'feedthrough', 'new_scatter']
         if self.special_style not in self.good_specials:
             raise Exception(f'Unknown Special Style {self.special_style}. Can only select one of {(", ").join(self.good_specials)}')
-        self.mlp_n_out = 4 #Only used if special_style set to mlp
+        self.mlp_n_out = 1 #Only used if special_style set to mlp
         self.sigmoid = nn.Sigmoid()
         self.relu = nn.ReLU()
-        self.xview_activation = self.relu
+        self.xview_activation = self.sigmoid
 
         self.scatter_out = scatter_out
         self.mp_out = mp_out
@@ -121,14 +123,17 @@ class UNetCrossView(nn.Module):
                 self.do_call_first_unets = False
                 self.do_call_second_unets = True
                 self.do_call_mp = False
+            elif self.network_style == 'U-U':
+                self.do_call_special=False
+                self.do_call_mp = False
+                self.do_call_first_unets = True
+                self.do_call_second_unets = True
             else:
                 raise Exception('Uknown network style', self.network_style)
             
             print('Chose network style', self.network_style)
-
-
         
-        self.first_unet_n_out=1
+        self.first_unet_n_out=1 
         if self.do_call_first_unets:
             self.unets = nn.ModuleList([
                     UNet(n_channels=n_input_features, n_classes=self.first_unet_n_out,
@@ -138,10 +143,10 @@ class UNetCrossView(nn.Module):
 
         mlp_n_in = self.determine_mlp_n_in()
         
-
-        self.new_scatter = TripleScatterModule(
-            int(mlp_n_in/3), 16, self.mlp_n_out,
-            chunk_size=16)
+        if self.do_call_mp:
+            self.new_scatter = TripleScatterModuleNoAG(
+                int(mlp_n_in), 8, self.mlp_n_out,
+                chunk_size=80)
 
         if self.special_style == 'feedthrough':
             self.do_call_special=False
@@ -422,30 +427,29 @@ class UNetCrossView(nn.Module):
         for k, v in self.face_plane_wires_channels.items():
             self.face_plane_wires_channels[k] = v.to(the_device)
         if self.do_call_second_unets:
-            if the_device != 'cpu':
-                split_device = self.unet2_device
-            else: split_device = 'cpu'
+            # if the_device != 'cpu':
+            #     split_device = self.unet2_device
+            # else: split_device = 'cpu'
             self.unets2 = nn.ModuleList([ui.to(self.unet2_device) for ui in self.unets2])
 
         if self.do_call_first_unets:
             print('Calling first UNets')
-            # print(torch.cuda.memory_allocated(0) / (1024**2))
-            x = self.call_unets(x, self.unets)
-            # print(torch.cuda.memory_allocated(0) / (1024**2))
+            y = self.call_unets(x, self.unets)
+            y = self.sigmoid(y)
 
         if self.do_call_mp:
             print('Calling MP')
-            # print(torch.cuda.memory_allocated(0) / (1024**2))
-            x = self.mp_step(x)
-            # print(torch.cuda.memory_allocated(0) / (1024**2))
+            y = self.mp_step(y)
+
+        x = torch.cat([
+            x, y
+        ], dim=1)
+
         if self.do_call_second_unets:
-            x = x.to(split_device)
+            # x = x.to(split_device)
             print('Calling second UNets')
-            # print(torch.cuda.memory_allocated(0) / (1024**2))
             x = self.call_unets(x, self.unets2, no_split=(not self.split_second_unets))
-            # print(torch.cuda.memory_allocated(0) / (1024**2))
-        # x = self.sigmoid(x.to(torch.float32))
-        x = self.sigmoid(x)
+            x = self.sigmoid(x)
         xmeta = dict(
             device=the_device,
             nregions=x.shape[-1],

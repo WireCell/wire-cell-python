@@ -35,7 +35,8 @@ def Network():
         detector=0,
         n_input_features=1,
 
-        network_style='MP-U',
+        network_style='U-MP-U',
+        # network_style='U',
     )
 
 class Criterion:

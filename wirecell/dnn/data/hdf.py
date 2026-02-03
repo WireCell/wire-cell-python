@@ -58,8 +58,11 @@ class ReMatcher:
     def __call__(self, fname, fkey):
         fid = self._fids.get(fname, None)
         if fid is None:
+            print(f'Rematch {self.file_re} vs {fname} ')
+            print(self.file_re)
             m = self.file_re.match(fname)
             if not m:
+                print('here')
                 return
             fid = self._fids[fname] = m[1]
         
@@ -137,17 +140,20 @@ class Single(Dataset):
             fp = h5py.File(fname)
             log.debug(f'scanning {fp.filename}')
             for fkey in allkeys(fp):
+                print(fkey)
                 val = fp.get(fkey)
                 if not isinstance(val, h5py.Dataset):
                     continue
-
+                print('is instance. Checking ', fname, fkey)
                 got = self.domain.match(fname, fkey)
+                print(got)
                 if not got:
                     # print(f'{fname}:{fkey} not in {self.domain.name}')
                     continue
                 fid, sid, lid = got
                 kid = (fid,sid)
                 byids[kid][lid] = (fp, fkey)
+                print('good', fkey)
 
         for kid in sorted(byids):
             entry = byids[kid]

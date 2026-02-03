@@ -1,6 +1,8 @@
 import torch
 from torch import nn 
 from torch.amp import custom_bwd, custom_fwd
+from typing import List 
+import torch.utils.checkpoint as checkpoint
 
 class Scatter(torch.autograd.Function):
     @staticmethod
@@ -94,29 +96,6 @@ class Scatter(torch.autograd.Function):
                 set_data.append(d_for_scatter.permute(2,0,1))
             output[:, r_start:r_end, :] = out_chunk.permute(2, 0, 1).to(input_tensor.dtype)
 
-            # if do_max:
-            #     for s in range(num_sets):
-            #         ind0 = ind0_set[s]
-            #         ind1 = ind1_set[s]
-            #         ind2 = ind2_set[s]
-            #         mix_ind = mix_ind_set[s]
-            #         d_src = set_data[s]
-            #         # all_masks[-1].append([])
-            #         for k, m_idx in enumerate(m_indices[s]):
-            #             # Replicate indices across the chunked rows
-            #             exp_ind = m_idx.view(1, 1, -1).expand(F_out, curr_R, -1)
-            #             # Match d_src against the final f_out_chunk winners
-            #             mask = (d_src == torch.gather(out_chunk.permute(2,0,1), 2, exp_ind))
-            #             # all_masks[-1][-1].append(mask.to(bool))
-            #             all_masks.append(mask.to(bool))
-            #             # all_masks[-1][-1].append(torch.where(mask))
-            #             # all_masks[-1][-1][-1] = tuple(wi.to(torch.uint8).to('cpu') if i < 2 else wi.to('cpu') for i, wi in enumerate(all_masks[-1][-1][-1]))
-            # #             for w in all_masks[-1][-1][-1]:
-            # #                 print(w.numel()*w.element_size(), w.numel())
-            # #                 total_masks_size += w.numel()*w.element_size()
-
-            #     # print('Total mask size:', total_masks_size)
-        
         ctx.save_for_backward(
             input_tensor,
             w1,
@@ -281,3 +260,141 @@ class TripleScatterModule(nn.Module):
             input_tensor, w1, b1, w2, b2,
             ind0, ind1, ind2, mix_ind, self.chunk_size
         )
+
+
+class TripleScatterModuleNoAG(nn.Module):
+    def __init__(self, in_features, hidden_features, out_features, chunk_size=32):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(in_features, hidden_features),
+            nn.ReLU(),
+            nn.Linear(hidden_features, out_features),
+            nn.Sigmoid(),
+        )
+
+        self.chunk_size = chunk_size
+        self.out_features = out_features
+
+    def _scatter_op(
+        self,
+        chunk : torch.Tensor,
+        ind0_set: List[torch.Tensor],
+        ind1_set: List[torch.Tensor],
+        ind2_set: List[torch.Tensor],
+        mix_ind_set: List[torch.Tensor],
+    ) -> torch.Tensor:
+        F_in = chunk.shape[0]
+        # out_chunk = None
+        num_sets = len(ind0_set)
+        curr_R = chunk.shape[1]
+        F_out = self.out_features
+        C = chunk.shape[-1]
+        out_chunk = chunk.new_zeros((curr_R, C, F_out), dtype=torch.float32)
+        for s in range(num_sets):
+            c1 = self.project(chunk, ind0_set[s])[:, :, mix_ind_set[s][0]]
+            c2 = self.project(chunk, ind1_set[s])[:, :, mix_ind_set[s][1]]
+            c3 = self.project(chunk, ind2_set[s])[:, :, mix_ind_set[s][2]]
+
+            # Concatenate along Feature dim: (3*F_in, curr_R, len_ind)
+            c = torch.cat([c1, c2, c3], dim=0)
+
+            # Permute moves Features to the end
+            c_flat = c.permute(1, 2, 0).reshape(-1, 3 * F_in)
+
+            d_flat = self.mlp(c_flat)
+
+            # 3. Scatter Reduce Amax
+            d_for_scatter = d_flat.view(curr_R, -1, F_out)
+
+            # This is memory-heavy in training because 'exp_ind' is saved
+            # if out_chunk is None:
+            #     out_chunk = chunk.new_zeros((curr_R, C, F_out), dtype=torch.float32)
+
+            ind0 = ind0_set[s]
+            ind1 = ind1_set[s]
+            ind2 = ind2_set[s]
+            mix_ind = mix_ind_set[s]
+
+
+            for ind_i, ind in enumerate([ind0, ind1, ind2]):
+                # Replicate indices across the chunked rows
+                to_scatter_indices = ind[:,1][mix_ind[ind_i]]
+                exp_ind = to_scatter_indices.unsqueeze(0).unsqueeze(-1).expand(curr_R, -1, F_out)
+                # print(out_chunk.dtype, d_for_scatter.dtype, w1.dtype, a1.dtype, z1.dtype)
+                out_chunk = torch.scatter_reduce(
+                    out_chunk, 
+                    dim=1,
+                    index=exp_ind,
+                    src=d_for_scatter.to(torch.float32),
+                    reduce='sum',
+                    include_self=True
+                )
+        return out_chunk
+
+    def project(self, chunk_in, ind):
+        curr_R = chunk_in.shape[1]
+        F_in = chunk_in.shape[0]
+        res = chunk_in.new_zeros((F_in, curr_R, len(ind)))
+        res[:, :, ind[:,0]] = chunk_in[:, :, ind[:,1]]
+        return res
+
+    def forward(
+        self,
+        input_tensor: torch.Tensor,
+        ind0_set: List[torch.Tensor],
+        ind1_set: List[torch.Tensor],
+        ind2_set: List[torch.Tensor],
+        mix_ind_set: List[torch.Tensor],
+    ):
+        F_in, R, C = input_tensor.shape
+        F_out = self.out_features
+        output = input_tensor.new_zeros((F_out, R, C))
+        
+        # Pre-calculate mixed indices for all sets: Shape (num_sets, 3, len_mix_ind)
+        # We store them in a list for easier iteration
+        num_sets = len(ind0_set)
+        # m_indices = []
+        # m_indices: List[List[torch.Tensor]] = []
+        # for s in range(num_sets):
+        #     m_ind0, m_ind1, m_ind2 = ind0_set[s][:,1][mix_ind_set[s][0]], ind1_set[s][:,1][mix_ind_set[s][1]], ind2_set[s][:,1][mix_ind_set[s][2]]
+        #     curr_set_indices: List[torch.Tensor] = [m_ind0, m_ind1, m_ind2]
+        #     # m_indices.append([m_ind0, m_ind1, m_ind2])
+        #     m_indices.append(curr_set_indices)
+
+        # all_masks = []
+        total_masks_size = 0
+        nchunks = 0
+        # We chunk over the Rows (R) to save memory
+        for r_start in range(0, R, self.chunk_size):
+            nchunks += 1
+            r_end = min(r_start + self.chunk_size, R)
+            curr_R = r_end - r_start
+            
+            # 1. Gather & Cat
+            # Slicing Columns (dim 2). Shape of each: (F_in, curr_R, len_ind)
+            chunk = input_tensor[:, r_start:r_end, :]
+            if (torch.jit.is_scripting() or torch.jit.is_tracing()):
+                # For C++ Export: No checkpointing
+                out_chunk = self._scatter_op(
+                    chunk,
+                    ind0_set,
+                    ind1_set,
+                    ind2_set,
+                    mix_ind_set,
+                )
+            else:
+                # For Training: Checkpoint to save memory
+                # This deletes 'exp_ind' from memory after the forward pass
+                out_chunk = checkpoint.checkpoint(
+                    self._scatter_op,
+                    chunk,
+                    ind0_set,
+                    ind1_set,
+                    ind2_set,
+                    mix_ind_set,
+                    use_reentrant=False
+                )
+        
+            output[:, r_start:r_end, :] = out_chunk.permute(2, 0, 1).to(input_tensor.dtype)
+
+        return output

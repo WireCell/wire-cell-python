@@ -53,7 +53,7 @@ class Rec:
 
     # default_params = Params(DimParams((476, 952), 1), DimParams((0,6000), 10), 4000)
     default_params = Params(DimParams((0, 1536), 1), DimParams((0,6000), 10), 4000)
-    def __init__(self,  params: Params = None, transpose: bool = False):
+    def __init__(self,  params: Params = None, transpose: bool = False, baseline: bool = False):
         '''
         Arguments:
 
@@ -62,6 +62,7 @@ class Rec:
         '''
         self._params = params or self.default_params
         self.do_transpose = transpose
+        self.do_baseline = baseline
 
     def crop(self, x):
         print('In crop, x:', x.shape)
@@ -75,11 +76,18 @@ class Rec:
               x.shape[2] // nt,              # 3
               nt)                            # 4
         return x.reshape(sh).mean(4).mean(2) # (imgch, elech_rebinned, ticks_rebinned)
-        
+    
+    def baseline(self, x):
+        print('BASELINING')
+        return x - x.median(dim=2).values.T
+
     def transform(self, x):
         if self.do_transpose:
             print('TRANSPOSING', x.shape)
             x = x.permute(0,2,1)
+        if self.do_baseline:
+            x = self.baseline(x)
+
         x = self.crop(x)
         x = self.rebin(x)
         x = x/self._params.norm
