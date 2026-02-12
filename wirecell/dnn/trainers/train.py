@@ -35,7 +35,7 @@ class Classifier:
         self.net = net              # model
         self.optimizer = optimizer
         self.criterion = criterion.to(self._device  )
-        self.use_amp = True
+        self.use_amp = False
         self.scaler = amp.GradScaler(device, enabled=self.use_amp)
         self.save_iter = 0
         self.do_save = False
@@ -52,7 +52,7 @@ class Classifier:
             dump('labels', labels)
 
             prediction = self.net(features)
-            labels = self.net.make_label_nodes_full(labels)
+            # labels = self.net.make_label_nodes_full(labels)
             dump('prediction', prediction)
 
 
@@ -73,8 +73,8 @@ class Classifier:
         # print('Prediction shape:', prediction.shape)
         # print('lables dtype', labels.dtype)
         # print('prediction dtype', prediction.dtype)
-        prediction = tuple(p.to(self._device).to(float32) for p in prediction)
-        labels = tuple(p.to(self._device).to(float32) for p in labels)
+        # prediction = tuple(p.to(self._device).to(float32) for p in prediction)
+        # labels = tuple(p.to(self._device).to(float32) for p in labels)
         loss = self.criterion(prediction, labels)
         return loss
 

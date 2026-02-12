@@ -13,6 +13,7 @@ if DO_LOOPER:
 else:
     from wirecell.dnn.trainers.train import Classifier as Trainer
 
+from torch.nn import BCELoss as Criterion
 
 def Optimizer(params):
     return optim.SGD(params, lr=0.1, momentum=0.9, weight_decay=0.0005)
@@ -24,7 +25,7 @@ def Network():
         chanmap_file=2560,
         nchans=[800, 800, 480, 480],
         det_type='hd',
-        cells_file='pdhd_cells.pt',
+        cells_file='pdhd_cells_fixed.pt',
         mp_out=MP_OUT,
         scatter_out=False,
         output_as_tuple=False,
