@@ -9,11 +9,13 @@ import torch.nn.functional as F
 # from torch_geometric.nn import GAT, GCN
 from wirecell.dnn.models.unet import UNet
 from wirecell.dnn.models.scatter import TripleScatterModule, TripleScatterModuleNoAG
+from wirecell.dnn.models.cpp_scatter_simpler import CPPScatterOpModule
+# from wirecell.dnn.models.cpp_scatter import CPPScatterOpModule
 from wirecell.raygrid.coordinates import Coordinates
 from wirecell.raygrid import crossover as xover
 from wirecell.util.wires import schema, persist
 import torch.utils.checkpoint as checkpoint
-
+import torch.profiler as profiler
 import math
 
 class UNetCrossView(nn.Module):
@@ -36,7 +38,7 @@ class UNetCrossView(nn.Module):
                 return 4*self.first_unet_n_out #Should this be 5?
             else:
                 return 4*self.n_input_features #Should this be 5?
-        elif self.do_call_mp and self.special_style == 'feedtrough':
+        elif self.do_call_mp and self.special_style == 'feedthrough':
             if self.do_call_first_unets:
                 return 4*self.first_unet_n_out
             else:
@@ -105,6 +107,10 @@ class UNetCrossView(nn.Module):
         self.scatter_out = scatter_out
         self.mp_out = mp_out
         self.output_as_tuple = output_as_tuple
+        
+        self.do_cpp_scatter_ops = True
+        # ops_library = '/nfs/data/1/calcuttj/NewScatterOp/build/lib.linux-x86_64-cpython-311/my_custom_ops_lib.cpython-311-x86_64-linux-gnu.so'
+        ops_library = '/nfs/data/1/calcuttj/NewScatterOp/build/libmy_custom_ops.so'
 
         self.network_style = network_style
         if self.network_style is not None:
@@ -143,7 +149,7 @@ class UNetCrossView(nn.Module):
 
         mlp_n_in = self.determine_mlp_n_in()
         
-        if self.do_call_mp:
+        if self.do_call_mp and not self.do_cpp_scatter_ops:
             self.new_scatter = TripleScatterModuleNoAG(
                 int(mlp_n_in), 8, self.mlp_n_out,
                 chunk_size=80)
@@ -158,6 +164,7 @@ class UNetCrossView(nn.Module):
         
         self.unet2_device = 'cuda:1' if (self.split_gpu and self.do_call_second_unets) else 'cuda:0'
         self.second_unet_n_in = self.determine_unets2_n_in()
+        if self.do_cpp_scatter_ops: self.second_unet_n_in = 3 #Testing hardcoded sorry
         if self.do_call_second_unets:
             
             # if self.do_call_special and self.special_style == 'mlp':
@@ -219,9 +226,10 @@ class UNetCrossView(nn.Module):
 
             #Build the map to go between wire segments & channels 
             self.face_plane_wires_channels = {}
+            sorting_test = {}
+
             for i, face in enumerate(self.faces):
                 if i == 0: self.nplanes = len(face.planes)
-
                 for jj, j in enumerate(face.planes):
                     plane = store.planes[j]
                     wire_chans = torch.zeros((len(plane.wires), 2), dtype=int)
@@ -230,7 +238,12 @@ class UNetCrossView(nn.Module):
                         wire_chans[wire.ident, 0] = wire.ident
                         wire_chans[wire.ident, 1] = chanmap[wire.channel]
                     # self.face_plane_wires_channels[(i,jj)] = torch.tensor(wire_chans, dtype=torch.int)
-                    self.face_plane_wires_channels[i*self.nplanes + jj] = torch.tensor(wire_chans, dtype=torch.int)
+                    wire_chans = torch.tensor(wire_chans, dtype=torch.int)
+                    self.face_plane_wires_channels[i*self.nplanes + jj] = wire_chans
+                    inds = wire_chans[:, 0].sort().indices
+                    sorted_fpwc = wire_chans[inds]
+                    sorting_test[f'sorted_f{i}_p{jj}'] = sorted_fpwc
+                    sorting_test[f'wire_chans_f{i}_p{jj}'] = wire_chans
                     # print("FPWC size", self.face_plane_wires_channels[(i,jj)].dtype)
                     print("FPWC size", self.face_plane_wires_channels[i*self.nplanes + jj].dtype)
 
@@ -263,102 +276,143 @@ class UNetCrossView(nn.Module):
             print(self.good_indices_0.dtype, self.good_indices_1.dtype)
             self.good_indices_0 = self.good_indices_0.to(torch.int)
             self.good_indices_1 = self.good_indices_1.to(torch.int)
+            sorting_test[f'cells_f0'] = self.good_indices_0
+            sorting_test[f'cells_f1'] = self.good_indices_1
+            torch.save(sorting_test, 'sorting_test.pt')
             print(self.good_indices_0.dtype, self.good_indices_1.dtype)
             self.nchans = nchans #[476, 476, 292, 292]
+            self.save = True
+            if self.do_call_mp and self.do_cpp_scatter_ops:
 
+                cells_chans_f0 = torch.stack([
+                    self.face_plane_wires_channels[0][self.good_indices_0.T[0].to(torch.long)][:,1],
+                    self.face_plane_wires_channels[1][self.good_indices_0.T[1].to(torch.long)][:,1],
+                    self.face_plane_wires_channels[2][self.good_indices_0.T[2].to(torch.long)][:,1]
+                ])
+                cells_chans_f1 = torch.stack([
+                    self.face_plane_wires_channels[self.nplanes + 0][self.good_indices_1.T[0].to(torch.long)][:,1],
+                    self.face_plane_wires_channels[self.nplanes + 1][self.good_indices_1.T[1].to(torch.long)][:,1],
+                    self.face_plane_wires_channels[self.nplanes + 2][self.good_indices_1.T[2].to(torch.long)][:,1]
+                ])
+                print('Cells chans', cells_chans_f0.shape)
+                print('Cells chans', cells_chans_f1.shape)
+                cells_chans = torch.cat([cells_chans_f0, cells_chans_f1], dim=1)
+                print('Cells chans', cells_chans.shape)
+                self.new_scatter = CPPScatterOpModule(
+                    # int(mlp_n_in), 8, self.mlp_n_out,
+                    1,
+                    # 8,
+                    self.mlp_n_out,
+                    # [self.face_plane_wires_channels[0], self.face_plane_wires_channels[self.nplanes + 0]],
+                    # [self.face_plane_wires_channels[1], self.face_plane_wires_channels[self.nplanes + 1]],
+                    # [self.face_plane_wires_channels[2], self.face_plane_wires_channels[self.nplanes + 2]],
+                    # [self.good_indices_0.T, self.good_indices_1.T],
+                    cells_chans,
+                    ops_library,
+                    reduction='max',
+                    chunk_size=96,
+                )
+                # torch.ops.load_library(ops_library)
+                # self.cpp_scatter_ops = {}
+                # for iface in (0, 1):
+                #     for iplane in range(3):
+                #         indices = self.face_plane_wires_channels[(iface*self.nplanes + iplane)][:,1][
+                #             (self.good_indices_0.T[iplane] if iface == 0 else self.good_indices_1.T[iplane])
+                #         ]
+                #         self.cpp_scatter_ops[(iface, iplane)] = torch.classes.my_ops.MyScatterOp(indices)
+            
             self.save = True
     
+#     def scatter_to_chans(self, y, nbatches, nchannels, the_device):
+#         #TODO -- check size of y etc
+#         temp_out = torch.zeros(nbatches, y[0].shape[1], nchannels, y[0].size(-1)).to(the_device).to(y[0].dtype)
 
-    def scatter_to_chans(self, y, nbatches, nchannels, the_device):
-        #TODO -- check size of y etc
-        temp_out = torch.zeros(nbatches, y[0].shape[1], nchannels, y[0].size(-1)).to(the_device).to(y[0].dtype)
-
-        # for k, v in self.face_plane_wires_channels.items():
-        #     self.face_plane_wires_channels[k] = v.to(the_device)
-        # print('scatter device', the_device)
-        # print('Inds devices', self.good_indices_0.device, self.good_indices_1.device)
-        # print('input devices', y[0].device, y[1].device)
-        # temp_out2 = temp_out.clone()
-#         # mem0 = torch.cuda.memory_allocated(0) / (1024**2)
-        to_scatter = [
-            [y[0], self.face_plane_wires_channels[(0,0)], self.good_indices_0[:,0]],
+#         # for k, v in self.face_plane_wires_channels.items():
+#         #     self.face_plane_wires_channels[k] = v.to(the_device)
+#         # print('scatter device', the_device)
+#         # print('Inds devices', self.good_indices_0.device, self.good_indices_1.device)
+#         # print('input devices', y[0].device, y[1].device)
+#         # temp_out2 = temp_out.clone()
+# #         # mem0 = torch.cuda.memory_allocated(0) / (1024**2)
+#         to_scatter = [
+#             [y[0], self.face_plane_wires_channels[(0,0)], self.good_indices_0[:,0]],
             
-            #plane1
-            [y[0], self.face_plane_wires_channels[(0,1)], self.good_indices_0[:,1]],
+#             #plane1
+#             [y[0], self.face_plane_wires_channels[(0,1)], self.good_indices_0[:,1]],
             
-            #plane2
-            [y[0], self.face_plane_wires_channels[(0,2)], self.good_indices_0[:,2]],
+#             #plane2
+#             [y[0], self.face_plane_wires_channels[(0,2)], self.good_indices_0[:,2]],
 
-            #plane0
-            [y[1], self.face_plane_wires_channels[(1,0)], self.good_indices_1[:,0]],
+#             #plane0
+#             [y[1], self.face_plane_wires_channels[(1,0)], self.good_indices_1[:,0]],
 
-            #plane1
-            [y[1], self.face_plane_wires_channels[(1,1)], self.good_indices_1[:,1]],
+#             #plane1
+#             [y[1], self.face_plane_wires_channels[(1,1)], self.good_indices_1[:,1]],
             
-            #plane2
-            [y[1], self.face_plane_wires_channels[(1,2)], self.good_indices_1[:,2]],
-        ]
-#         # mem1 = torch.cuda.memory_allocated(0) / (1024**2)
-        # print(f'In scatter {mem0:.2f} {mem1:.2f}')
+#             #plane2
+#             [y[1], self.face_plane_wires_channels[(1,2)], self.good_indices_1[:,2]],
+#         ]
+# #         # mem1 = torch.cuda.memory_allocated(0) / (1024**2)
+#         # print(f'In scatter {mem0:.2f} {mem1:.2f}')
 
-        for yi, wire_chans, indices in to_scatter:
-            # print(yi.shape, indices.shape, wire_chans.shape)
-            # print(wire_chans[indices][:,1].unsqueeze(-1).unsqueeze(0).unsqueeze(1).shape)
-            # torch_scatter.scatter_add(
-            # torch_scatter.scatter_max(
-            # torch_scatter.scatter_mean(
-            #     yi, indices,
-            #     out=temp_out,
-            #     dim=1
-            # )
-            # temp_out = temp_out.scatter_reduce(
-            # print(yi.shape)
-            # wcs = wire_chans.to(the_device)[sub_indices.to(the_device)][:,1].unsqueeze(-1).unsqueeze(0).unsqueeze(1).repeat(yi.shape[0], yi.shape[1], 1, yi.shape[-1])
-            # print(wcs.nelement()*wcs.element_size())
-            # if torch.cuda.is_available():
-#             #     allocated_memory = torch.cuda.memory_allocated() / (1024**3)  # in GB
-            #     reserved_memory = torch.cuda.memory_reserved() / (1024**3)  # in GB
-            #     max_reserved_memory = torch.cuda.max_memory_reserved() / (1024**3) # in GB
+#         for yi, wire_chans, indices in to_scatter:
+#             # print(yi.shape, indices.shape, wire_chans.shape)
+#             # print(wire_chans[indices][:,1].unsqueeze(-1).unsqueeze(0).unsqueeze(1).shape)
+#             # torch_scatter.scatter_add(
+#             # torch_scatter.scatter_max(
+#             # torch_scatter.scatter_mean(
+#             #     yi, indices,
+#             #     out=temp_out,
+#             #     dim=1
+#             # )
+#             # temp_out = temp_out.scatter_reduce(
+#             # print(yi.shape)
+#             # wcs = wire_chans.to(the_device)[sub_indices.to(the_device)][:,1].unsqueeze(-1).unsqueeze(0).unsqueeze(1).repeat(yi.shape[0], yi.shape[1], 1, yi.shape[-1])
+#             # print(wcs.nelement()*wcs.element_size())
+#             # if torch.cuda.is_available():
+# #             #     allocated_memory = torch.cuda.memory_allocated() / (1024**3)  # in GB
+#             #     reserved_memory = torch.cuda.memory_reserved() / (1024**3)  # in GB
+#             #     max_reserved_memory = torch.cuda.max_memory_reserved() / (1024**3) # in GB
 
-            #     print(f"Allocated CUDA memory: {allocated_memory:.2f} GB")
-            #     print(f"Reserved CUDA memory: {reserved_memory:.2f} GB")
-            #     print(f"Max reserved CUDA memory: {max_reserved_memory:.2f} GB")
-            wcs = wire_chans[:,1][indices].unsqueeze(-1).unsqueeze(0).unsqueeze(1).repeat(yi.shape[0], yi.shape[1], 1, yi.shape[-1])
-            temp_out = temp_out.scatter_reduce(
-                2,
-                # wire_chans[indices][:,1].unsqueeze(1).unsqueeze(0).repeat(1, 1, yi.shape[-1]),
-                # wire_chans.to(the_device)[sub_indices.to(the_device)][:,1].unsqueeze(-1).unsqueeze(0).unsqueeze(1).repeat(yi.shape[0], yi.shape[1], 1, yi.shape[-1]),
-                wcs,
-                yi,
-                'amax',
-                include_self=True,
-            )
-#             print('Scattering:', torch.cuda.memory_allocated(0) / (1024**2))
-            # print(wire_chans.shape, indices.shape)
+#             #     print(f"Allocated CUDA memory: {allocated_memory:.2f} GB")
+#             #     print(f"Reserved CUDA memory: {reserved_memory:.2f} GB")
+#             #     print(f"Max reserved CUDA memory: {max_reserved_memory:.2f} GB")
+#             wcs = wire_chans[:,1][indices].unsqueeze(-1).unsqueeze(0).unsqueeze(1).repeat(yi.shape[0], yi.shape[1], 1, yi.shape[-1])
+#             temp_out = temp_out.scatter_reduce(
+#                 2,
+#                 # wire_chans[indices][:,1].unsqueeze(1).unsqueeze(0).repeat(1, 1, yi.shape[-1]),
+#                 # wire_chans.to(the_device)[sub_indices.to(the_device)][:,1].unsqueeze(-1).unsqueeze(0).unsqueeze(1).repeat(yi.shape[0], yi.shape[1], 1, yi.shape[-1]),
+#                 wcs,
+#                 yi,
+#                 'amax',
+#                 include_self=True,
+#             )
+# #             print('Scattering:', torch.cuda.memory_allocated(0) / (1024**2))
+#             # print(wire_chans.shape, indices.shape)
             
-            # torch_scatter.scatter_max(
-            #     yi,
-            #     # wire_chans.to(the_device)[indices.to(the_device)][:,1],
-            #     wire_chans[:,1][indices],
-            #     dim=2,
-            #     out=temp_out,
-            # )
-#             print('Scattered:', torch.cuda.memory_allocated(0) / (1024**2))
+#             # torch_scatter.scatter_max(
+#             #     yi,
+#             #     # wire_chans.to(the_device)[indices.to(the_device)][:,1],
+#             #     wire_chans[:,1][indices],
+#             #     dim=2,
+#             #     out=temp_out,
+#             # )
+# #             print('Scattered:', torch.cuda.memory_allocated(0) / (1024**2))
 
-        # print(temp_out - temp_out2)
-        return temp_out
+#         # print(temp_out - temp_out2)
+#         return temp_out
 
-    def make_wires(self, x, face, plane):
-        wire_chans = self.face_plane_wires_channels[(face, plane)].to(x.device)
-        # print(wire_chans)
-        # print('Input', x.shape[0], len(wire_chans), x.shape[-1])
-        wires = torch.zeros((x.shape[0], x.shape[1], len(wire_chans), x.shape[-1])).to(x.device).to(x.dtype)
-        # print('Wires')
-        # print(x.shape, wires.shape, torch.max(wire_chans[:, 0]), torch.max(wire_chans[:, 1]))
-        wires[..., wire_chans[:, 0], :] = x[..., wire_chans[:,1], :]
-        # wires[..., x.shape[-1]] = plane
-        # wires[..., x.shape[-1]+1] = face
-        return wires
+#     def make_wires(self, x, face, plane):
+#         wire_chans = self.face_plane_wires_channels[(face, plane)].to(x.device)
+#         # print(wire_chans)
+#         # print('Input', x.shape[0], len(wire_chans), x.shape[-1])
+#         wires = torch.zeros((x.shape[0], x.shape[1], len(wire_chans), x.shape[-1])).to(x.device).to(x.dtype)
+#         # print('Wires')
+#         # print(x.shape, wires.shape, torch.max(wire_chans[:, 0]), torch.max(wire_chans[:, 1]))
+#         wires[..., wire_chans[:, 0], :] = x[..., wire_chans[:,1], :]
+#         # wires[..., x.shape[-1]] = plane
+#         # wires[..., x.shape[-1]+1] = face
+#         return wires
 
     def split_x(self, x):
         print('Splitting')
@@ -396,23 +450,34 @@ class UNetCrossView(nn.Module):
         # x = self.sigmoid(x)
         xi = x[0].permute(0, 2, 1)
         print('CALLING NEW SCATTER on', x.shape)
-        xi = self.new_scatter(
-            xi,
-            # [self.face_plane_wires_channels[0,0], self.face_plane_wires_channels[1,0]],
-            # [self.face_plane_wires_channels[0,1], self.face_plane_wires_channels[1,1]],
-            # [self.face_plane_wires_channels[0,2], self.face_plane_wires_channels[1,2]],
-            [self.face_plane_wires_channels[0], self.face_plane_wires_channels[self.nplanes + 0]],
-            [self.face_plane_wires_channels[1], self.face_plane_wires_channels[self.nplanes + 1]],
-            [self.face_plane_wires_channels[2], self.face_plane_wires_channels[self.nplanes + 2]],
-            [self.good_indices_0.T, self.good_indices_1.T]
-        ).unsqueeze(0)
+        if self.do_cpp_scatter_ops:
+            # torch.cuda.synchronize()
+            # with profiler.profile(
+            #     schedule=torch.profiler.schedule(wait=0, warmup=0, active=1, repeat=1),
+            #     on_trace_ready=torch.profiler.tensorboard_trace_handler('./log/unet_xview_cppscatter'),
+            #     record_shapes=True,
+            #     with_stack=True, profile_memory=True) as prof:
+            xi = self.new_scatter(xi).unsqueeze(0)
+            #     prof.step()
+            # print(prof.key_averages(group_by_stack_n=5).table(sort_by='self_cpu_time_total', row_limit=5))
+        else:
+            xi = self.new_scatter(
+                xi,
+                # [self.face_plane_wires_channels[0,0], self.face_plane_wires_channels[1,0]],
+                # [self.face_plane_wires_channels[0,1], self.face_plane_wires_channels[1,1]],
+                # [self.face_plane_wires_channels[0,2], self.face_plane_wires_channels[1,2]],
+                [self.face_plane_wires_channels[0], self.face_plane_wires_channels[self.nplanes + 0]],
+                [self.face_plane_wires_channels[1], self.face_plane_wires_channels[self.nplanes + 1]],
+                [self.face_plane_wires_channels[2], self.face_plane_wires_channels[self.nplanes + 2]],
+                [self.good_indices_0.T, self.good_indices_1.T]
+            ).unsqueeze(0)
         # x = self.crossview_loop(x, call_special=self.do_call_special)
         # x = self.calculate_crossview(x, call_special=self.do_call_special)
         print('DONE', xi.shape)
-        xi = self.xview_activation(xi)
+        # xi = self.xview_activation(xi)
         return torch.cat([x, xi.permute(0,1,3,2)], dim=1)
 
-    def A(self, x):
+    def forward(self, x):
         '''
         Input data is assumed to be of shape (nbatch, nfeatures, nchannels, nticks)
         '''
@@ -427,222 +492,236 @@ class UNetCrossView(nn.Module):
         for k, v in self.face_plane_wires_channels.items():
             self.face_plane_wires_channels[k] = v.to(the_device)
         if self.do_call_second_unets:
-            # if the_device != 'cpu':
-            #     split_device = self.unet2_device
-            # else: split_device = 'cpu'
             self.unets2 = nn.ModuleList([ui.to(self.unet2_device) for ui in self.unets2])
 
         if self.do_call_first_unets:
             print('Calling first UNets')
             y = self.call_unets(x, self.unets)
+            print('unet mean', torch.mean(y))
+            print('unet max', torch.max(y))
             y = self.sigmoid(y)
+            print('mean', torch.mean(y))
+            print('max', torch.max(y))
+            
+        else:
+            y = x 
 
         if self.do_call_mp:
             print('Calling MP')
             y = self.mp_step(y)
+            print(y.shape)
+            print('mean', torch.mean(y[:,1:]))
+            print('max', torch.max(y[:,1:]))
+            print('min', torch.min(y[:,1:]))
 
-        x = torch.cat([
-            x, y
-        ], dim=1)
+        if self.do_call_first_unets:
+            y_mp2 = y.clone()
+            y_mp2[:,0] = 1 - y_mp2[:,0]
+            y_mp2 = torch.prod(y_mp2, dim=1, keepdim=True)
+            y = torch.prod(y, dim=1, keepdim=True) #ymp3
+            x = torch.cat([
+                x, y, y_mp2
+            ], dim=1)
+            if self.save:
+                torch.save(x, 'test_mp.pt')
+                self.save=False
 
         if self.do_call_second_unets:
             # x = x.to(split_device)
             print('Calling second UNets')
             x = self.call_unets(x, self.unets2, no_split=(not self.split_second_unets))
             x = self.sigmoid(x)
-        xmeta = dict(
-            device=the_device,
-            nregions=x.shape[-1],
-        )
-        return x, xmeta
-
-    def B(self, x, xmeta, tick):
-        xi = x[..., tick].unsqueeze(-1)
-        
-        if self.mp_out:
-            if self.scatter_out:
-                xview = self.calculate_crossview(xi).to(x.device)
-            else:
-                xview_0, xview_1 = self.make_all_wires(xi, do_cat=False)
-                xview = torch.cat([
-                    xview_0.to(x.device),
-                    xview_1.to(x.device),
-                ], dim=-2)
-
-            return (xi, xview)
-        else:
-            return (xi,) if self.output_as_tuple else xi
-    
-
-    def xview_wires_loop(self, x, do_cat=True):
-        xview = torch.zeros(x.shape[0], 3*x.shape[1], (len(self.good_indices_0) + len(self.good_indices_1)), x.shape[-1]).to(x.device)
-        for i in range(x.shape[-1]):
-            # print(i)
-            xi = x[..., i].unsqueeze(-1)
-            xv = torch.cat(self.make_all_wires(xi, do_cat=do_cat), dim=-2)
-            # print(xv_0.shape, xv_1.shape)
-            # xview.append(
-            #     torch.cat([xv_0, xv_1], dim=-2)
-            # )
-            # print(xview.shape, xview[..., i].shape)
-            xview[..., i] = xv[..., 0]
-            # xview[..., i] = torch.cat([xv_0, xv_1], dim=-2)
-        # xview = torch.cat(xview, dim=-1)
-        return xview
-
-    def forward(self, x):
-        x, xmeta = self.A(x)
-        if self.mp_out:
-            if self.scatter_out:
-                x = self.crossview_loop(x).to(xmeta['device'])
-                return (x[:, 0].unsqueeze(0), x[:, 1:])
-            else:
-                xview = self.xview_wires_loop(x, do_cat=False)
-                # print(xview.element_size() * xview.nelement())
-                return x, xview
-        else:
-            return (x,) if self.output_as_tuple else x
-
-    def call_mlp(self, x):
-        x = self.mlp(
-            x.permute(0,2,3,1)
-        ).permute(0,3,1,2)
-        return x
-    
-    def call_threshold_like(self, x):
-        nfeat = x.shape[1]
-        if (nfeat % 3):
-            raise Exception(f'Expected number of features to be a multiple of 3, but received {nfeat}')
-        nfeat = int(nfeat / 3)
-        # print('nfeat', nfeat)
-        return torch.cat([
-            x[:, 0:nfeat]*x[:, nfeat:2*nfeat]*x[:,2*nfeat:3*nfeat],
-            (1-x[:, :nfeat])*x[:, nfeat:2*nfeat]*x[:,2*nfeat:3*nfeat],
-            (1-x[:, nfeat:2*nfeat])*x[:,2*nfeat:3*nfeat]*x[:, :nfeat],
-            (1-x[:, 2*nfeat:3*nfeat])*x[:,:nfeat]*x[:, nfeat:2*nfeat],
-        ], dim=1)
-    
-    def crossview_loop(self, input, call_special=False):
-        crossview_chans = []
-        for i in range(input.shape[-1]):
-            # print(i)
-            xi = input[..., i].unsqueeze(-1)
-            mem0 = torch.cuda.memory_allocated(0) / (1024**3)
-            mem1 = torch.cuda.memory_allocated(1) / (1024**3)
-            # print(f'{mem0:.2f}, {mem1:.2f}')
-
-            crossview_chans.append(
-                self.calculate_crossview(xi, call_special=call_special).to(input.device)
-            )
-            # print(torch.cuda.memory_allocated(0) / (1024**3))
-            # print(torch.cuda.memory_allocated(1) / (1024**3))
-            # crossview_chans.append(cross_view_all)
-        
-        x = torch.cat([
-            input,
-            torch.cat(crossview_chans, dim=-1)
-        ], dim=1)
+        # xmeta = dict(
+        #     device=the_device,
+        #     nregions=x.shape[-1],
+        # )
         return x
 
-    def make_all_wires(self, xi, do_cat=True):
-        the_device = xi.device
-        # crossview_chans = []
-        self.good_indices_0 = self.good_indices_0.to(the_device)
-        self.good_indices_1 = self.good_indices_1.to(the_device)
-        for k, v in self.face_plane_wires_channels.items():
-            self.face_plane_wires_channels[k] = v.to(the_device)
-        # for i in range(input.shape[-1]):
-            # xi = input[..., i].unsqueeze(-1)
-            # print(xi.shape)
-
-            #These are called 'as_wires' but are really cells on each face
-        if do_cat:
-            as_wires_f0 = torch.zeros((xi.shape[0], 3*xi.shape[1], self.good_indices_0.shape[0], xi.shape[-1])).to(the_device)
-            # as_wires_f0[:, 0] = self.make_wires(xi, 0, 0)[:, :, self.good_indices_0[:, 0]]
-            as_wires_f0[:, 0] = self.make_wires(xi, 0, 0)[:, :, self.good_indices_0[:, 0]]
-            as_wires_f0[:, 1] = self.make_wires(xi, 0, 1)[:, :, self.good_indices_0[:, 1]]
-            as_wires_f0[:, 2] = self.make_wires(xi, 0, 2)[:, :, self.good_indices_0[:, 2]]
-
-            as_wires_f1 = torch.zeros((xi.shape[0], 3*xi.shape[1], self.good_indices_1.shape[0], xi.shape[-1])).to(the_device)
-            as_wires_f1[:, 0] = self.make_wires(xi, 1, 0)[:, :, self.good_indices_1[:, 0]]
-            as_wires_f1[:, 1] = self.make_wires(xi, 1, 1)[:, :, self.good_indices_1[:, 1]]
-            as_wires_f1[:, 2] = self.make_wires(xi, 1, 2)[:, :, self.good_indices_1[:, 2]]
-        else:
-            as_wires_f0 = self.make_wires(xi, 0, 0)[:, :, self.good_indices_0[:, 0]]
-            as_wires_f0 *= self.make_wires(xi, 0, 1)[:, :, self.good_indices_0[:, 1]]
-            as_wires_f0 *= self.make_wires(xi, 0, 2)[:, :, self.good_indices_0[:, 2]]
-
-            as_wires_f1 =  self.make_wires(xi, 1, 0)[:, :, self.good_indices_1[:, 0]]
-            as_wires_f1 *= self.make_wires(xi, 1, 1)[:, :, self.good_indices_1[:, 1]]
-            as_wires_f1 *= self.make_wires(xi, 1, 2)[:, :, self.good_indices_1[:, 2]]
-        return as_wires_f0, as_wires_f1
-
-    def calculate_crossview(self, xi, call_special=False):
-        #Now we have to construct MP3 and MP2
-        #Go from the values on the channels to wires then make cells
-        ##HAVE TO DO THIS IN A LOOP BECAUSE IT'S TOO BIG
-        ## SO INSTEAD OF DOING EVERY TIME SAMPLE AT ONCE, DO IT IN A LOOP FILL THE TIME SAMPLE OUTPUT
-        ## ONE BY ONE
-        # input = input.to('cuda:1')
-        mem0 = torch.cuda.memory_allocated(0) / (1024**3)
-        mem1 = torch.cuda.memory_allocated(1) / (1024**3)
-        the_device = xi.device
-        if self.split_xview_loop and self.training:
-            the_device = 'cuda:0' if (mem0 < self.split_at) else 'cuda:1'
-            xi = xi.to(the_device)
-        nbatches = xi.shape[0]
-        nchannels = xi.shape[-2]
-        # the_device = xi.device
-        # crossview_chans = []
-        self.good_indices_0 = self.good_indices_0.to(the_device)
-        self.good_indices_1 = self.good_indices_1.to(the_device)
-        for k, v in self.face_plane_wires_channels.items():
-            self.face_plane_wires_channels[k] = v.to(the_device)
-
-        as_wires_f0, as_wires_f1 = self.make_all_wires(xi)
-
-        #This mixes the information between the three planes
-        if call_special:
-            if self.special_style == 'mlp':
-                print(the_device, as_wires_f0.device, as_wires_f1.device)
-                as_wires_f0 = self.call_mlp(as_wires_f0.to(next(self.mlp.parameters()).device)).to(the_device)
-                as_wires_f1 = self.call_mlp(as_wires_f1.to(next(self.mlp.parameters()).device)).to(the_device)
-            elif self.special_style == 'threshold':
-                # print('Calling threshold')
-                as_wires_f0 = self.call_threshold_like(as_wires_f0)
-                as_wires_f1 = self.call_threshold_like(as_wires_f1)
-
-        cross_view_all = self.scatter_to_chans(
-            [as_wires_f0, as_wires_f1],
-            nbatches, nchannels, the_device
-        )
-        return cross_view_all
-        # crossview_chans.append(cross_view_all)
+    # def B(self, x, xmeta, tick):
+    #     xi = x[..., tick].unsqueeze(-1)
         
-        # x = torch.cat([
-        #     input,
-        #     torch.cat(crossview_chans, dim=-1)
-        # ], dim=1)
-        # return x #.to('cuda:0')
+    #     if self.mp_out:
+    #         if self.scatter_out:
+    #             xview = self.calculate_crossview(xi).to(x.device)
+    #         else:
+    #             xview_0, xview_1 = self.make_all_wires(xi, do_cat=False)
+    #             xview = torch.cat([
+    #                 xview_0.to(x.device),
+    #                 xview_1.to(x.device),
+    #             ], dim=-2)
 
-    def make_label_nodes(self, labels):
-        with torch.no_grad():
-            return self.calculate_crossview(labels)
+    #         return (xi, xview)
+    #     else:
+    #         return (xi,) if self.output_as_tuple else xi
+    
 
-    def make_label_nodes_full(self, labels):
-        '''
-        We get the labels in a shape of (batch, feat=1, channels, ticks)
+    # def xview_wires_loop(self, x, do_cat=True):
+    #     xview = torch.zeros(x.shape[0], 3*x.shape[1], (len(self.good_indices_0) + len(self.good_indices_1)), x.shape[-1]).to(x.device)
+    #     for i in range(x.shape[-1]):
+    #         # print(i)
+    #         xi = x[..., i].unsqueeze(-1)
+    #         xv = torch.cat(self.make_all_wires(xi, do_cat=do_cat), dim=-2)
+    #         # print(xv_0.shape, xv_1.shape)
+    #         # xview.append(
+    #         #     torch.cat([xv_0, xv_1], dim=-2)
+    #         # )
+    #         # print(xview.shape, xview[..., i].shape)
+    #         xview[..., i] = xv[..., 0]
+    #         # xview[..., i] = torch.cat([xv_0, xv_1], dim=-2)
+    #     # xview = torch.cat(xview, dim=-1)
+    #     return xview
 
-        So we need to go from channels view to the wires then nodes view.
-        '''
-        with torch.no_grad():
-            if self.mp_out:
-                if self.scatter_out:
-                    labels = self.crossview_loop(labels)
-                    return (labels[:, 0].unsqueeze(0), labels[:, 1:])
-                else:
-                    label_wires = torch.cat(self.make_all_wires(labels, do_cat=False), dim=-2)
-                    # print('LW shapes', label_wires_0.shape, label_wires_1.shape)
-                    return labels, label_wires
-            else:
-                return (labels,) if self.output_as_tuple else labels
+    # def forward(self, x):
+    #     x, xmeta = self.A(x)
+    #     if self.mp_out:
+    #         pass
+    #         # if self.scatter_out:
+    #         #     x = self.crossview_loop(x).to(xmeta['device'])
+    #         #     return (x[:, 0].unsqueeze(0), x[:, 1:])
+    #         # else:
+    #         #     xview = self.xview_wires_loop(x, do_cat=False)
+    #         #     # print(xview.element_size() * xview.nelement())
+    #         #     return x, xview
+    #     else:
+    #         return (x,) if self.output_as_tuple else x
+
+    # def call_mlp(self, x):
+    #     x = self.mlp(
+    #         x.permute(0,2,3,1)
+    #     ).permute(0,3,1,2)
+    #     return x
+    
+    # def call_threshold_like(self, x):
+    #     nfeat = x.shape[1]
+    #     if (nfeat % 3):
+    #         raise Exception(f'Expected number of features to be a multiple of 3, but received {nfeat}')
+    #     nfeat = int(nfeat / 3)
+    #     # print('nfeat', nfeat)
+    #     return torch.cat([
+    #         x[:, 0:nfeat]*x[:, nfeat:2*nfeat]*x[:,2*nfeat:3*nfeat],
+    #         (1-x[:, :nfeat])*x[:, nfeat:2*nfeat]*x[:,2*nfeat:3*nfeat],
+    #         (1-x[:, nfeat:2*nfeat])*x[:,2*nfeat:3*nfeat]*x[:, :nfeat],
+    #         (1-x[:, 2*nfeat:3*nfeat])*x[:,:nfeat]*x[:, nfeat:2*nfeat],
+    #     ], dim=1)
+    
+    # def crossview_loop(self, input, call_special=False):
+    #     crossview_chans = []
+    #     for i in range(input.shape[-1]):
+    #         # print(i)
+    #         xi = input[..., i].unsqueeze(-1)
+    #         mem0 = torch.cuda.memory_allocated(0) / (1024**3)
+    #         mem1 = torch.cuda.memory_allocated(1) / (1024**3)
+    #         # print(f'{mem0:.2f}, {mem1:.2f}')
+
+    #         crossview_chans.append(
+    #             self.calculate_crossview(xi, call_special=call_special).to(input.device)
+    #         )
+    #         # print(torch.cuda.memory_allocated(0) / (1024**3))
+    #         # print(torch.cuda.memory_allocated(1) / (1024**3))
+    #         # crossview_chans.append(cross_view_all)
+        
+    #     x = torch.cat([
+    #         input,
+    #         torch.cat(crossview_chans, dim=-1)
+    #     ], dim=1)
+    #     return x
+
+    # def make_all_wires(self, xi, do_cat=True):
+    #     the_device = xi.device
+    #     # crossview_chans = []
+    #     self.good_indices_0 = self.good_indices_0.to(the_device)
+    #     self.good_indices_1 = self.good_indices_1.to(the_device)
+    #     for k, v in self.face_plane_wires_channels.items():
+    #         self.face_plane_wires_channels[k] = v.to(the_device)
+    #     # for i in range(input.shape[-1]):
+    #         # xi = input[..., i].unsqueeze(-1)
+    #         # print(xi.shape)
+
+    #         #These are called 'as_wires' but are really cells on each face
+    #     if do_cat:
+    #         as_wires_f0 = torch.zeros((xi.shape[0], 3*xi.shape[1], self.good_indices_0.shape[0], xi.shape[-1])).to(the_device)
+    #         # as_wires_f0[:, 0] = self.make_wires(xi, 0, 0)[:, :, self.good_indices_0[:, 0]]
+    #         as_wires_f0[:, 0] = self.make_wires(xi, 0, 0)[:, :, self.good_indices_0[:, 0]]
+    #         as_wires_f0[:, 1] = self.make_wires(xi, 0, 1)[:, :, self.good_indices_0[:, 1]]
+    #         as_wires_f0[:, 2] = self.make_wires(xi, 0, 2)[:, :, self.good_indices_0[:, 2]]
+
+    #         as_wires_f1 = torch.zeros((xi.shape[0], 3*xi.shape[1], self.good_indices_1.shape[0], xi.shape[-1])).to(the_device)
+    #         as_wires_f1[:, 0] = self.make_wires(xi, 1, 0)[:, :, self.good_indices_1[:, 0]]
+    #         as_wires_f1[:, 1] = self.make_wires(xi, 1, 1)[:, :, self.good_indices_1[:, 1]]
+    #         as_wires_f1[:, 2] = self.make_wires(xi, 1, 2)[:, :, self.good_indices_1[:, 2]]
+    #     else:
+    #         as_wires_f0 = self.make_wires(xi, 0, 0)[:, :, self.good_indices_0[:, 0]]
+    #         as_wires_f0 *= self.make_wires(xi, 0, 1)[:, :, self.good_indices_0[:, 1]]
+    #         as_wires_f0 *= self.make_wires(xi, 0, 2)[:, :, self.good_indices_0[:, 2]]
+
+    #         as_wires_f1 =  self.make_wires(xi, 1, 0)[:, :, self.good_indices_1[:, 0]]
+    #         as_wires_f1 *= self.make_wires(xi, 1, 1)[:, :, self.good_indices_1[:, 1]]
+    #         as_wires_f1 *= self.make_wires(xi, 1, 2)[:, :, self.good_indices_1[:, 2]]
+    #     return as_wires_f0, as_wires_f1
+
+    # def calculate_crossview(self, xi, call_special=False):
+    #     #Now we have to construct MP3 and MP2
+    #     #Go from the values on the channels to wires then make cells
+    #     ##HAVE TO DO THIS IN A LOOP BECAUSE IT'S TOO BIG
+    #     ## SO INSTEAD OF DOING EVERY TIME SAMPLE AT ONCE, DO IT IN A LOOP FILL THE TIME SAMPLE OUTPUT
+    #     ## ONE BY ONE
+    #     # input = input.to('cuda:1')
+    #     mem0 = torch.cuda.memory_allocated(0) / (1024**3)
+    #     nbatches = xi.shape[0]
+    #     nchannels = xi.shape[-2]
+    #     # the_device = xi.device
+    #     # crossview_chans = []
+    #     self.good_indices_0 = self.good_indices_0.to(the_device)
+    #     self.good_indices_1 = self.good_indices_1.to(the_device)
+    #     for k, v in self.face_plane_wires_channels.items():
+    #         self.face_plane_wires_channels[k] = v.to(the_device)
+
+    #     as_wires_f0, as_wires_f1 = self.make_all_wires(xi)
+
+    #     #This mixes the information between the three planes
+    #     if call_special:
+    #         if self.special_style == 'mlp':
+    #             print(the_device, as_wires_f0.device, as_wires_f1.device)
+    #             # as_wires_f0 = self.call_mlp(as_wires_f0.to(next(self.mlp.parameters()).device)).to(the_device)
+    #             # as_wires_f1 = self.call_mlp(as_wires_f1.to(next(self.mlp.parameters()).device)).to(the_device)
+    #             # as_wires_f0 = self.call_mlp(as_wires_f0)
+    #             # as_wires_f1 = self.call_mlp(as_wires_f1)
+    #         elif self.special_style == 'threshold':
+    #             # print('Calling threshold')
+    #             as_wires_f0 = self.call_threshold_like(as_wires_f0)
+    #             as_wires_f1 = self.call_threshold_like(as_wires_f1)
+
+    #     cross_view_all = self.scatter_to_chans(
+    #         [as_wires_f0, as_wires_f1],
+    #         nbatches, nchannels, the_device
+    #     )
+    #     return cross_view_all
+    #     # crossview_chans.append(cross_view_all)
+        
+    #     # x = torch.cat([
+    #     #     input,
+    #     #     torch.cat(crossview_chans, dim=-1)
+    #     # ], dim=1)
+    #     # return x #.to('cuda:0')
+
+    # def make_label_nodes(self, labels):
+    #     with torch.no_grad():
+    #         return self.calculate_crossview(labels)
+
+    # def make_label_nodes_full(self, labels):
+    #     '''
+    #     We get the labels in a shape of (batch, feat=1, channels, ticks)
+
+    #     So we need to go from channels view to the wires then nodes view.
+    #     '''
+    #     with torch.no_grad():
+    #         if self.mp_out:
+    #             if self.scatter_out:
+    #                 labels = self.crossview_loop(labels)
+    #                 return (labels[:, 0].unsqueeze(0), labels[:, 1:])
+    #             else:
+    #                 label_wires = torch.cat(self.make_all_wires(labels, do_cat=False), dim=-2)
+    #                 # print('LW shapes', label_wires_0.shape, label_wires_1.shape)
+    #                 return labels, label_wires
+    #         else:
+    #             return (labels,) if self.output_as_tuple else labels
