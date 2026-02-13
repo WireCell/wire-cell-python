@@ -50,6 +50,7 @@ train_defaults = dict(epochs=1, batch=1, device='cpu', name='dnnroi', train_rati
               help="The application name")
 @click.option("-l", "--load", default=None,
               help="File name providing the initial model state dict (def=None - construct fresh)")
+@click.option("--flexible", default=False, is_flag=True, help="Load parameters into net with 'strict=False'")
 @click.option("-s", "--save", default=None,
               help="File name to save model state dict after training (def=None - results not saved)")
 @click.option("--train-ratio", default=None, type=float,
@@ -59,7 +60,7 @@ train_defaults = dict(epochs=1, batch=1, device='cpu', name='dnnroi', train_rati
 @click.pass_context
 def train(ctx, config, epochs, batch, device, cache, debug_torch,
           checkpoint_save, checkpoint_modulus,
-          app, load, save, train_ratio, files):
+          app, load, flexible, save, train_ratio, files):
     '''
     Train a model.
     '''
@@ -90,6 +91,7 @@ def train(ctx, config, epochs, batch, device, cache, debug_torch,
     app = getattr(wirecell.dnn.apps, name)
 
     net = app.Network()
+    print(net)
     opt = app.Optimizer(net.parameters())
     crit = app.Criterion()
     trainer = app.Trainer(net, opt, crit, device=device)
@@ -98,7 +100,10 @@ def train(ctx, config, epochs, batch, device, cache, debug_torch,
     if load:
         if not Path(load).exists():
             raise click.FileError(load, 'warning: DNN module load file does not exist')
-        history = wirecell.dnn.io.load_checkpoint(load, net, opt)
+        history = (
+            wirecell.dnn.io.load_checkpoint(load, net, opt) if not flexible
+            else wirecell.dnn.io.load_only_model(load, net, strict=(not flexible))
+        )
 
     ds_dt = time.time()
     ds = app.Dataset(files, cache=cache, config=config.get("dataset", None))

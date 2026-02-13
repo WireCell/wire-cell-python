@@ -71,11 +71,11 @@ class UNetCrossView(nn.Module):
             scatter_out=False,
             output_as_tuple=False,
 
-            n_unet_features=4,
             checkpoint=True,
             n_feat_wire = 0,
             detector=0,
             n_input_features=1,
+            n_unet_features=4,
 
             network_style='U',
         ):
@@ -100,9 +100,6 @@ class UNetCrossView(nn.Module):
         if self.special_style not in self.good_specials:
             raise Exception(f'Unknown Special Style {self.special_style}. Can only select one of {(", ").join(self.good_specials)}')
         self.mlp_n_out = 1 #Only used if special_style set to mlp
-        self.sigmoid = nn.Sigmoid()
-        self.relu = nn.ReLU()
-        self.xview_activation = self.sigmoid
 
         self.scatter_out = scatter_out
         self.mp_out = mp_out
@@ -126,8 +123,8 @@ class UNetCrossView(nn.Module):
                 self.do_call_mp = True
             elif self.network_style == 'U':
                 self.do_call_special = False
-                self.do_call_first_unets = False
-                self.do_call_second_unets = True
+                self.do_call_first_unets = True
+                self.do_call_second_unets = False
                 self.do_call_mp = False
             elif self.network_style == 'U-U':
                 self.do_call_special=False
@@ -146,25 +143,9 @@ class UNetCrossView(nn.Module):
                         batch_norm=True, bilinear=True, padding=True)
                     for i in range(3)
             ])
-
-        mlp_n_in = self.determine_mlp_n_in()
         
-        if self.do_call_mp and not self.do_cpp_scatter_ops:
-            self.new_scatter = TripleScatterModuleNoAG(
-                int(mlp_n_in), 8, self.mlp_n_out,
-                chunk_size=80)
-
-        if self.special_style == 'feedthrough':
-            self.do_call_special=False
-        elif self.special_style == 'mlp' and self.do_call_special:
-            self.mlp = nn.Sequential(
-                nn.Linear(mlp_n_in, 8),
-                nn.Linear(8, self.mlp_n_out)
-            )
-        
-        self.unet2_device = 'cuda:1' if (self.split_gpu and self.do_call_second_unets) else 'cuda:0'
         self.second_unet_n_in = self.determine_unets2_n_in()
-        if self.do_cpp_scatter_ops: self.second_unet_n_in = 3 #Testing hardcoded sorry
+        if self.do_cpp_scatter_ops: self.second_unet_n_in = 4 #Testing hardcoded sorry
         if self.do_call_second_unets:
             
             # if self.do_call_special and self.special_style == 'mlp':
@@ -310,7 +291,7 @@ class UNetCrossView(nn.Module):
                     cells_chans,
                     ops_library,
                     reduction='max',
-                    chunk_size=96,
+                    chunk_size=32,
                 )
                 # torch.ops.load_library(ops_library)
                 # self.cpp_scatter_ops = {}
@@ -477,6 +458,59 @@ class UNetCrossView(nn.Module):
         # xi = self.xview_activation(xi)
         return torch.cat([x, xi.permute(0,1,3,2)], dim=1)
 
+    def umpu(self, x):
+        print('Calling first UNets')
+        y = self.call_unets(x, self.unets)
+        print('unet mean', torch.mean(y))
+        print('unet max', torch.max(y))
+        y = torch.sigmoid(y)
+        print('mean', torch.mean(y))
+        print('max', torch.max(y))
+        
+        
+        print('Calling MP')
+        y = self.mp_step(y)
+        print(y.shape)
+        print('mean', torch.mean(y))
+        print('max', torch.max(y))
+        print('min', torch.min(y))
+        x = torch.cat([
+            x, y
+        ], dim=1)
+        if self.save:
+            torch.save(x, 'test_mp.pt')
+            self.save=False
+
+        print('Calling second UNets')
+        x = self.call_unets(x, self.unets2)
+        return torch.sigmoid(x)
+    def u(self, x):
+        print('Calling first UNets')
+        y = self.call_unets(x, self.unets)
+        print(y.shape)
+        print('unet mean', torch.mean(y))
+        print('unet max', torch.max(y))
+        y = torch.sigmoid(y)
+        print('mean', torch.mean(y))
+        print('max', torch.max(y))
+        return y
+    def uu(self, x):
+        print('Calling first UNets')
+        y = self.call_unets(x, self.unets)
+        print(y.shape)
+        print('unet mean', torch.mean(y))
+        print('unet max', torch.max(y))
+        y = torch.sigmoid(y)
+        x = torch.cat([
+            x, y
+        ], dim=1)
+        x = torch.cat([
+            x, torch.zeros_like(x)
+        ], dim=1)
+        print(x.shape)
+        x = self.call_unets(x, self.unets2)
+        return torch.sigmoid(x)
+
     def forward(self, x):
         '''
         Input data is assumed to be of shape (nbatch, nfeatures, nchannels, nticks)
@@ -486,20 +520,20 @@ class UNetCrossView(nn.Module):
         nticks = x.shape[-1]
         nchannels = x.shape[-2]
         print('INPUT DTYPE', x.dtype)
-        the_device = x.device
-        self.good_indices_0 = self.good_indices_0.to(the_device)
-        self.good_indices_1 = self.good_indices_1.to(the_device)
-        for k, v in self.face_plane_wires_channels.items():
-            self.face_plane_wires_channels[k] = v.to(the_device)
-        if self.do_call_second_unets:
-            self.unets2 = nn.ModuleList([ui.to(self.unet2_device) for ui in self.unets2])
+
+        if self.network_style=='U-MP-U':
+            return self.umpu(x)
+        elif self.network_style=='U':
+            return self.u(x)
+        elif self.network_style=='U-U':
+            return self.uu(x)
 
         if self.do_call_first_unets:
             print('Calling first UNets')
             y = self.call_unets(x, self.unets)
             print('unet mean', torch.mean(y))
             print('unet max', torch.max(y))
-            y = self.sigmoid(y)
+            y = torch.sigmoid(y)
             print('mean', torch.mean(y))
             print('max', torch.max(y))
             
@@ -515,12 +549,8 @@ class UNetCrossView(nn.Module):
             print('min', torch.min(y[:,1:]))
 
         if self.do_call_first_unets:
-            y_mp2 = y.clone()
-            y_mp2[:,0] = 1 - y_mp2[:,0]
-            y_mp2 = torch.prod(y_mp2, dim=1, keepdim=True)
-            y = torch.prod(y, dim=1, keepdim=True) #ymp3
             x = torch.cat([
-                x, y, y_mp2
+                x, y
             ], dim=1)
             if self.save:
                 torch.save(x, 'test_mp.pt')
@@ -530,7 +560,7 @@ class UNetCrossView(nn.Module):
             # x = x.to(split_device)
             print('Calling second UNets')
             x = self.call_unets(x, self.unets2, no_split=(not self.split_second_unets))
-            x = self.sigmoid(x)
+            x = torch.sigmoid(x)
         # xmeta = dict(
         #     device=the_device,
         #     nregions=x.shape[-1],

@@ -4,10 +4,11 @@ from torch import nn
 import torch.autograd.profiler as profiler
 import torch.utils.checkpoint as checkpoint
 
-def call_mp3_prod(as_cells):
-    return torch.prod(as_cells, dim=-2)
-def call_mp2_prod(as_cells, mp2_indices):
-    return torch.prod(as_cells[:,:,mp2_indices], dim=-2)
+def call_mp3_prod(as_cells_0, as_cells_1, as_cells_2):
+    return as_cells_0 * as_cells_1 * as_cells_2
+    # return torch.prod(as_cells, dim=-2)
+def call_mp2_prod(as_cells_i, as_cells_j):
+    return as_cells_i*as_cells_j
 
 class CPPScatterOpModule(nn.Module):
     def __init__(
@@ -101,41 +102,81 @@ class CPPScatterOpModule(nn.Module):
             curr_R = r_end - r_start
             chunk = input_tensor[:, r_start:r_end, :]
             target_shape = output[:, r_start:r_end, :].shape
-            print(self.cells_to_chans.shape)
-            # for i in range(1): #MP3/MP2 -- Change to 'target-plane-agnostic' for MP2
-            #     target = output[
-            #         i*self.in_features:(i+1)*self.in_features, #Should really be in_features=1
-            #         r_start:r_end,
-            #     ]
-            #     if i == 0:
-            #         # mp = torch.prod(as_cells, dim=-2)
-            #         mp = checkpoint.checkpoint(call_mp3_prod, as_cells)
-            #         print('MP cells', mp.shape)
-            #         for j in range(3):
-            #             op = self.cpp_scatter_ops[j]
-            #             target += op.forward(mp, target.shape, self.reduction)
-            #     else:
-            #         mp2_indices = [(1,2), (0,2), (0,1)]
-            #         for j in range(3):
+            print(f'Chunk {r_start}, {torch.cuda.memory_allocated(0) / (1024**2):.2f}')
+            
+            for i in range(2): #MP3/MP2 -- Change to 'target-plane-agnostic' for MP2
+                target = output[
+                    i*self.in_features:(i+1)*self.in_features, #Should really be in_features=1
+                    r_start:r_end,
+                ]
+                # torch.cuda.synchronize()
+                # mem0 = torch.cuda.memory_allocated(0) / (1024**2)
+                as_cells_0 = chunk[:,:,self.cells_to_chans[0]]
+                as_cells_1 = chunk[:,:,self.cells_to_chans[1]]
+                as_cells_2 = chunk[:,:,self.cells_to_chans[2]]
+                as_cells = [
+                    as_cells_0,
+                    as_cells_1,
+                    as_cells_2
+                ]
+                # torch.cuda.synchronize()
+                # mem1 = torch.cuda.memory_allocated(0) / (1024**2)
+                # print(f'as_cells allocates {mem1 - mem0:.2f} MB, ({mem0:.2f}, {mem1:.2f})')
+                if i == 0:
+                    # mp = torch.prod(as_cells, dim=-2)
+                    # torch.cuda.synchronize()
+                    # mem0 = torch.cuda.memory_allocated(0) / (1024**2)
+                    mp = call_mp3_prod(as_cells_0, as_cells_1, as_cells_2)
+                    # mp = checkpoint.checkpoint(call_mp3_prod, as_cells_0, as_cells_1, as_cells_2)
+                    # torch.cuda.synchronize()
+                    # mem1 = torch.cuda.memory_allocated(0) / (1024**2)
+                    # print(f'mp3_prod allocates {mem1 - mem0:.2f} MB, ({mem0:.2f}, {mem1:.2f})')
+                    # print('MP cells', mp.shape)
+                    for j in range(3):
+                        op = self.cpp_scatter_ops[j]
+                        target = target + op.forward(mp, target.shape, self.reduction)
+                else:
+                    mp2_indices = [(1,2), (0,2), (0,1)]
+                    for j in range(3):
 
-            #             # mp = torch.prod(as_cells[:,:,mp2_indices[j]], dim=-2)
-            #             mp = checkpoint.checkpoint(call_mp2_prod, as_cells, mp2_indices[j])
-            #             op = self.cpp_scatter_ops[j]
-            #             target += op.forward(mp, target.shape, self.reduction)
-            for i in range(3): #MP3/MP2 -- Change to 'target-plane-agnostic' for MP2
-                as_cells = chunk[:,:,self.cells_to_chans[i]]
-                print(as_cells.shape)
-                print(self.in_features)
-                count = 0
-                for j in range(3):
-                    if i == j: continue
-                    target = output[
-                        count*self.in_features:(count+1)*self.in_features, #Should really be in_features=1
-                        r_start:r_end,
-                    ]
-                    op = self.cpp_scatter_ops[j]
-                    print(target.shape, as_cells.shape)
-                    target += op.forward(as_cells, target.shape, self.reduction)
-                    count += 1
+                        # mp = torch.prod(as_cells[:,:,mp2_indices[j]], dim=-2)
+                        # mp = checkpoint.checkpoint(call_mp2_prod, as_cells, mp2_indices[j])
+                        # mp = checkpoint.checkpoint(
+                        #     call_mp3_prod,
+                        #     (1-as_cells_0 if j == 0 else as_cells_0),
+                        #     (1-as_cells_1 if j == 1 else as_cells_1),
+                        #     (1-as_cells_2 if j == 2 else as_cells_2)
+                        # )
+                        # mp = call_mp3_prod(
+                        #     (1-as_cells_0 if j == 0 else as_cells_0),
+                        #     (1-as_cells_1 if j == 1 else as_cells_1),
+                        #     (1-as_cells_2 if j == 2 else as_cells_2)
+                        # )
+                        mp = call_mp2_prod(
+                            as_cells[mp2_indices[j][0]],
+                            as_cells[mp2_indices[j][1]],
+                        )
+                        op = self.cpp_scatter_ops[j]
+                        target = target + op.forward(mp, target.shape, self.reduction)
+            # for i in range(3): #MP3/MP2 -- Change to 'target-plane-agnostic' for MP2
+            #     torch.cuda.synchronize()
+            #     memA = torch.cuda.memory_allocated(0) / (1024**2)
+            #     as_cells = chunk[:,:,self.cells_to_chans[i]]
+            #     torch.cuda.synchronize()
+            #     memB = torch.cuda.memory_allocated(0) / (1024**2)
+            #     print(f'as_cells allocates {memB - memA:.2f} MB, ({memA:.2f}, {memB:.2f})')
+            #     print(as_cells.shape)
+            #     print(self.in_features)
+            #     count = 0
+            #     for j in range(3):
+            #         if i == j: continue
+            #         target = output[
+            #             count*self.in_features:(count+1)*self.in_features, #Should really be in_features=1
+            #             r_start:r_end,
+            #         ]
+            #         op = self.cpp_scatter_ops[j]
+            #         print(target.shape, as_cells.shape)
+            #         target += op.forward(as_cells, target.shape, self.reduction)
+            #         count += 1
 
         return output

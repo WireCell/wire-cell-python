@@ -37,6 +37,7 @@ def Network():
         n_input_features=1,
 
         network_style='U-MP-U',
+        # network_style='U-U',
         # network_style='U',
     )
 
