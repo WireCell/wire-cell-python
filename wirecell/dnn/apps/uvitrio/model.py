@@ -6,7 +6,7 @@ class Network(nn.Module):
     
     def __init__(self):
         super().__init__()
-        input_shape=(1, 2560, 1500)
+        input_shape=(1, 2560, 600)
         self.model = ViTUNetCrossView(
             features=64,
             n_heads=4,
