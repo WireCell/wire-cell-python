@@ -91,8 +91,26 @@ class UNetDecBlock(nn.Module):
         # x : (N, C, H_in, W_in)
         # r : (N, C_skip, H_out, W_out)
 
-        # x : (N, C_up, H_out, W_out)
+        # x : (N, C_up, H_out_approx, W_out_approx)
         x = self.re_alpha * self.upsample(x)
+
+        # Handle size mismatch between upsampled x and skip connection r
+        # This can happen with non-power-of-2 dimensions and operations like max pooling
+        # that floor during downsampling, causing the upsampled size to be slightly smaller
+        # than the encoder's skip connection
+        if x.shape[2:] != r.shape[2:]:
+            # Pad x to match r's spatial dimensions
+            diff_h = r.shape[2] - x.shape[2]
+            diff_w = r.shape[3] - x.shape[3]
+
+            # Pad evenly on both sides (left, right, top, bottom)
+            # If odd difference, put extra padding on right/bottom
+            x = torch.nn.functional.pad(
+                x,
+                (diff_w // 2, diff_w - diff_w // 2,  # left, right
+                 diff_h // 2, diff_h - diff_h // 2),  # top, bottom
+                mode='replicate'  # replicate edge values to avoid discontinuities
+            )
 
         # y : (N, C_skip + C_up, H_out, W_out)
         y = torch.cat([x, r], dim = 1)
