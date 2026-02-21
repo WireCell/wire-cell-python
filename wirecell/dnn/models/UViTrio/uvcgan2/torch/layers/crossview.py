@@ -5,7 +5,7 @@ import torch
 from torch import nn
 
 from .unet import UNetEncBlock, UNetDecBlock
-
+from ..select import get_activ_layer
 
 class SplitAwareBottleneck(nn.Module):
     """
@@ -230,7 +230,7 @@ class MultiViewUNet(nn.Module):
 
     def _construct_input_layers(self, activ):
         """Create separate input conv layers for each stream"""
-        from uvcgan2.torch.select import get_activ_layer
+        
 
         self.input_layers = nn.ModuleList([
             nn.Sequential(
