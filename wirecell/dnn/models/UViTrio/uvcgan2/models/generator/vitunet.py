@@ -3,9 +3,9 @@
 
 from torch import nn
 
-from uvcgan2.torch.layers.transformer import PixelwiseViT
-from uvcgan2.torch.layers.unet        import UNet
-from uvcgan2.torch.select             import get_activ_layer
+from ...torch.layers.transformer import PixelwiseViT
+from ...torch.layers.unet        import UNet
+from ...torch.select             import get_activ_layer
 
 class ViTUNetGenerator(nn.Module):
 

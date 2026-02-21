@@ -4,9 +4,9 @@
 import torch
 from torch import nn
 
-from uvcgan2.torch.layers.transformer import PixelwiseViT
-from uvcgan2.torch.layers.crossview import MultiViewUNet, SplitAwareBottleneck
-from uvcgan2.torch.select import get_activ_layer
+from ...torch.layers.transformer import PixelwiseViT
+from ...torch.layers.crossview import MultiViewUNet, SplitAwareBottleneck
+from ...torch.select import get_activ_layer
 
 
 class ViTUNetCrossView(nn.Module):

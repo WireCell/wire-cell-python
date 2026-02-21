@@ -49,16 +49,16 @@ def create_model(device, input_shape=(1, 2560, 1500), split_sizes=[800, 800, 960
         print(f"  Decoder will automatically pad mismatches from max pooling.")
 
     model = ViTUNetCrossView(
-        features=128,
+        features=64,  # Reduced from 128
         n_heads=4,
         n_blocks=2,
-        ffn_features=256,
+        ffn_features=128,  # Reduced from 256
         embed_features=64,
         activ='gelu',
         norm='layer',
         input_shape=input_shape,
         output_shape=input_shape,
-        unet_features_list=[64, 128, 256, 512, 1024],  # 5 levels per paper
+        unet_features_list=[32, 64, 128, 256, 512],  # Reduced from [64, 128, 256, 512, 1024]
         unet_activ='relu',
         unet_norm='batch',  # Batch normalization per paper
         unet_downsample='maxpool',  # 2x2 max pooling per paper

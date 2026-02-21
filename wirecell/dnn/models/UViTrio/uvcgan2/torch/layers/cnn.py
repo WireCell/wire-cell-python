@@ -1,7 +1,7 @@
 from itertools import repeat
 
 from torch import nn
-from uvcgan2.torch.select import extract_name_kwargs
+from ..select import extract_name_kwargs
 
 def calc_conv1d_output_size(input_size, kernel_size, padding, stride):
     return (input_size + 2 * padding - kernel_size) // stride + 1
