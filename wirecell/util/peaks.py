@@ -117,12 +117,15 @@ def baseline_noise(array, bins=200, vrange=100):
 
     if not isinstance(vrange, tuple):
         vrange=(med-vrange, med+vrange)
-    vrange=(med+vrange[0], med+vrange[1])
+    # why was this here?
+    #vrange=(med+vrange[0], med+vrange[1])
 
     hist = numpy.histogram(array, bins=bins, range=vrange)
     counts, edges = hist
 
     C = numpy.sum(counts)
+    if C == 0:
+        raise ValueError(f'zero histogram with {lo=} {med=} {hi=} {vrange=} from: {array=}')
     avg = numpy.average(edges[:-1], weights=counts)
     rms = sqrt(numpy.average((edges[:-1]-avg)**2, weights=counts))
 

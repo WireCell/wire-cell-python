@@ -144,7 +144,7 @@ def plot_frame(gs, fr, channel_ranges=None, which="splat", tit=""):
         plt.setp(tax.get_xticklabels(), visible=False)
 
     im = fax.imshow(fr.frame, extent=extent_us, origin=fr.origin,
-                    aspect='auto', vmax=500, cmap='hot_r')
+                    aspect='auto', vmax=500, cmap='hot_r', interpolation='none')
 
     tval = fr.frame.sum(axis=0)
     t = numpy.linspace(t0_us, tf_us, fr.frame.shape[1]+1,endpoint=True)
@@ -261,6 +261,8 @@ def calc_metrics(spl_qch, sig_qch, nbins=50):
     nspl = len(spl_qch)
     nsig = len(sig_qch)
 
+    if nspl == 0 or nsig == 0:
+        raise ValueError(f'empty input: {nspl=} {nsig=}')
     if nspl != nsig:
         raise ValueError(f'length mismatch {nspl=} != {nsig=}')
 
@@ -268,6 +270,7 @@ def calc_metrics(spl_qch, sig_qch, nbins=50):
     eor   = numpy.logical_or (spl_qch  > 0, sig_qch  > 0)
     # both are nonzero
     both  = numpy.logical_and(spl_qch  > 0, sig_qch  > 0)
+
     # splat but no signal (under efficient)
     nosig = numpy.logical_and(spl_qch  > 0, sig_qch == 0)
     wsig  = sig_qch  > 0
@@ -277,11 +280,19 @@ def calc_metrics(spl_qch, sig_qch, nbins=50):
 
     neor = numpy.sum(eor)
     nboth = numpy.sum(both)
+
+    if nboth == 0:
+        raise ValueError(f'no channels exist where both signal {nsig=} and splat {nspl=} are non-zero')
+
     # inefficiency
     ineff = numpy.sum(nosig)/numpy.sum(wspl)
 
-    reldiff = (spl_qch[both] - sig_qch[both])/spl_qch[both]
+    reldiff = (spl_qch[both] - sig_qch[both])/(spl_qch[both]+sig_qch[both])
     vrange = 0.01*nbins/2
+    # print(f'{vrange=}')
+    # print(f'{spl_qch[both]=}')
+    # print(f'{sig_qch[both]=}')
+    # print(f'{reldiff=}')
     bln = baseline_noise(reldiff, nbins, vrange)
 
     return Metrics(neor, ineff, bln)
@@ -293,13 +304,28 @@ def plot_metrics(splat_signal_activity_pairs, nbins=50, title="", letters="UVW")
     fig, axes = plt.subplots(nrows=2, ncols=3, sharey="row")
     for pln, (spl_qch, sig_qch) in enumerate(splat_signal_activity_pairs):
 
+        spl_qtot = numpy.sum(spl_qch)
+        sig_qtot = numpy.sum(sig_qch)
+
+        for name, arr in [("splat", spl_qch), ("signal", sig_qch)]:
+            tot = numpy.sum(arr)
+            n = len(arr)
+            mean = tot/n
+            print(f'Plane: {pln} {name}: [{n}] mean={mean}\n{arr}')
+
+        if spl_qtot == 0 or sig_qtot == 0:
+            log.warn(f'Warning: skipping {pln=}: splat qtot={spl_qtot}, signal qtot={sig_qtot}')
+            continue
+
         try:
             m = calc_metrics(spl_qch, sig_qch, nbins)
-        except:
+        except Exception as err:
+            log.error(f'Metric error: {err}')
             log.error(f'error: failed to get metric for {pln=} {spl_qch.size=} {sig_qch.size=} {nbins=} {title=}')
-            log.debug(f'skipped splat:  {spl_qch=}')
-            log.debug(f'skipped signal: {sig_qch=}')
-            continue
+            log.error(f'skipped splat:  {spl_qch=}')
+            log.error(f'skipped signal: {sig_qch=}')
+            raise
+            #continue
         counts, edges = m.fit.hist
         model = gauss_func(edges[:-1], m.fit.A, m.fit.mu, m.fit.sigma)
 

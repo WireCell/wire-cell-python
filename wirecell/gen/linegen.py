@@ -333,6 +333,7 @@ def generate_and_save_line_track_in_detector(
     # pylint: disable=too-many-locals
     wp_centers, R_wps = load_wp_spec(detector, apa_idx)
     center = wp_centers[plane_idx] + offset
+    print(f'plane {plane_idx} center: {wp_centers[plane_idx]} offset: {offset} track center: {center}')
 
     (depo_sets, metadata) = generate_line_track(center, track_config, R_wps, plane_idx)
 

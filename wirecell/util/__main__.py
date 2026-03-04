@@ -370,6 +370,52 @@ def wires_ordering(ctx, output, json_file):
     fig.savefig(output)
         
 
+@cli.command("wire-attachment-numbers")
+@click.argument("wires")
+def wire_attachment_numbers(wires):
+    '''
+    Show info about WAN for the wires (JSON file or detname)
+    '''
+    import numpy
+    import wirecell.util.wires.persist as wpersist
+    import wirecell.util.wires.info as winfo
+    all_wires = winfo.todict(wpersist.load(wires))
+
+    def get_xyz(wires, spec):
+        if spec in ("head","center"):
+            h = numpy.array([tuple(w["head"].values()) for w in wires])
+        if spec in ("tail","center"):
+            t = numpy.array([tuple(w["tail"].values()) for w in wires])
+        if spec == "center":
+            m = 0.5*(h+t)   # midpoints
+            return m.T
+        if spec == "head":
+            return h.T
+        if spec == "tail":
+            return t.T
+        raise ValueError(f'spec {spec} not supported')
+
+    for anode in all_wires[0]["anodes"][:1]:
+        aid=anode["ident"]
+        for face in anode["faces"]:
+            fid=face["ident"]
+            for plane in face["planes"]:
+                pid=plane["ident"]
+                dat=defaultdict(list)
+
+                wi = list()
+                for wire in plane["wires"]:
+                    if wire["segment"] > 0:
+                        continue
+                    h = wire["head"]
+                    wi.append(dict(x=h["x"], y=h["y"], z=h["z"], i=wire["ident"], c=wire["channel"]))
+                wi.sort(key=lambda w: w["z"])
+                print(f'{aid=} {fid=} {pid=} beg:{wi[0]}')
+                print(f'{aid=} {fid=} {pid=} end:{wi[-1]}')
+
+
+    
+
 @cli.command("wires-channels")
 @click.option("-o", "--output", default=None,
               help="Output file, default based on input")
