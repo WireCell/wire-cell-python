@@ -313,6 +313,71 @@ def vizmod(shape, channels, classes, batch, skips, padding, bilinear, batchnorm,
         with open(output, "w") as fp:
             fp.write(str(gr.visual_graph))
 
+run_one_defaults = dict(device='cpu', name='dnnroi')
+@cli.command('run_one')
+
+@click.option("-d", "--device", default=None, type=str,
+              help="The compute device")
+@click.option("--debug-torch/--no-debug-torch", is_flag=True, default=False,
+              help="Debug torch-level problems")
+@click.option("-n", "--entry", default=0, help="Which entry to supply to DataLoader's __get_item__")
+@click.option("-l", "--load", default=None,
+              help="File name providing the initial model state dict (def=None - construct fresh)")
+@click.option("-o", "--output", default=None,
+              help="File name to output after training (def=None - results not saved)")
+@click.option("-a", "--app", default=None, type=str,
+              help="The application name")
+@anyconfig_file("wirecelldnn", section='run_one', defaults=run_one_defaults)
+@click.argument("files", type=str, nargs=2)
+def run_one(config, device, debug_torch, entry, load, output, app, files):
+    # delay importing this monster
+    from torch import load as torchload, save as torchsave, no_grad
+    # import torch
+    from torch.utils.data import DataLoader
+    import wirecell.dnn.apps
+
+    # if not files:               # args not processed by anyconfig_files
+    #     try:
+    #         files = config['train']['files']
+    #     except KeyError:
+    #         files = None
+    if not files:
+        raise click.BadArgumentUsage("no training files given")
+    files = unglob(listify(files))
+    log.info(f'training files: {files}')
+
+    if device == 'gpu': device = 'cuda'
+
+    name = app
+    app = getattr(wirecell.dnn.apps, name)
+
+    with no_grad():
+        net = app.Network().to(device)
+        
+        if load:
+            if not Path(load).exists():
+                raise click.FileError(load, 'warning: DNN module load file does not exist')
+            h = torchload(load)
+            net.load_state_dict(h['model_state_dict'])
+            print('Loaded model state dict')
+
+        ds = app.Dataset(files, config=config.get("run_one_dataset", None))
+        if len(ds) == 0:
+            raise click.BadArgumentUsage(f'no samples from {len(files)} files')
+        feat, labels = ds.__getitem__(entry)
+        print(feat.shape)
+        print(labels.shape)
+        y = net(feat.to(device).unsqueeze(0)).squeeze(0)
+
+    if output:
+        torchsave({
+            'feat':feat,
+            'labels':labels,
+            'y':y
+        }, output)
+
+
+
 
 def main():
     cli(obj=dict())
