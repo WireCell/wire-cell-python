@@ -197,8 +197,10 @@ class Coordinates:
         w21 = self.ray_jump[view2, view1]
 
         # broadcast matching
-        ray1 = ray1.unsqueeze(1)
-        ray2 = ray2.unsqueeze(1)
+        if not isinstance(ray1, int):
+            ray1 = ray1.unsqueeze(1)
+        if not isinstance(ray2, int):
+            ray2 = ray2.unsqueeze(1)
 
         return r00 + ray2 * w12 + ray1 * w21;
 
@@ -339,3 +341,16 @@ class Coordinates:
             lines.append('};')
             return '\n'.join(lines)
 
+
+def coordinates_from_wires(uwires, vwires, wwires):
+    '''
+    Given an array of wires from each view, return a Coodinates instance.
+
+    The wires arrays are (N, 2, 3) with N>=2.
+
+    Only wires zero and one are used.
+    '''
+    # The views is a 3-D tensor of shape:
+    #  (N-views, 2 endpoints, 2 coordinates)
+    wires = torch.vstack((uwires[:2], vwires[:2], wwires[:2]))
+    

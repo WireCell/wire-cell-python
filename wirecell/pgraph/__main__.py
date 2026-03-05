@@ -24,6 +24,7 @@ def cli(ctx):
 
 class Node (object):
     def __init__(self, tn, params=True, **attrs):
+        log.debug(f'Node("{tn}") {params=} {attrs}')
         if not attrs:
             log.debug ("Node(%s) with no attributes"%tn)
 
@@ -36,6 +37,11 @@ class Node (object):
         except IndexError:
             self.name = ""
         self.ports = defaultdict(set);
+        pnode = attrs.pop('_pnode', {})
+        for n in range(pnode.get("nin", 0)):
+            self.add_port('head', n);
+        for n in range(pnode.get("nout", 0)):
+            self.add_port('tail', n);
         self.attrs = attrs
 
     @property
@@ -115,9 +121,22 @@ def dotify(edge_dat, attrs, params=True, services=True, graph_options=dict(rankd
 
     '''
 
+
     nodes = dict()
+    
+    # If node data has special _pnode item, premake its node
+    for tn, nattrs in attrs.items():
+        if '_pnode' in nattrs:
+            nodes[tn] = Node(tn, params, **nattrs)
+            
+
     def get(edge, end):
-        tn = edge[end]["node"]
+        try:
+            tn = edge[end]["node"]
+        except KeyError:
+            print(f'{end=}')
+            print(json.dumps(edge[end], indent=4))
+            raise
         try:
             n = nodes[tn]
         except KeyError:
@@ -127,11 +146,21 @@ def dotify(edge_dat, attrs, params=True, services=True, graph_options=dict(rankd
         n.add_port(end, p)
         return n,p
     
+    rankdir = graph_options.get("rankdir", "LR")
+    if rankdir == "TB":
+        tc = ":s"
+        hc = ":n"
+    else:
+        tc = ":e"
+        hc = ":w"
+        
+
+
     edges = list()
     for edge in edge_dat:
-        t,tp = get(edge, "tail")
-        h,hp = get(edge, "head")
-        e = '"%s":out%d -> "%s":in%d' % (t.dot_name(),tp, h.dot_name(),hp)
+        t, tp = get(edge, "tail")
+        h, hp = get(edge, "head")
+        e = '"%s":out%d%s -> "%s":in%d%s' % (t.dot_name(), tp, tc, h.dot_name(), hp, hc)
         edges.append(e);
 
     # Try to find non DFP node components referenced.
@@ -233,11 +262,15 @@ def uses_to_params(uses):
         tn = one[u"type"]
         if "name" in one and one['name']:
             tn += ":" + str(one["name"])
-        ret[tn] = one.get("data", {})
+        data = one.get("data", {})
+        if "_pnode" in one:
+            data["_pnode"] = one["_pnode"]
+        ret[tn] = data
     return ret
 
-# fixme: add tla related options so any .jsonnet can also be loaded
 @cli.command("dotify")
+@click.option("-P","--wpath", default="", type=str,
+              help="A :-separated path to add to WIRECELL_PATH")
 @click.option("--dpath", default=None, type=str,
               help="A dot-delimited path into the data structure to locate a graph-like object")
 @click.option("--npath", default=None, type=str,
@@ -253,29 +286,30 @@ def uses_to_params(uses):
 @jsonnet_loader("in-file")
 @click.argument("out-file")
 @click.pass_context
-def cmd_dotify(ctx, dpath, npath, epath, params, services, graph_options, in_file, out_file):
-    '''Convert a WCT cfg to a GraphViz dot or rendered file.
+def cmd_dotify(ctx, wpath, dpath, npath, epath, params, services, graph_options, in_file, out_file):
+    '''
+    Convert a WCT cfg to a GraphViz dot or rendered file.
 
-      The config file may be JSON or Jsonnet and must provide an array
-      of graph "nodes" and an array of graph "edges".
+    The config file may be JSON or Jsonnet and must provide an array
+    of graph "nodes" and an array of graph "edges".
 
-      A JSON pointer data path to a graph data structure embedded in a
-      larger structure may be specified with --dpath DPATH.
+    A JSON pointer data path to a graph data structure embedded in a
+    larger structure may be specified with --dpath DPATH.
 
-      By default, a wire-cell job configuration object is assumed to
-      hold the graph with a list of nodes in an array at DPATH and
-      with the final node in the array providing a list of edges at
-      DPATH.-1.data.edges.
+    By default, a wire-cell job configuration object is assumed to
+    hold the graph with a list of nodes in an array at DPATH and
+    with the final node in the array providing a list of edges at
+    DPATH.-1.data.edges.
 
-      An arbitrary node array may be specified at --npath NPATH.
+    An arbitrary node array may be specified at --npath NPATH.
 
-      An arbitrary edge array may be specified at --epath EPATH.
+    An arbitrary edge array may be specified at --epath EPATH.
 
-      Example bash command assuming WIRECELL_PATH properly set
+    Example bash command assuming WIRECELL_PATH properly set
 
       $ wirecell-pgraph dotify mycfg.jsonnet mycfg.pdf
 
-      Or piecewise
+    Or piecewise
 
       $ wcsonnet mycfg.jsonnet > mycfg.json
 
@@ -283,9 +317,18 @@ def cmd_dotify(ctx, dpath, npath, epath, params, services, graph_options, in_fil
 
       $ dot -Tpdf -o mycfg.pdf mycfg.dot
 
-      The arguments -A/--tla, -J/--jpath are only valid for an input
-      file in Jsonnet format.
-        '''
+    The arguments -A/--tla, -J/--jpath are only valid for an input
+    file in Jsonnet format.
+
+    Note, nodes can not currentlybe drawn to reflect configured number of ports
+    but only numbered by existing edges.  This can hide mistakes due missing
+    edges.  The required information is lost as part of the pgraph.main() call.
+    '''
+    wirecell_path = os.environ.get("WIRECELL_PATH","")
+    if wirecell_path:
+        wpath = wirecell_path + ":" + wpath
+    os.environ["WIRECELL_PATH"] = wpath
+
     try: 
         dat = resolve_path(in_file, dpath)
     except Exception:

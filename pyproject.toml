@@ -1,6 +1,6 @@
 [project]
 name = "wirecell"
-version = "0.1.0"
+version = "0.1.1"
 description = "Add your description here"
 requires-python = ">=3.11"
 readme = {file = "README.org", content-type = "text/org"}
@@ -17,6 +17,7 @@ dependencies = [
     "matplotlib>=3.9.4",
     "networkx>=3.2.1",
     "numpy>=2.0.2",
+    "pyqt6>=6.10.0",
     "pytest>=8.4.1",
     "scipy>=1.15.3",
     "semver>=3.0.4",
@@ -25,8 +26,15 @@ dependencies = [
 
 
 [project.scripts]
+# This is the "new" unified, all-in-one comand
 wcpy = "wirecell.__main__:main"
+# Some Python tools like to find a program named after the package.
+# Warning: this is dangerously close to "wire-cell", the main program from
+# wire-cell-toolkit.
+wirecell = "wirecell.__main__:main"
 
+# Legacy per-module command grouping.
+# Instead of extending this list, add to wirecell/__main__.py's subs list.
 wirecell-sigproc = "wirecell.sigproc.__main__:main"
 wirecell-util = "wirecell.util.__main__:main"
 wirecell-gen = "wirecell.gen.__main__:main"

@@ -46,6 +46,106 @@ def unitify_depos(ctx, json_path,
     depos = deposmod.apply_units(depos, distance_unit, time_unit, energy_unit, step_unit);
     deposmod.dump(output_file, depos)
 
+@cli.command("depos-bb")
+@click.argument("input-files", nargs=-1)
+@click.pass_context
+def shift_depos(ctx, input_files):
+    '''
+    Report bounding box of entries in a depos file
+    '''
+    import numpy
+
+    for input_file in input_files:
+        print(input_file)
+        fp = numpy.load(input_file)
+        index = -1
+        while True:
+            index += 1
+            dd_name = f'depo_data_{index}'
+            di_name = f'depo_info_{index}'
+            try:
+                dd = fp[dd_name]
+                di = fp[di_name]
+            except KeyError:
+                break
+
+            # make sure zero'th dimension is tqxyzLT
+            if dd.shape[1] == 7 and di.shape[1] == 4:
+                dd = dd.T
+                di = di.T
+
+            print(f'{dd_name}: {dd.shape} {dd.dtype}')
+            for ind in range(7):
+                letter="tqxyzLT"[ind]
+                units = ["ns",'el','mm','mm','mm','mm','mm'][ind]
+                vmin = numpy.min(dd[ind])
+                vmax = numpy.max(dd[ind])
+                print(f'|{ind}|{letter}|{vmin:10.0f}|{vmax:10.0f}|{units}|')
+
+
+
+@cli.command("shift-depos")
+@click.option("-c", "--center", default=None, type=str,
+                  help="Move deposition distribution to given x,y,z center. eg -c '1*m,2*cm,3*um'")
+@click.option("-o", "--offset", default=None, type=str,
+                  help="Move deposition by vector offset. eg -c '1*m,2*cm,3*um'")
+@click.argument("input-file")
+@click.argument("output-file")
+@click.pass_context
+def shift_depos(ctx, center, offset, input_file, output_file):
+    '''
+    Move depos to given center and/or apply relative shift.
+
+    Depos are given as "depo file format" in .npz
+    '''
+    if not any([center,offset]):
+        raise ValueError("need a center or an offset")
+
+    import numpy
+    fp = numpy.load(input_file)
+
+    if center:
+        center = numpy.array(unitify_parse(center))
+
+    if offset:
+        offset = numpy.array(unitify_parse(offset))
+
+    out = dict()
+    index = -1
+    while True:
+        index += 1
+        dd_name = f'depo_data_{index}'
+        di_name = f'depo_info_{index}'
+        try:
+            dd = fp[dd_name]
+            di = fp[di_name]
+        except KeyError:
+            break
+
+        # make sure zero'th dimension is tqxyzLT
+        if dd.shape[1] == 7 and di.shape[1] == 4:
+            dd = dd.T
+            di = di.T
+
+        total_offset = numpy.zeros((3,))
+        if center is not None:
+            ndepos = dd.shape[1]
+            mean = numpy.sum(dd[2:5], axis=1) / ndepos
+            total_offset += center - mean
+        if offset is not None:
+            total_offset += offset
+        print(f'{total_offset=}')
+
+        print(f'{dd.shape=}')
+        dd[2:5] += total_offset[:,None]
+
+        out[dd_name] = dd
+        out[di_name] = di
+    numpy.savez_compressed(output_file, **out)
+        
+        
+
+
 
 @cli.command("move-depos")
 @click.option("-j", "--json_path", default='depos',

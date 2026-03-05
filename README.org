@@ -62,6 +62,20 @@ source .venv/bin/activate
 wcpy util --help
 #+end_example
 
+** Packager
+
+To build a Python wheel package:
+
+#+begin_example
+uv build
+#+end_example
+
+Exercise it in place
+
+#+begin_example
+uvx dist/wirecell-0.1.1-py3-none-any.whl
+#+end_example
+
 ** Optional dependencies
 
 Some dependencies are optional and not installed by default.  In particular,

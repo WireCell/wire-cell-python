@@ -6,6 +6,7 @@ import os
 import sys
 import json
 import click
+import numpy
 import pathlib
 from collections import Counter
 
@@ -310,9 +311,13 @@ def inspect(ctx, output, verbose, cluster_file):
                     out_stats(key, [n.get(key, 0) for n in ndat])
                 continue
 
+            def wash(thing):
+                if isinstance(thing, numpy.int64):
+                    return int(thing)
+                return thing
             if code == 'w':
                 for thing in ['seg', 'wpid']:
-                    c = Counter([n.get(thing,-1) for n in ndat])
+                    c = Counter([wash(n.get(thing,-1)) for n in ndat])
                     out.write(f'\t\t{thing}: {c}\n')
 
             if code == 'm':
