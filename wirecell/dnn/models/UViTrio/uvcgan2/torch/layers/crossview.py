@@ -35,6 +35,10 @@ class SplitAwareBottleneck(nn.Module):
         """Check that transformer image_shape matches sum of split_sizes"""
         # split_dim uses torch indexing (0=N, 1=C, 2=H, 3=W)
         # transformer.image_shape uses (C, H, W) indexing
+
+        # If identity, do nothing
+        if isinstance(self.transformer, nn.Identity): return
+
         img_shape_idx = self.split_dim - 1  # convert to image_shape indexing
         expected_total = sum(self.split_sizes)
         actual_total = self.transformer.image_shape[img_shape_idx]

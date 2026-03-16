@@ -52,7 +52,7 @@ class Rec:
     '''
 
     # default_params = Params(DimParams((476, 952), 1), DimParams((0,6000), 10), 4000)
-    default_params = Params(DimParams((0, 2560), 1), DimParams((0,6000), 10), 4000)
+    default_params = Params(DimParams((0, 2560), 1), DimParams((0,6000), 1), 1)
 
     def __init__(self,  params: Params = None, transpose: bool = False):
         '''
@@ -107,7 +107,7 @@ class Tru(Rec):
     '''
 
     # default_params = Params(DimParams((476, 952), 1), DimParams((0,6000), 10), 200)
-    default_params = Params(DimParams((0, 2560), 1), DimParams((0,6000), 10), 200)
+    default_params = Params(DimParams((0, 2560), 1), DimParams((0,6000), 1), 1./20.)
 
     def __init__(self, params: Params = None,  transpose : bool = False, threshold: float = 0.5):
         '''

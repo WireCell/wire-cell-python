@@ -6,7 +6,7 @@ class Network(nn.Module):
     
     def __init__(self):
         super().__init__()
-        input_shape=(1, 2560, 600)
+        input_shape=(1, 2560, 1500)
         self.model = ViTUNetCrossView(
             features=64,
             n_heads=4,
@@ -24,7 +24,8 @@ class Network(nn.Module):
             unet_upsample={'name': 'upsample', 'mode': 'bilinear'},  # Bilinear upsample per paper
             split_sizes=[800, 800, 960],
             split_dim=2,  # H dimension
-            activ_output='sigmoid'
+            activ_output='sigmoid',
+            # identity_bottleneck=True
         )
 
 

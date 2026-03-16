@@ -30,6 +30,7 @@ class ViTUNetCrossView(nn.Module):
         unet_rezero=False,
         rezero=True,
         activ_output=None,
+        identity_bottleneck=False,
         **kwargs
     ):
         """
@@ -53,6 +54,7 @@ class ViTUNetCrossView(nn.Module):
             unet_rezero: Whether to use rezero in UNet decoder blocks
             rezero: Whether to use rezero in transformer
             activ_output: Output activation function
+            identity_bottleneck: If True --> Override the bottleneck with a simple nn.Identity i.e. for ablation studies
 
         Note: The sum of split_sizes must equal the size of input_shape along split_dim.
         """
@@ -86,11 +88,13 @@ class ViTUNetCrossView(nn.Module):
 
         # Create the transformer bottleneck
         # It operates on the concatenated feature maps
-        transformer = PixelwiseViT(
-            features, n_heads, n_blocks, ffn_features, embed_features,
-            activ, norm,
-            image_shape=bottleneck_shape,
-            rezero=rezero
+        transformer = (
+            PixelwiseViT(
+                features, n_heads, n_blocks, ffn_features, embed_features,
+                activ, norm,
+                image_shape=bottleneck_shape,
+                rezero=rezero
+            ) if (not identity_bottleneck) else nn.Identity()
         )
 
         # Compute the encoded split sizes at the bottleneck level

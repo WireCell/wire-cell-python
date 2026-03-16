@@ -24,7 +24,9 @@ class Rec(hdf.Single):
     '''
 
     # file_re = r'.*g4-rec-[r]?(\d+)\.h5'
-    file_re = r'.*g4-rec-[r]?(\d{8}T\d{6}Z)\.h5'
+    # file_re = r'.*g4-rec-[r]?(\d{8}T\d{6}Z)\.h5'
+    file_re = r'.*sigproc-spng-cosmics_([0-8])\.h5'
+
     path_res = tuple(
         r'/(\d+)/%s\d'%tag for tag in [
             'frame_loose_lf']
@@ -33,13 +35,14 @@ class Rec(hdf.Single):
     def __init__(self, paths, 
                  file_re=None, path_res=None,
                  trparams: TrParams = Trut.default_params, cache=False):
-
+        print(f'rec_file_re\n\tdefined:{self.file_re}\n\tcfg:{file_re}')
         dom = hdf.Domain(hdf.ReMatcher(file_re or self.file_re,
                                        path_res or self.path_res),
                          transform=Rect(trparams, True),
                          cache=cache, grad=True,
                          name="dnnroirec")
         super().__init__(dom, paths)
+        print('Done')
 
 
 class Tru(hdf.Single):
@@ -50,7 +53,9 @@ class Tru(hdf.Single):
     '''
 
     # file_re = r'.*g4-tru-[r]?(\d+)\.h5'
-    file_re = r'.*g4-tru-[r]?(\d{8}T\d{6}Z)\_cleaned\.h5'
+    # file_re = r'.*g4-tru-[r]?(\d{8}T\d{6}Z)\_cleaned\.h5'
+    file_re = r'.*splat-cosmics_([0-8])\.h5'
+
     path_res = tuple(
         r'/(\d+)/%s\d'%tag for tag in ['frame_deposplat']
     )
@@ -58,7 +63,8 @@ class Tru(hdf.Single):
     def __init__(self, paths, threshold = 0.5,
                  file_re=None, path_res=None,
                  trparams: TrParams = Trut.default_params, cache=False):
-
+        print(f'tru_file_re\n\tdefined:{self.file_re}\n\tcfg:{file_re}')
+        
         dom = hdf.Domain(hdf.ReMatcher(file_re or self.file_re,
                                        path_res or self.path_res),
                          transform=Trut(trparams, True, threshold),
@@ -87,6 +93,7 @@ class Dataset(hdf.Multi):
                 log.debug(f'dnnroi dataset {key} = {val}')
             return val
 
+        
 
         # fixme: allow configuring the transforms.
         super().__init__(Rec(paths, cache=cache,
