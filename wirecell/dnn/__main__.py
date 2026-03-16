@@ -54,17 +54,21 @@ train_defaults = dict(epochs=1, batch=1, device='cpu', name='dnnroi', train_rati
               help="File name to save model state dict after training (def=None - results not saved)")
 @click.option("--train-ratio", default=None, type=float,
               help="Fraction of samples to use for training (default=1.0, no evaluation loss calculated)")
+@click.option("--manual-seed", default=None, type=int,
+              help="Set this to use a manual torch seeding (default=None -> use default torch seeding)")
 @anyconfig_file("wirecelldnn", section='train', defaults=train_defaults)
 @click.argument("files", nargs=-1)
 @click.pass_context
 def train(ctx, config, epochs, batch, device, cache, debug_torch,
           checkpoint_save, checkpoint_modulus,
-          app, load, save, train_ratio, files):
+          app, load, save, train_ratio, manual_seed, files):
     '''
     Train a model.
     '''
     # delay importing this monster
     import torch
+    if manual_seed is not None:
+        torch.manual_seed(manual_seed)
     from torch.utils.data import DataLoader
     import wirecell.dnn.apps
 
@@ -353,6 +357,7 @@ def run_one(config, device, debug_torch, entry, load, output, app, files):
 
     with no_grad():
         net = app.Network().to(device)
+        net.eval()
         
         if load:
             if not Path(load).exists():
