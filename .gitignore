@@ -25,3 +25,5 @@ latexmk-out
 auto
 .aider*
 *.pt
+*.ts
+*.pickle
