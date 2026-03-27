@@ -10,6 +10,10 @@ from wirecell.util.paths import unglob, listify
 
 from wirecell import dnn
 
+def make_model_from_config(app, config):
+    model_config = config.get('model', None)
+    model_args = ([] if model_config is None else [model_config])
+    return app.Network(*model_args)
 
 @context("dnn")
 def cli(ctx):
@@ -90,7 +94,8 @@ def train(ctx, config, epochs, batch, device, cache, debug_torch,
     name = app
     app = getattr(wirecell.dnn.apps, name)
 
-    net = app.Network()
+    # net = app.Network()
+    net = make_model_from_config(app, config)
     opt = app.Optimizer(net.parameters())
     crit = app.Criterion()
     trainer = app.Trainer(net, opt, crit, device=device)
@@ -356,7 +361,10 @@ def run_one(config, device, debug_torch, entry, load, output, app, files):
     app = getattr(wirecell.dnn.apps, name)
 
     with no_grad():
-        net = app.Network().to(device)
+        # model_config = config.get('model', None)
+        # model_args = ([] if model_config is None else [model_config])
+        # net = app.Network(*model_args).to(device)
+        net = make_model_from_config(app, config).to(device)
         net.eval()
         
         if load:
