@@ -339,6 +339,9 @@ run_one_defaults = dict(device='cpu', name='dnnroi')
 @anyconfig_file("wirecelldnn", section='run_one', defaults=run_one_defaults)
 @click.argument("files", type=str, nargs=2)
 def run_one(config, device, debug_torch, entry, load, output, app, files):
+    '''
+    Run a reco & true pair through a saved model.
+    '''
     # delay importing this monster
     from torch import load as torchload, save as torchsave, no_grad
     # import torch
