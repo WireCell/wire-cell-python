@@ -419,11 +419,11 @@ def viztrain(output, checkpoint, mean_train, eval_only, no_dots, logy):
     
     if eval_only:
         xlabel = 'Epoch'
-        plt.plot(eval_xs, eval_losses.flatten(), label='Eval Loss')
+        plt.plot(eval_losses.flatten(), label='Eval Loss')
     else:
         if mean_train:
             plt.plot(np.mean(train_losses, axis=1).flatten(), label='Training Loss')
-            plt.plot(eval_xs, np.mean(eval_losses, axis=1).flatten(), label='Eval Loss')
+            plt.plot(np.mean(eval_losses, axis=1).flatten(), label='Eval Loss')
             xlabel = 'Epoch'
         else:
             xlabel = 'Sample'
