@@ -392,6 +392,53 @@ def run_one(config, device, debug_torch, entry, load, output, app, files):
             'y':y
         }, output)
 
+run_one_defaults = dict(device='cpu', name='dnnroi')
+@cli.command('viztrain')
+
+@click.option("-o", "--output", default=None,
+              help="File name to output (does not show the image before saving)")
+@click.option('--mean-train', is_flag=True, help='Average training loss over epoch -- default: display loss for each input/batch')
+@click.option('--eval-only', is_flag=True, help='Just display eval loss with no averaging. Training loss is not displayed')
+@click.option('--no-dots', is_flag=True, help='Turn off drawing dots for eval loss when drawing per-sample training loss')
+@click.option('--logy', is_flag=True, help='Log-scale for y-axis')
+#Another option: batch ratio scaling?
+@click.argument("checkpoint", type=str)
+def viztrain(output, checkpoint, mean_train, eval_only, no_dots, logy):
+    '''Visualize training curves from a checkpoint file'''
+    import matplotlib.pyplot as plt
+    from torch import load, device
+    import numpy as np
+
+    f = load(checkpoint, map_location=device('cpu'))
+    epochs = f['epochs'].keys()
+    #Better be sure these exist
+    train_losses = np.array([f['epochs'][k]['train_losses'] for k in epochs])
+    eval_losses = np.array([f['epochs'][k]['eval_losses'] for k in epochs])
+    eval_xs = (np.arange(len(eval_losses)) +  1)*len(train_losses[0])
+    
+    
+    if eval_only:
+        xlabel = 'Epoch'
+        plt.plot(eval_xs, eval_losses.flatten(), label='Eval Loss')
+    else:
+        if mean_train:
+            plt.plot(np.mean(train_losses, axis=1).flatten(), label='Training Loss')
+            plt.plot(eval_xs, np.mean(eval_losses, axis=1).flatten(), label='Eval Loss')
+            xlabel = 'Epoch'
+        else:
+            xlabel = 'Sample'
+            plt.plot(train_losses.flatten(), label='Training Loss', zorder=1)
+            plt.plot(eval_xs, np.mean(eval_losses, axis=1).flatten(), label='Eval Loss', zorder=1)
+            if not no_dots:
+                plt.scatter(eval_xs, np.mean(eval_losses, axis=1).flatten(), c='tab:orange', label='Eval Loss', zorder=2)
+    
+    plt.legend(fontsize=12)
+    plt.xlabel(xlabel, fontsize=14)
+    plt.ylabel('Loss', fontsize=14)
+    if logy: plt.yscale('log')
+    
+    if output: plt.savefig(output)
+    else: plt.show()
 
 
 
