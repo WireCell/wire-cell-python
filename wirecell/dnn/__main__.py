@@ -117,7 +117,7 @@ def train(ctx, config, epochs, batch, device, cache, debug_torch,
 
     dses = dnn.data.train_eval_split(ds, train_ratio)
     dles = [DataLoader(one, batch_size=bb, shuffle=True, pin_memory=True) for one,bb in zip(dses, [tbatch,ebatch])]
-            
+
     ntrain = len(dses[0])
     neval = len(dses[1])
 
@@ -343,7 +343,7 @@ def run_one(config, device, debug_torch, entry, load, output, app, files):
     Run a reco & true pair through a saved model.
     '''
     # delay importing this monster
-    from torch import load as torchload, save as torchsave, no_grad
+    from torch import load as torchload, save as torchsave, no_grad, device as torchdevice
     # import torch
     from torch.utils.data import DataLoader
     import wirecell.dnn.apps
@@ -373,7 +373,7 @@ def run_one(config, device, debug_torch, entry, load, output, app, files):
         if load:
             if not Path(load).exists():
                 raise click.FileError(load, 'warning: DNN module load file does not exist')
-            h = torchload(load)
+            h = torchload(load, map_location=torchdevice('cpu'))
             net.load_state_dict(h['model_state_dict'])
             print('Loaded model state dict')
 
