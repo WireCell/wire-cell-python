@@ -81,9 +81,8 @@ def load_frame(fname, tag="*", ident=0, trange=None, tshift=None):
     nch = cmax-cmin+1
     ff = numpy.zeros((nch, f.shape[1]), dtype=f.dtype)
     for irow, ch in enumerate(c):
-        ff[cmin-ch] = f[irow]
-    origin = "lower"            # lower flips putting [0,0] at bottom
-    ff = numpy.flip(ff, axis=0)
+        ff[ch-cmin] = f[irow]
+    origin = "lower"            # row 0 = cmin at bottom of plot
     array_t0 = t0 + tbin*tick
     array_tf = array_t0 + ff.shape[1]*tick
 
@@ -108,7 +107,40 @@ def load_frame(fname, tag="*", ident=0, trange=None, tshift=None):
 
     return Frame(fname, ff, array_extent, origin, tick)
 
-def plot_frame(gs, fr, channel_ranges=None, which="splat", tit=""):
+
+def align_channel_ranges(fr1, fr2):
+    '''Return copies of fr1 and fr2 padded to cover the union of their channel
+    ranges.  After alignment both frames have identical channel extent and the
+    same number of rows, so that row i in fr1 corresponds to the same channel
+    as row i in fr2.
+
+    With origin="lower", row 0 holds the lowest channel (cmin) and row nch-1
+    holds the highest channel (cmax).  Extending below the current cmin
+    prepends zero rows; extending above the current cmax appends zero rows.
+    '''
+    _, _, c0_1, cf_1 = fr1.extent
+    _, _, c0_2, cf_2 = fr2.extent
+
+    c0 = min(c0_1, c0_2)   # new common cmin
+    cf = max(cf_1, cf_2)   # new common cmax+1
+
+    def _pad(fr, c0, cf):
+        t0, tf, c0_fr, cf_fr = fr.extent
+        pre  = c0_fr - c0    # rows to prepend (channels below c0_fr)
+        post = cf - cf_fr    # rows to append  (channels above cf_fr-1)
+        arr = fr.frame
+        if pre > 0:
+            arr = numpy.vstack([numpy.zeros((pre,  arr.shape[1]), dtype=arr.dtype), arr])
+        if post > 0:
+            arr = numpy.vstack([arr, numpy.zeros((post, arr.shape[1]), dtype=arr.dtype)])
+        return Frame(fr.filename, arr, (t0, tf, c0, cf), fr.origin, fr.tick)
+
+    if c0 == c0_1 and cf == cf_1 and c0 == c0_2 and cf == cf_2:
+        return fr1, fr2
+    return _pad(fr1, c0, cf), _pad(fr2, c0, cf)
+
+
+def plot_frame(gs, fr, channel_ranges=None, which="splat", tit="", channel_offset=0):
     '''
     Plot one Frame as 2D and 2x1D projections.
     '''
@@ -116,6 +148,7 @@ def plot_frame(gs, fr, channel_ranges=None, which="splat", tit=""):
     from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
     tunits = units.us
 
+    # c0/cf are absolute channel IDs
     t0,tf,c0,cf = fr.extent
     t0_us = t0/tunits
     tf_us = tf/tunits
@@ -151,9 +184,10 @@ def plot_frame(gs, fr, channel_ranges=None, which="splat", tit=""):
     tax.plot(t[:-1], tval)      # all channels
     if channel_ranges:
         for p, chans in zip("UVW",channel_ranges): # fixme: map to plane labels is only an assumption!
+            # print(f'{p}: {chans=}')
             val = fr.frame[chans,:].sum(axis=0)
-            c1 = chans.start
-            c2 = chans.stop
+            c1 = chans.start + channel_offset
+            c2 = chans.stop + channel_offset
             tax.plot(t[:-1], val, label=p)
             fax.plot([t0_us,tf_us], [c1,c1])
             fax.text(t0_us + 0.1*(tf_us-t0_us), c1 + 0.5*(c2-c1), p)
@@ -166,20 +200,23 @@ def plot_frame(gs, fr, channel_ranges=None, which="splat", tit=""):
 
     return im
 
-def plot_frames(spl, sig, channel_ranges, title=""):
-    '''Plot the two Frame objects spl (splat) and sig (signal).
+def plot_frames(spl, sig, channel_ranges, title="", channel_offset=0):
+    '''
+    Plot the two Frame objects spl (splat) and sig (signal).
 
     Channel ranges gives list of pair of channel min/max to interpret as
     contiguous rows on the Frame.array.
 
+    Channel offset gives an offset from indices to IDENT numbers for labeling
+    plots.
     '''
     import matplotlib.pyplot as plt
     from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
     fig = plt.figure()
     pgs = GridSpec(1,2, figure=fig, width_ratios = [7,0.2])
     gs = GridSpecFromSubplotSpec(2, 1, pgs[0,0])
-    im1 = plot_frame(gs[0], spl, channel_ranges, which="splat")
-    im2 = plot_frame(gs[1], sig, channel_ranges, which="signal")
+    im1 = plot_frame(gs[0], spl, channel_ranges, which="splat", channel_offset=channel_offset)
+    im2 = plot_frame(gs[1], sig, channel_ranges, which="signal", channel_offset=channel_offset)
     fig.colorbar(im2, cax=plt.subplot(pgs[0,1]))
     if title:
         plt.suptitle(title)
@@ -281,8 +318,7 @@ def calc_metrics(spl_qch, sig_qch, nbins=50):
     ineff = numpy.sum(nosig)/numpy.sum(wspl)
 
     reldiff = (spl_qch[both] - sig_qch[both])/spl_qch[both]
-    vrange = 0.01*nbins/2
-    bln = baseline_noise(reldiff, nbins, vrange)
+    bln = baseline_noise(reldiff, nbins)
 
     return Metrics(neor, ineff, bln)
 
@@ -295,7 +331,8 @@ def plot_metrics(splat_signal_activity_pairs, nbins=50, title="", letters="UVW")
 
         try:
             m = calc_metrics(spl_qch, sig_qch, nbins)
-        except:
+        except Exception as err:
+            log.error(err)
             log.error(f'error: failed to get metric for {pln=} {spl_qch.size=} {sig_qch.size=} {nbins=} {title=}')
             log.debug(f'skipped splat:  {spl_qch=}')
             log.debug(f'skipped signal: {sig_qch=}')
