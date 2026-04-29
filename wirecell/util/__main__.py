@@ -777,6 +777,73 @@ def wire_summary(output, wires):
     with open(output, "w") as fp:
         fp.write(json.dumps(wdict, indent=4))
 
+@cli.command("channel-summary")
+@jsonnet_loader("wires", "wires")
+@click.option("-o", "--output", default="/dev/stdout",
+              help="Output file")
+@click.option("--single-anode", default=False, is_flag=True)
+def channel_summary(output, wires, single_anode):
+    '''
+    Produce a summary of detector channels given wires file or detector name.
+    '''
+    import wirecell.util.wires.info as winfo
+    import wirecell.util.wires.persist as wper
+
+    # wash initial dict through schema to assure it is valid
+    store = wper.fromdict(wires)
+    dets = winfo.todict(store)
+    chids_by_det = defaultdict(set)
+
+    for det in dets:
+        det_ident = det['ident']
+        print(f'detector {det_ident}')
+        chids_by_anode = defaultdict(set)
+
+        for anode in det["anodes"]:
+            anode_ident = anode['ident']
+            print(f'anode {anode_ident}')
+            chids_by_plane = defaultdict(set)
+
+            for face in anode["faces"]:
+                face_ident = face['ident']
+                print(f'face {face_ident}')
+                chids_by_face = defaultdict(set)
+
+                for plane in face["planes"]:
+                    plane_ident = plane['ident']
+                    wires = plane["wires"]
+
+                    # this is merely order in the file and that may not be in
+                    # true wire-in-plane order.  We must sort the segment=0
+                    # wires on their pitch values to assure that.
+                    chid_in_wire_order = [w["channel"] for w in wires]
+                    unique_chids = list(set(chid_in_wire_order))
+                    unique_chids.sort()
+
+                    chids_by_plane[plane_ident].update(unique_chids)
+                    chids_by_face[face_ident].update(unique_chids)
+                    chids_by_anode[anode_ident].update(unique_chids)
+                    chids_by_det[det_ident].update(unique_chids)
+
+                    nunique = len(unique_chids)
+                    first = unique_chids[0]
+                    last = unique_chids[-1]
+                    nrange = last - first + 1
+                    missing = nrange - nunique
+
+                    print(f'd{det_ident} a{anode_ident} f{face_ident} p{plane_ident} unique:{nunique} range:{nrange} missing:{missing} [{first}, {last}]')
+
+                print(f'd{det_ident} a{anode_ident} f{face_ident} unique:{len(chids_by_face[face_ident])}')
+
+            by_plane = {p:len(s) for p,s in chids_by_plane.items()}
+
+            print(f'd{det_ident} a{anode_ident} unique:{len(chids_by_anode[anode_ident])} {by_plane}')
+            if single_anode:
+                break
+
+        if not single_anode:
+            print(f'd{det_ident} unique:{len(chids_by_det[det_ident])}')
+
 
 
 @cli.command('frame-split')
@@ -1402,6 +1469,129 @@ def resolve(path, kind, name):
     if kind:
         sys.stderr.write(f'and {kind=}\n')
     raise ValueError('bad fields')
+
+
+@cli.command("frame-block")
+@click.option("-o", "--output", default="/dev/stdout", help="Output filename")
+@click.option("--channel-start", default=0, help="The first channel ID number in the output block")
+@click.option("--channel-count", default=None, type=int, help="The number of channels (rows) to span in the output block")
+@click.option("--tick-start", default="0", type=str, help="The first tick, relative to tbin0, to include in the output. Use 'tbin0' to set output tbin0=0 by shifting by the negative of the input tbin0.")
+@click.option("--tick-count", default=None, type=int, help="The number of ticks (columns) to span in the output block")
+@click.option("-d", "--detector", default=None, type=str, help="Canonical detector name")
+@click.option("-p", "--padding", default=0.0, help="The value to apply to any padding") # fixme: make more rich in future
+@click.argument("framefile")
+def frame_block(output, channel_start, channel_count, tick_start, tick_count, detector, padding, framefile):
+    '''
+    Output a new (and dense) frame file built from the input frame file.
+
+    This may pad and/or crop the input in tick (columns) and/or channel (rows)
+    dimensions.
+
+    Frame format refresher:
+
+    - the "frame array" is a contiguous block in channels (rows) vs ticks (columns)
+
+    - the "channels array" holds channel ID numbers for the rows of the frame
+      array.  These channel IDs may not be contiguous but, generally, it as
+      assumed they are chosen by detector designers to be monotonically
+      increasing, contiguous across each wire plane and stacked across all
+      planes in one APA.
+
+    - the "tickinfo" array has three floating point elements:
+
+      - a reference time stamp
+
+      - the sampling time period ("tick")
+
+      - the number of samples from the reference time to the first column in the "frame array" ("tbin0")
+
+    This command does not change the reference time nor the tick.
+
+    The --tick-start is counted relative to the input tbin0.  It will cause the
+    output tbin0 to be the input tbin0 plus this value.  It may be negative.
+    The special value "tbin0" sets the shift to the negative of the input tbin0,
+    so that the output tbin0 is always zero regardless of what it was in the input.
+
+    The --tick-count is counted from the resulting output tbin0 sample.
+
+    The --channel-start gives the smallest channel ID (not array index).
+
+    The --channel-count gives the number of channels (rows) for the output.  Any
+    gaps in the input channels array will be filled with consecutive ID numbers.
+    '''
+    import numpy
+    from wirecell.util import frames as frmod
+
+    # Known per-detector default channel counts (total channels, starting from 0).
+    detector_defaults = {
+        "pdhd": 2560,
+        "pdsp": 2560,
+        "pdvd": 2488,
+    }
+
+    out_arrays = {}
+
+    for fr in frmod.load(framefile):
+
+        # --- channel dimension ---
+        ch_start = channel_start
+        if channel_count is not None:
+            ch_count = channel_count
+        elif detector is not None and detector in detector_defaults:
+            ch_count = detector_defaults[detector]
+        else:
+            # Default: cover the full channel range present in this frame.
+            cmin, cmax = fr.chan_bounds
+            if channel_start == 0:
+                ch_start = cmin
+            ch_count = cmax - ch_start + 1
+
+        # --- tick dimension ---
+        # Resolve the tick_start string per frame (tbin0 is frame-specific).
+        if tick_start == "tbin0":
+            t_start = -fr.tbin   # shift so output tbin0 = 0
+        else:
+            t_start = int(tick_start)   # integer offset, may be negative
+        if tick_count is not None:
+            t_count = tick_count
+        else:
+            # Default: all input ticks that fall at or after t_start.
+            t_count = fr.nticks - max(0, t_start)
+
+        # --- build dense output filled with padding ---
+        out_samples = numpy.full((ch_count, t_count), padding, dtype=fr.samples.dtype)
+
+        # --- copy input into output, channel by channel ---
+        # Output tick column i corresponds to absolute tick bin (fr.tbin + t_start + i).
+        # Input tick column j corresponds to absolute tick bin (fr.tbin + j).
+        # They coincide when j = t_start + i, i.e. i = j - t_start.
+        # Valid overlap of input [0, fr.nticks) and output [t_start, t_start+t_count):
+        inp_col_start = max(0, t_start)
+        inp_col_end   = min(fr.nticks, t_start + t_count)
+
+        if inp_col_start < inp_col_end:
+            out_col_start = inp_col_start - t_start
+            out_col_end   = inp_col_end   - t_start
+
+            for inp_row, ch_id in enumerate(fr.channels):
+                out_row = int(ch_id) - ch_start
+                if out_row < 0 or out_row >= ch_count:
+                    continue    # channel outside requested output range
+                out_samples[out_row, out_col_start:out_col_end] = \
+                    fr.samples[inp_row, inp_col_start:inp_col_end]
+
+        # --- assemble output arrays ---
+        out_tbin     = fr.tbin + t_start
+        out_channels = numpy.arange(ch_start, ch_start + ch_count, dtype=fr.channels.dtype)
+        out_tickinfo = numpy.array([fr.tref, fr.period, out_tbin])
+
+        _, tag, num = fr.name.split("_")
+        out_arrays[f'frame_{tag}_{num}']    = out_samples
+        out_arrays[f'channels_{tag}_{num}'] = out_channels
+        out_arrays[f'tickinfo_{tag}_{num}'] = out_tickinfo
+
+    numpy.savez_compressed(output, **out_arrays)
+
 
 
 @cli.command("framels")

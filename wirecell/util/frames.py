@@ -142,7 +142,7 @@ class Frame:
 
 def load(fp):
     '''
-    Yield frame objects in fp.
+    Yield frame objects in a "frame file" given by fp.
 
     fp is file name as string or pathlib.Path or ario/numpy.load() like.
     '''

@@ -71,10 +71,16 @@ def load_frame(fname, tag="*", ident=0, trange=None, tshift=None):
         t0 += tshift
     c = fp["channels_"+suffix]
 
-    # assure channels are ordered
+    # Assure channels are ordered.  This is a sanity check but not truly a
+    # generic one.  Some future detector may come along and decide to number
+    # channel IDs in some way other than the monotonically increasing order of
+    # contemporary detectors.  Such future detector will likely break
+    # assumptions buried in a lot of code so might as well make that explicit
+    # here.
     c2 = numpy.array(c)
     numpy.sort(c2)
-    assert numpy.all(c == c2)
+    if not numpy.all(c == c2):
+        raise ValueError("frame does not have ordered channel IDs which violates implicit convention")
 
     cmin = numpy.min(c)
     cmax = numpy.max(c)
