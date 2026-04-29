@@ -9,7 +9,9 @@
 //   shaping   - shaping time as unit expression (er_kind="cold" only)
 //   postgain  - dimensionless post-shaping gain factor
 //   adc_per_mv - ADC counts per mV
-//   adc_tick  - DAQ tick as unit expression
+//   adc_tick  - sampling tick of the produced waveform (500 ns for all detectors;
+//               PDHD and PDVD-bottom have a 512→500 ns resampler upstream so NF
+//               and chndb-resp comparison always run at 500 ns post-resampler)
 //   chndb_resp - path to chndb-resp.jsonnet for overlay (null = skip overlay)
 {
     uboone: {
@@ -42,7 +44,7 @@
         shaping:    "2.2*us",
         postgain:   1.0,
         adc_per_mv: 11.70,
-        adc_tick:   "512*ns",
+        adc_tick:   "500*ns",
         chndb_resp: "pgrapher/experiment/pdhd/chndb-resp.jsonnet",
     },
     "pdvd-bottom": {
@@ -53,7 +55,7 @@
         shaping:    "2.2*us",
         postgain:   1.1365,
         adc_per_mv: 11.70,
-        adc_tick:   "512*ns",
+        adc_tick:   "500*ns",
         chndb_resp: "pgrapher/experiment/protodunevd/chndb-resp.jsonnet",
     },
     "pdvd-top": {
