@@ -652,11 +652,13 @@ def configured_spectra(type, name, data, coupling, output, cfgfile):
 @click.option("--adc-per-mv", default=None, type=float, help="Override ADC counts per mV.")
 @click.option("--adc-tick",   default=None, type=str,   help="Override DAQ tick, e.g. '500*ns'.")
 @click.option("--chndb-resp", default=None, type=str,   help="Path to chndb-resp.jsonnet for overlay.")
+@click.option("--export-jsonnet", default=None, type=str,
+              help="Write chndb-resp-style jsonnet (u_resp/v_resp) to this path.")
 @click.option("-o", "--output-dir", default=".", show_default=True,
               help="Directory for output PNG files.")
 @click.pass_context
 def track_response(ctx, detector, fr, er, gain, shaping, postgain, adc_per_mv,
-                   adc_tick, chndb_resp, output_dir):
+                   adc_tick, chndb_resp, export_jsonnet, output_dir):
     """Compute and plot the FR⊗ER perpendicular-line track response per plane (U, V).
 
     Loads per-detector defaults from track_response_defaults.jsonnet; individual
@@ -667,7 +669,7 @@ def track_response(ctx, detector, fr, er, gain, shaping, postgain, adc_per_mv,
     import numpy as np
     from wirecell.sigproc.track_response import (
         load_detector_config, make_track_response, make_plot, parse_chndb_resp,
-        CHNDB_KEYS,
+        export_chndb_resp, CHNDB_KEYS,
     )
     from wirecell.sigproc.response import persist
     from wirecell.util.fileio import wirecell_path
@@ -712,6 +714,10 @@ def track_response(ctx, detector, fr, er, gain, shaping, postgain, adc_per_mv,
         "pdvd-bottom": "ProtoDUNE-VD bottom CRP",
         "pdvd-top":    "ProtoDUNE-VD top CRP",
     }.get(detector, detector)
+
+    if export_jsonnet:
+        export_chndb_resp(waves, cfg, export_jsonnet)
+        click.echo(f"  wrote {export_jsonnet}")
 
     os.makedirs(output_dir, exist_ok=True)
     for plane_label, wave_adc in sorted(waves.items()):

@@ -56,6 +56,25 @@ wirecell-sigproc track-response -d uboone \
 The ~--gain~, ~--shaping~, and ~--adc-tick~ options accept
 WireCell unit expressions (e.g. ~"14.0*mV/fC"~, ~"2.2*us"~).
 
+** Exporting a chndb-resp.jsonnet kernel
+
+Use ~--export-jsonnet PATH~ to write a ~chndb-resp~-style jsonnet file
+(~{u_resp:[...], v_resp:[...]}~) alongside the PNGs.  The arrays contain
+the FR⊗ER × ADC waveform digitised at the detector's post-resampler tick
+(500 ns for all detectors) at the reference electronics parameters stored
+in ~track_response_defaults.jsonnet~.
+
+#+begin_example
+wirecell-sigproc track-response -d pdhd \
+    -o /tmp/tr \
+    --export-jsonnet /tmp/tr/chndb-resp.jsonnet
+#+end_example
+
+The header comment in the generated file records the exact parameters used.
+When the kernel is loaded into ~chndb-base.jsonnet~ the waveform should be
+scaled by ~gain_scale = params.elec.gain / (14*wc.mV/wc.fC)~ to compensate
+for any runtime FE gain that differs from the reference 14 mV/fC.
+
 ** Implementation notes
 
 - Field response files are loaded via ~wirecell.sigproc.response.persist.load~
