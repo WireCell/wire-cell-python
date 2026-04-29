@@ -3,7 +3,7 @@
 import click
 from importlib import import_module
 
-subs = "sigproc util gen pgraph resp plot aux ls4gan validate img test dnn pytorch bee raygrid"
+subs = "sigproc util gen pgraph resp plot aux ls4gan validate img test dnn pytorch bee raygrid docs"
 
 from wirecell.util.cli import context, log
 
