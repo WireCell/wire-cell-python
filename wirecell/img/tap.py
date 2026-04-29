@@ -222,10 +222,11 @@ class PgFiller:
         starts = numpy.tile(starts.reshape(-1,1), 12)
         starts = starts.reshape((-1,12,1))
         corners = numpy.dstack((starts, corners))
+        ncorners = arr['ncorners']
         for irow,desc in enumerate(descs):
             b = numpy.array(ndat[irow][8:14].reshape(3,2), dtype=int)
             self.gr.nodes[desc]["bounds"] = [ dict(beg=b[ind][0], end=b[ind][1]) for ind in range(3) ]
-            self.gr.nodes[desc]["corners"] = corners[irow]
+            self.gr.nodes[desc]["corners"] = corners[irow][:ncorners[irow]]
 
     def add_measure(self):
         arr = self.get_arr("m")

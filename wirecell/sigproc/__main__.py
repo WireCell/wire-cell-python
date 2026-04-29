@@ -637,7 +637,95 @@ def configured_spectra(type, name, data, coupling, output, cfgfile):
 
     zero_suppress = coupling == "ac"
     plot_many(got, output, zero_suppress)
-    
+
+
+@cli.command("track-response")
+@click.option("-d", "--detector",
+              type=click.Choice(["uboone", "sbnd", "pdhd", "pdvd-top", "pdvd-bottom"]),
+              required=True,
+              help="Detector name; selects defaults from track_response_defaults.jsonnet.")
+@click.option("--fr",         default=None, type=str,   help="Override FR json.bz2 file.")
+@click.option("--er",         default=None, type=str,   help="Override JsonElecResponse file (er_kind=json).")
+@click.option("--gain",       default=None, type=str,   help="Override FE gain, e.g. '14.0*mV/fC'.")
+@click.option("--shaping",    default=None, type=str,   help="Override shaping time, e.g. '2.2*us'.")
+@click.option("--postgain",   default=None, type=float, help="Override post-shaping gain factor.")
+@click.option("--adc-per-mv", default=None, type=float, help="Override ADC counts per mV.")
+@click.option("--adc-tick",   default=None, type=str,   help="Override DAQ tick, e.g. '500*ns'.")
+@click.option("--chndb-resp", default=None, type=str,   help="Path to chndb-resp.jsonnet for overlay.")
+@click.option("-o", "--output-dir", default=".", show_default=True,
+              help="Directory for output PNG files.")
+@click.pass_context
+def track_response(ctx, detector, fr, er, gain, shaping, postgain, adc_per_mv,
+                   adc_tick, chndb_resp, output_dir):
+    """Compute and plot the FR⊗ER perpendicular-line track response per plane (U, V).
+
+    Loads per-detector defaults from track_response_defaults.jsonnet; individual
+    options override the defaults. Writes track_response_{detector}_{plane}.png
+    files to --output-dir.
+    """
+    import os
+    import numpy as np
+    from wirecell.sigproc.track_response import (
+        load_detector_config, make_track_response, make_plot, parse_chndb_resp,
+        CHNDB_KEYS,
+    )
+    from wirecell.sigproc.response import persist
+    from wirecell.util.fileio import wirecell_path
+
+    cfg = load_detector_config(
+        detector,
+        fr=fr, er_file=er, gain=gain, shaping=shaping,
+        postgain=postgain, adc_per_mv=adc_per_mv, adc_tick=adc_tick,
+        chndb_resp=chndb_resp,
+    )
+
+    log.debug(f"Loading FR: {cfg['fr']}")
+    frd = persist.load(cfg['fr'], paths=wirecell_path())
+
+    chndb = None
+    if cfg.get('chndb_resp'):
+        chndb = parse_chndb_resp(cfg['chndb_resp'])
+
+    waves, tick = make_track_response(frd, cfg)
+
+    er_kind = cfg.get('er_kind', 'cold')
+    if er_kind == 'cold':
+        params_str = (
+            f"gain={cfg['gain'] / (units.mV / units.fC):.1f} mV/fC  "
+            f"shaping={cfg['shaping'] / units.us:.1f} µs  "
+            f"postgain={cfg['postgain']}  "
+            f"ADC/mV={cfg['adc_per_mv']}  "
+            f"tick={tick / units.ns:.0f} ns"
+        )
+    else:
+        params_str = (
+            f"ER={cfg.get('er_file','?')}  "
+            f"postgain={cfg['postgain']}  "
+            f"ADC/mV={cfg['adc_per_mv']}  "
+            f"tick={tick / units.ns:.0f} ns"
+        )
+
+    det_label = {
+        "uboone": "MicroBooNE",
+        "sbnd":   "SBND",
+        "pdhd":   "ProtoDUNE-HD",
+        "pdvd-bottom": "ProtoDUNE-VD bottom CRP",
+        "pdvd-top":    "ProtoDUNE-VD top CRP",
+    }.get(detector, detector)
+
+    os.makedirs(output_dir, exist_ok=True)
+    for plane_label, wave_adc in sorted(waves.items()):
+        chndb_ref = chndb[CHNDB_KEYS[plane_label]] if chndb else None
+        pk_pos = wave_adc[np.argmax(wave_adc)]
+        pk_neg = wave_adc[np.argmin(wave_adc)]
+        log.info(f"  plane {plane_label}: peak={pk_pos:+.2f} ADC  trough={pk_neg:+.2f} ADC")
+        outpath = os.path.join(output_dir, f"track_response_{detector}_{plane_label}.png")
+        make_plot(wave_adc, chndb_ref,
+                  tick=tick, plane_label=plane_label,
+                  det_label=det_label, params_str=params_str,
+                  outpath=outpath)
+        click.echo(f"  wrote {outpath}")
+
 
 @cli.command("fwd")
 @click.option("--plots", type=str, default=None,
