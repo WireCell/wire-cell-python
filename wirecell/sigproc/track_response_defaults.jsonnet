@@ -53,7 +53,7 @@
         shaping:    "2.2*us",
         postgain:   1.1365,
         adc_per_mv: 11.70,
-        adc_tick:   "500*ns",
+        adc_tick:   "512*ns",
         chndb_resp: "pgrapher/experiment/protodunevd/chndb-resp.jsonnet",
     },
     "pdvd-top": {
