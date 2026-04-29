@@ -14,6 +14,19 @@ import click
 from wirecell.util.cli import context, log
 
 
+# ── path helpers ─────────────────────────────────────────────────────────────
+
+def _resolve_dirpath(path_str):
+    """Resolve a user path string to an absolute directory Path.
+
+    Accepts slash-separated (wirecell/util) or dot-separated (wirecell.util)
+    notation.  Relative paths are resolved against the repo root.
+    """
+    p = Path(path_str.replace('.', '/'))
+    rr = _repo_root()
+    return p if p.is_absolute() else rr / p
+
+
 # ── repo / package roots ──────────────────────────────────────────────────────
 
 @functools.lru_cache(maxsize=1)
@@ -362,7 +375,7 @@ def check_cmd(ctx, paths, porcelain):
     """Show which index.md files are missing or stale.
 
     \b
-    PATH arguments are relative to the repo root (e.g. wirecell/util).
+    PATH arguments accept slash or dot notation (wirecell/util or wirecell.util).
     Use the special value 'all' to check every module directory.
 
     Exits with status 1 if any file needs regeneration.
@@ -379,9 +392,7 @@ def check_cmd(ctx, paths, porcelain):
     else:
         dirs = []
         for p in paths:
-            dirpath = Path(p)
-            if not dirpath.is_absolute():
-                dirpath = rr / dirpath
+            dirpath = _resolve_dirpath(p)
             if not dirpath.is_dir():
                 raise click.BadParameter(f'not a directory: {p}', param_hint='PATH')
             dirs.append(dirpath)
@@ -417,7 +428,7 @@ def prompt_cmd(ctx, path, monolith, script, force, output):
     """Emit an LLM prompt (or shell script) to regenerate stale index.md files.
 
     \b
-    Three modes:
+    Three modes (PATH accepts slash or dot notation: wirecell/util or wirecell.util):
       A  wcpy docs prompt wirecell/util   single-directory prompt
       B  wcpy docs prompt --monolith      one combined prompt for all stale dirs
       C  wcpy docs prompt --script        shell script using $WCPY_LLM per dir
@@ -431,8 +442,7 @@ def prompt_cmd(ctx, path, monolith, script, force, output):
 
     if path:
         # Option A — explicit single directory
-        p = Path(path)
-        dirpath = p if p.is_absolute() else (rr / p)
+        dirpath = _resolve_dirpath(path)
         if not dirpath.is_dir():
             raise click.BadParameter(f'not a directory: {path}', param_hint='PATH')
         text = _single_prompt(dirpath)
@@ -532,7 +542,7 @@ def show_cmd(ctx, paths, as_json):
     """Display one or more index.md files with terminal formatting (or as JSON).
 
     \b
-    PATH may be a directory (reads its index.md) or a direct path to an index.md.
+    PATH accepts slash or dot notation (wirecell/util or wirecell.util).
     Special values:
       top   the package-root index.md
       all   every existing index.md under the package root
@@ -542,7 +552,6 @@ def show_cmd(ctx, paths, as_json):
         ctx.exit()
 
     pkg_root = _pkg_root()
-    rr = _repo_root()
 
     index_paths = []
     for p in paths:
@@ -554,7 +563,7 @@ def show_cmd(ctx, paths, as_json):
                 if idx.exists():
                     index_paths.append(idx)
         else:
-            pp = Path(p)
+            pp = _resolve_dirpath(p)
             ip = (pp / 'index.md') if pp.is_dir() else pp
             index_paths.append(ip)
 
