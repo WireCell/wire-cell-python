@@ -354,15 +354,38 @@ def cli(ctx):
 
 
 @cli.command("check")
+@click.argument("paths", nargs=-1, metavar="PATH|all")
 @click.option("--porcelain", is_flag=True,
               help="Machine-readable output: STATUS<TAB>PATH per line")
-def check_cmd(porcelain):
+@click.pass_context
+def check_cmd(ctx, paths, porcelain):
     """Show which index.md files are missing or stale.
+
+    \b
+    PATH arguments are relative to the repo root (e.g. wirecell/util).
+    Use the special value 'all' to check every module directory.
 
     Exits with status 1 if any file needs regeneration.
     """
-    dirs = _find_module_dirs()
+    if not paths:
+        click.echo(ctx.get_help())
+        ctx.exit()
+
     rr = _repo_root()
+    pkg_root = _pkg_root()
+
+    if len(paths) == 1 and paths[0] == 'all':
+        dirs = _find_module_dirs(pkg_root)
+    else:
+        dirs = []
+        for p in paths:
+            dirpath = Path(p)
+            if not dirpath.is_absolute():
+                dirpath = rr / dirpath
+            if not dirpath.is_dir():
+                raise click.BadParameter(f'not a directory: {p}', param_hint='PATH')
+            dirs.append(dirpath)
+
     any_bad = False
     for d in dirs:
         status, reasons = _check_one(d)
@@ -381,21 +404,28 @@ def check_cmd(porcelain):
 
 @cli.command("prompt")
 @click.argument("path", required=False, default=None, metavar="[PATH]")
+@click.option("--monolith", is_flag=True,
+              help="Emit one combined prompt for all stale/missing dirs  [option B]")
 @click.option("--script", is_flag=True,
               help="Emit a shell script piping per-dir prompts to $WCPY_LLM  [option C]")
 @click.option("--force", is_flag=True,
               help="Include up-to-date dirs as well as stale/missing ones")
 @click.option("-o", "--output", default="-", metavar="FILE",
               help="Write output to FILE instead of stdout")
-def prompt_cmd(path, script, force, output):
+@click.pass_context
+def prompt_cmd(ctx, path, monolith, script, force, output):
     """Emit an LLM prompt (or shell script) to regenerate stale index.md files.
 
     \b
     Three modes:
       A  wcpy docs prompt wirecell/util   single-directory prompt
-      B  wcpy docs prompt                 one combined prompt for all stale dirs
+      B  wcpy docs prompt --monolith      one combined prompt for all stale dirs
       C  wcpy docs prompt --script        shell script using $WCPY_LLM per dir
     """
+    if not path and not monolith and not script:
+        click.echo(ctx.get_help())
+        ctx.exit()
+
     pkg_root = _pkg_root()
     rr = _repo_root()
 
@@ -466,26 +496,8 @@ def apply_cmd(infile, dry_run):
         click.echo(f'\n(dry run — {len(found)} file(s) not written)')
 
 
-@cli.command("show")
-@click.argument("path", required=False, default=None, metavar="[PATH]")
-@click.option("--json", "as_json", is_flag=True,
-              help="Emit JSON with 'meta' and 'body' keys instead of formatted text")
-def show_cmd(path, as_json):
-    """Display an index.md with terminal formatting (or as JSON).
-
-    PATH may be a directory (reads its index.md) or a direct path to an
-    index.md file.  Defaults to the package-root index.md.
-    """
-    pkg_root = _pkg_root()
-    if path is None:
-        index_path = pkg_root / 'index.md'
-    else:
-        p = Path(path)
-        index_path = (p / 'index.md') if p.is_dir() else p
-
-    if not index_path.exists():
-        raise click.ClickException(f'not found: {index_path}')
-
+def _show_one(index_path, as_json):
+    """Display a single index.md file."""
     meta, body = _parse_frontmatter(index_path)
 
     if as_json:
@@ -509,6 +521,47 @@ def show_cmd(path, as_json):
         click.echo(click.style('─' * 40, dim=True))
         for k, v in meta.items():
             click.echo(click.style(f'{k}: {v}', dim=True))
+
+
+@cli.command("show")
+@click.argument("paths", nargs=-1, metavar="PATH|all|top")
+@click.option("--json", "as_json", is_flag=True,
+              help="Emit JSON with 'meta' and 'body' keys instead of formatted text")
+@click.pass_context
+def show_cmd(ctx, paths, as_json):
+    """Display one or more index.md files with terminal formatting (or as JSON).
+
+    \b
+    PATH may be a directory (reads its index.md) or a direct path to an index.md.
+    Special values:
+      top   the package-root index.md
+      all   every existing index.md under the package root
+    """
+    if not paths:
+        click.echo(ctx.get_help())
+        ctx.exit()
+
+    pkg_root = _pkg_root()
+    rr = _repo_root()
+
+    index_paths = []
+    for p in paths:
+        if p == 'top':
+            index_paths.append(pkg_root / 'index.md')
+        elif p == 'all':
+            for d in _find_module_dirs(pkg_root):
+                idx = d / 'index.md'
+                if idx.exists():
+                    index_paths.append(idx)
+        else:
+            pp = Path(p)
+            ip = (pp / 'index.md') if pp.is_dir() else pp
+            index_paths.append(ip)
+
+    for index_path in index_paths:
+        if not index_path.exists():
+            raise click.ClickException(f'not found: {index_path}')
+        _show_one(index_path, as_json)
 
 
 def main():
