@@ -652,13 +652,16 @@ def configured_spectra(type, name, data, coupling, output, cfgfile):
 @click.option("--adc-per-mv", default=None, type=float, help="Override ADC counts per mV.")
 @click.option("--adc-tick",   default=None, type=str,   help="Override DAQ tick, e.g. '500*ns'.")
 @click.option("--chndb-resp", default=None, type=str,   help="Path to chndb-resp.jsonnet for overlay.")
+@click.option("--output-window", default=None, type=str,
+              help="Working time window for FR⊗ER convolution, e.g. '160*us'. "
+                   "Pads FR/ER to avoid circular-convolution wraparound.")
 @click.option("--export-jsonnet", default=None, type=str,
               help="Write chndb-resp-style jsonnet (u_resp/v_resp) to this path.")
 @click.option("-o", "--output-dir", default=".", show_default=True,
               help="Directory for output PNG files.")
 @click.pass_context
 def track_response(ctx, detector, fr, er, gain, shaping, postgain, adc_per_mv,
-                   adc_tick, chndb_resp, export_jsonnet, output_dir):
+                   adc_tick, chndb_resp, output_window, export_jsonnet, output_dir):
     """Compute and plot the FR⊗ER perpendicular-line track response per plane (U, V).
 
     Loads per-detector defaults from track_response_defaults.jsonnet; individual
@@ -678,7 +681,7 @@ def track_response(ctx, detector, fr, er, gain, shaping, postgain, adc_per_mv,
         detector,
         fr=fr, er_file=er, gain=gain, shaping=shaping,
         postgain=postgain, adc_per_mv=adc_per_mv, adc_tick=adc_tick,
-        chndb_resp=chndb_resp,
+        chndb_resp=chndb_resp, output_window=output_window,
     )
 
     log.debug(f"Loading FR: {cfg['fr']}")
@@ -716,7 +719,7 @@ def track_response(ctx, detector, fr, er, gain, shaping, postgain, adc_per_mv,
     }.get(detector, detector)
 
     if export_jsonnet:
-        export_chndb_resp(waves, cfg, export_jsonnet)
+        export_chndb_resp(waves, cfg, export_jsonnet, detector=detector)
         click.echo(f"  wrote {export_jsonnet}")
 
     os.makedirs(output_dir, exist_ok=True)

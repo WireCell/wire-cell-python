@@ -13,6 +13,10 @@
 //               PDHD and PDVD-bottom have a 512→500 ns resampler upstream so NF
 //               and chndb-resp comparison always run at 500 ns post-resampler)
 //   chndb_resp - path to chndb-resp.jsonnet for overlay (null = skip overlay)
+//   output_window - optional working time window for FR⊗ER convolution.
+//               When set and longer than the FR file's native window, FR/ER
+//               are zero-padded to this length to avoid circular-convolution
+//               wraparound on long bipolar tails (e.g. PDVD induction).
 {
     uboone: {
         fr:         "ub-10-half.json.bz2",
@@ -56,7 +60,10 @@
         postgain:   1.1365,
         adc_per_mv: 11.70,
         adc_tick:   "500*ns",
-        chndb_resp: "pgrapher/experiment/protodunevd/chndb-resp.jsonnet",
+        chndb_resp: "pgrapher/experiment/protodunevd/chndb-resp-bot.jsonnet",
+        // PDVD FR file is ~132.5 µs; bipolar induction tail wraps without
+        // additional padding. Extend the convolution buffer to 160 µs.
+        output_window: "160*us",
     },
     "pdvd-top": {
         fr:         "protodunevd_FR_norminal_260324.json.bz2",
@@ -67,6 +74,8 @@
         postgain:   1.52,
         adc_per_mv: 8.192,
         adc_tick:   "500*ns",
-        chndb_resp: "pgrapher/experiment/protodunevd/chndb-resp.jsonnet",
+        chndb_resp: "pgrapher/experiment/protodunevd/chndb-resp-top.jsonnet",
+        // See pdvd-bottom comment.
+        output_window: "160*us",
     },
 }
