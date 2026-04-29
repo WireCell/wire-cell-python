@@ -1,0 +1,77 @@
+#+title: ~wirecell-sigproc~
+
+The ~wirecell-sigproc~ CLI provides commands related to WCT signal
+processing (the ~sigproc/~ subpackage).  See main and command help.
+
+#+begin_example
+wirecell-sigproc -h
+#+end_example
+
+* Track response
+
+The ~track-response~ subcommand computes the FR⊗ER perpendicular-line
+track response for U and V planes of a given detector and writes
+two-panel PNG plots (ADC waveform + |FFT| spectrum) with a chndb-resp
+overlay for comparison.
+
+#+begin_example
+wirecell-sigproc track-response --help
+#+end_example
+
+** Supported detectors
+
+| Detector flag   | Description                           |
+|-----------------+---------------------------------------|
+| ~uboone~        | MicroBooNE                            |
+| ~sbnd~          | SBND                                  |
+| ~pdhd~          | ProtoDUNE-HD                          |
+| ~pdvd-bottom~   | ProtoDUNE-VD bottom CRP               |
+| ~pdvd-top~      | ProtoDUNE-VD top CRP (JsonElecResponse) |
+
+** Basic usage
+
+Run with detector defaults (FR file, electronics, ADC parameters, and
+chndb-resp overlay path are all resolved via ~WIRECELL_PATH~):
+
+#+begin_example
+wirecell-sigproc track-response -d pdhd -o /tmp/tr
+#+end_example
+
+Produces ~track_response_pdhd_U.png~ and ~track_response_pdhd_V.png~
+in ~/tmp/tr~.
+
+** Overriding defaults
+
+Any default can be overridden on the command line:
+
+#+begin_example
+wirecell-sigproc track-response -d uboone \
+    --gain "14.0*mV/fC" --shaping "2.2*us" \
+    --postgain 1.2 --adc-per-mv 2.048 --adc-tick "500*ns" \
+    --fr ub-10-half.json.bz2 \
+    --chndb-resp pgrapher/experiment/uboone/chndb-resp.jsonnet \
+    -o /tmp/tr
+#+end_example
+
+The ~--gain~, ~--shaping~, and ~--adc-tick~ options accept
+WireCell unit expressions (e.g. ~"14.0*mV/fC"~, ~"2.2*us"~).
+
+** Implementation notes
+
+- Field response files are loaded via ~wirecell.sigproc.response.persist.load~
+  and resolved through ~WIRECELL_PATH~.
+- The line-source integral uses the per-region mirror + non-uniform
+  trapezoidal recipe (Option B), which correctly handles FR files that
+  store impacts on only one side of the wire centerline per region
+  (~ub-10-half~, ~dune-garfield-1d565~, ~protodunevd_FR_norminal_260324~).
+  The built-in ~response.average()~ is *not* used because it normalises
+  each region to a full pitch regardless of actual impact coverage,
+  which overweights odd regions in these half-stored files.
+- For ~pdvd-top~ the electronics response is loaded from a
+  ~JsonElecResponse~ JSON.bz2 file (~dunevd-coldbox-elecresp-top-psnorm_400.json.bz2~)
+  rather than the parametric cold-electronics model.
+- Per-detector defaults (FR file, ER kind, gain, shaping, postgain,
+  ADC/mV, ADC tick, chndb-resp path) live in
+  ~wirecell/sigproc/track_response_defaults.jsonnet~.
+  Unit-bearing strings are evaluated via ~wirecell.util.functions.unitify~
+  so all internal arithmetic stays in WC units.
