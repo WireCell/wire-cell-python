@@ -760,6 +760,24 @@ def wire_channel_map(ctx, input_file):
             wires.sort()
             click.echo("%s\t%s" %(c,wires))
 
+@cli.command("wire-dict")
+@jsonnet_loader("wires", "wires")
+@click.option("-o", "--output", default="/dev/stdout",
+              help="Output file")
+def wire_summary(output, wires):
+    '''
+    Dump a wires file store converted to dict form.
+    '''
+    import wirecell.util.wires.info as winfo
+    import wirecell.util.wires.persist as wper
+
+    # wash initial dict through schema to assure it is valid
+    store = wper.fromdict(wires)
+    dets = winfo.todict(store)
+    with open(output, "w") as fp:
+        fp.write(json.dumps(dets, indent=4))
+
+
 @cli.command("wire-summary")
 @jsonnet_loader("wires", "wires")
 @click.option("-o", "--output", default="/dev/stdout",
