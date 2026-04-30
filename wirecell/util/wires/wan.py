@@ -95,6 +95,57 @@ def face(f):
     return {p['ident']: plane(p) for p in f['planes']}
 
 
+def anode_channels(a):
+    '''Return the set of channel IDs owned by an anode (segment-0 wires only).
+
+    Parameters
+    ----------
+    a : dict
+        One anode object from ``info.todict()``.
+
+    Returns
+    -------
+    set of int
+    '''
+    chids = set()
+    for f in a['faces']:
+        for p in f['planes']:
+            for w in p['wires']:
+                if w['segment'] == 0:
+                    chids.add(w['channel'])
+    return chids
+
+
+def anode_partition(detector, chids):
+    '''Partition a collection of channel IDs by which anode provides them.
+
+    Parameters
+    ----------
+    detector : dict
+        One detector object from ``info.todict()``, i.e.::
+
+            {"ident": <int>, "anodes": [<anode dict>, ...]}
+
+    chids : iterable of int
+        Channel IDs to partition.
+
+    Returns
+    -------
+    dict
+        ``{anode_ident (int): set_of_chids}`` — each value is the subset of
+        *chids* whose segment-0 wires belong to that anode.  Anodes that
+        share no channel with *chids* are omitted from the result.  A channel
+        that does not appear in any anode is silently dropped.
+    '''
+    wanted = set(chids)
+    result = {}
+    for a in detector['anodes']:
+        owned = anode_channels(a) & wanted
+        if owned:
+            result[a['ident']] = owned
+    return result
+
+
 def anode_faces(a, det=None):
     '''Return an ordered list of face ident numbers for an anode.
 

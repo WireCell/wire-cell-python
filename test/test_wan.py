@@ -208,20 +208,139 @@ def test_anode_faces_single():
 
 
 # ---------------------------------------------------------------------------
+# Helpers for anode_channels / anode_partition
+# ---------------------------------------------------------------------------
+
+def make_detector_two_anodes():
+    '''Detector with two anodes owning disjoint channel sets.
+
+    Anode 0: channels 0-5 (two faces, one plane each)
+    Anode 1: channels 10-15 (two faces, one plane each)
+    '''
+    def anode_with_channels(ident, ch_start):
+        face0 = make_face(0, [make_plane(0, [y_wire(ch, 0, float(i)) for i, ch in enumerate(range(ch_start, ch_start + 3))])])
+        face1 = make_face(1, [make_plane(1, [y_wire(ch, 0, float(i)) for i, ch in enumerate(range(ch_start + 3, ch_start + 6))])])
+        return make_anode(ident, [face0, face1])
+
+    return dict(ident=0, anodes=[anode_with_channels(0, 0), anode_with_channels(1, 10)])
+
+
+# ---------------------------------------------------------------------------
+# wan.anode_channels() tests
+# ---------------------------------------------------------------------------
+
+def test_anode_channels_returns_set():
+    det = make_detector_two_anodes()
+    a = det['anodes'][0]
+    result = wan.anode_channels(a)
+    assert isinstance(result, set)
+
+
+def test_anode_channels_correct_set():
+    det = make_detector_two_anodes()
+    assert wan.anode_channels(det['anodes'][0]) == {0, 1, 2, 3, 4, 5}
+    assert wan.anode_channels(det['anodes'][1]) == {10, 11, 12, 13, 14, 15}
+
+
+def test_anode_channels_segment0_only():
+    '''Segment > 0 wires are not counted as owned channels.'''
+    intruder = y_wire(99, 1, 0.0)   # segment=1
+    p = make_plane(0, [y_wire(0, 0, 1.0), intruder])
+    a = make_anode(0, [make_face(0, [p])])
+    assert wan.anode_channels(a) == {0}
+
+
+def test_anode_channels_empty_anode():
+    a = make_anode(0, [])
+    assert wan.anode_channels(a) == set()
+
+
+# ---------------------------------------------------------------------------
+# wan.anode_partition() tests
+# ---------------------------------------------------------------------------
+
+def test_anode_partition_returns_dict():
+    det = make_detector_two_anodes()
+    result = wan.anode_partition(det, [0, 1, 10])
+    assert isinstance(result, dict)
+
+
+def test_anode_partition_basic():
+    det = make_detector_two_anodes()
+    result = wan.anode_partition(det, [0, 1, 2, 3, 4, 5, 10, 11])
+    assert result[0] == {0, 1, 2, 3, 4, 5}
+    assert result[1] == {10, 11}
+
+
+def test_anode_partition_subset():
+    '''Only the requested chids appear in the result.'''
+    det = make_detector_two_anodes()
+    result = wan.anode_partition(det, [1, 3, 11])
+    assert result[0] == {1, 3}
+    assert result[1] == {11}
+
+
+def test_anode_partition_empty_input():
+    det = make_detector_two_anodes()
+    result = wan.anode_partition(det, [])
+    assert result == {}
+
+
+def test_anode_partition_unknown_chids_dropped():
+    '''Channel IDs not owned by any anode are silently omitted.'''
+    det = make_detector_two_anodes()
+    result = wan.anode_partition(det, [0, 999])
+    assert 999 not in result.get(0, set())
+    assert all(999 not in s for s in result.values())
+
+
+def test_anode_partition_empty_anode_omitted():
+    '''Anodes with no matching channels are absent from the result dict.'''
+    det = make_detector_two_anodes()
+    # only request channels from anode 0
+    result = wan.anode_partition(det, [0, 1, 2])
+    assert 1 not in result
+    assert 0 in result
+
+
+def test_anode_partition_all_channels():
+    '''Passing all channels covers every anode.'''
+    det = make_detector_two_anodes()
+    all_ch = list(range(6)) + list(range(10, 16))
+    result = wan.anode_partition(det, all_ch)
+    assert set(result.keys()) == {0, 1}
+    assert result[0] == set(range(6))
+    assert result[1] == set(range(10, 16))
+
+
+def test_anode_partition_values_are_sets():
+    det = make_detector_two_anodes()
+    result = wan.anode_partition(det, [0, 10])
+    for v in result.values():
+        assert isinstance(v, set)
+
+
+# ---------------------------------------------------------------------------
 # Integration smoke-test against a real detector file
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(scope="module")
-def pdsp_anode():
-    '''Load the first anode of the pdsp detector.  Skips if not available.'''
+def pdsp_detector():
+    '''Load the full pdsp detector dict.  Skips if not available.'''
     try:
         from wirecell.util.wires import persist as wpersist
         from wirecell.util.wires import info as winfo
         store = wpersist.load("pdsp")
         d = winfo.todict(store)
-        return d[0]['anodes'][0]
+        return d[0]
     except Exception as exc:
         pytest.skip(f"pdsp wire file not available: {exc}")
+
+
+@pytest.fixture(scope="module")
+def pdsp_anode(pdsp_detector):
+    '''Return the first anode of the pdsp detector.'''
+    return pdsp_detector['anodes'][0]
 
 
 def test_pdsp_anode_faces(pdsp_anode):
@@ -281,3 +400,47 @@ def test_pdsp_pitch_strictly_increasing(pdsp_anode):
             assert np.all(diffs > 0), (
                 f"plane {p['ident']} has non-strictly-increasing pitch positions"
             )
+
+
+def test_pdsp_anode_partition_covers_all(pdsp_detector):
+    '''anode_partition on the full channel set returns every anode and every channel.'''
+    # Collect every channel in the detector.
+    all_ch = set()
+    for a in pdsp_detector['anodes']:
+        all_ch |= wan.anode_channels(a)
+
+    result = wan.anode_partition(pdsp_detector, all_ch)
+
+    # Every anode must appear.
+    expected_anode_idents = {a['ident'] for a in pdsp_detector['anodes']}
+    assert set(result.keys()) == expected_anode_idents
+
+    # The union of all partitions equals the full channel set.
+    union = set()
+    for s in result.values():
+        union |= s
+    assert union == all_ch
+
+
+def test_pdsp_anode_partition_disjoint(pdsp_detector):
+    '''Each channel belongs to exactly one anode in the partition.'''
+    all_ch = set()
+    for a in pdsp_detector['anodes']:
+        all_ch |= wan.anode_channels(a)
+
+    result = wan.anode_partition(pdsp_detector, all_ch)
+
+    seen = set()
+    for s in result.values():
+        assert seen.isdisjoint(s), "channel appears in more than one anode partition"
+        seen |= s
+
+
+def test_pdsp_anode_partition_subset(pdsp_detector):
+    '''Requesting a subset of channels returns only those channels.'''
+    # grab a handful of channels from the first anode only
+    first_anode = pdsp_detector['anodes'][0]
+    sample = list(wan.anode_channels(first_anode))[:10]
+    result = wan.anode_partition(pdsp_detector, sample)
+    assert set(result.keys()) == {first_anode['ident']}
+    assert result[first_anode['ident']] == set(sample)
