@@ -53,8 +53,33 @@ wirecell-sigproc track-response -d uboone \
     -o /tmp/tr
 #+end_example
 
-The ~--gain~, ~--shaping~, and ~--adc-tick~ options accept
-WireCell unit expressions (e.g. ~"14.0*mV/fC"~, ~"2.2*us"~).
+The ~--gain~, ~--shaping~, ~--adc-tick~, and ~--output-window~ options accept
+WireCell unit expressions (e.g. ~"14.0*mV/fC"~, ~"2.2*us"~, ~"160*us"~).
+
+~--output-window~ extends the FR/ER convolution buffer beyond the FR file's
+native length.  This is needed when the FR file is shorter than the detector's
+bipolar induction tail: without padding the FFT-based ~convolve()~ wraps the
+trailing recovery region back into the early bins.  Both ~pdvd-bottom~ and
+~pdvd-top~ default to ~"160*us"~ (the PDVD FR file native length is ~132.5 µs).
+
+** Exporting a chndb-resp.jsonnet kernel
+
+Use ~--export-jsonnet PATH~ to write a ~chndb-resp~-style jsonnet file
+(~{u_resp:[...], v_resp:[...]}~) alongside the PNGs.  The arrays contain
+the FR⊗ER × ADC waveform digitised at the detector's post-resampler tick
+(500 ns for all detectors) at the reference electronics parameters stored
+in ~track_response_defaults.jsonnet~.
+
+#+begin_example
+wirecell-sigproc track-response -d pdhd \
+    -o /tmp/tr \
+    --export-jsonnet /tmp/tr/chndb-resp.jsonnet
+#+end_example
+
+The header comment in the generated file records the exact parameters used.
+When the kernel is loaded into ~chndb-base.jsonnet~ the waveform should be
+scaled by ~gain_scale = params.elec.gain / (14*wc.mV/wc.fC)~ to compensate
+for any runtime FE gain that differs from the reference 14 mV/fC.
 
 ** Implementation notes
 
@@ -71,7 +96,10 @@ WireCell unit expressions (e.g. ~"14.0*mV/fC"~, ~"2.2*us"~).
   ~JsonElecResponse~ JSON.bz2 file (~dunevd-coldbox-elecresp-top-psnorm_400.json.bz2~)
   rather than the parametric cold-electronics model.
 - Per-detector defaults (FR file, ER kind, gain, shaping, postgain,
-  ADC/mV, ADC tick, chndb-resp path) live in
+  ADC/mV, ADC tick, chndb-resp path, output_window) live in
   ~wirecell/sigproc/track_response_defaults.jsonnet~.
   Unit-bearing strings are evaluated via ~wirecell.util.functions.unitify~
   so all internal arithmetic stays in WC units.
+- For PDVD the two CRP electronics sets use separate chndb-resp files:
+  ~chndb-resp-bot.jsonnet~ (cold ER, gain 7.8 mV/fC) and
+  ~chndb-resp-top.jsonnet~ (JsonElecResponse, postgain 1.52).
