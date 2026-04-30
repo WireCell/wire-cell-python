@@ -170,6 +170,71 @@ def test_face_single_plane():
 
 
 # ---------------------------------------------------------------------------
+# wan.anode_chids() tests
+# ---------------------------------------------------------------------------
+
+def make_two_plane_anode():
+    '''Anode with one face and two planes.
+
+    Face 0, plane 0: channels 20, 10, 30 at z = 2, 1, 3  → WAN order [10, 20, 30]
+    Face 0, plane 1: channels 5, 6, 4   at z = 5, 6, 4   → WAN order [4, 5, 6]
+    Expected anode_chids: [10, 20, 30, 4, 5, 6]  (plane 0 then plane 1)
+    '''
+    p0 = make_y_plane([2.0, 1.0, 3.0], channels=[20, 10, 30])
+    p1 = make_plane(1, [y_wire(ch, 0, z) for ch, z in zip([5, 6, 4], [5.0, 6.0, 4.0])])
+    f = make_face(0, [p0, p1])
+    return make_anode(0, [f])
+
+
+def test_anode_chids_returns_list():
+    a = make_two_plane_anode()
+    result = wan.anode_chids(a)
+    assert isinstance(result, list)
+
+
+def test_anode_chids_order():
+    '''Channels come out: plane 0 in pitch order, then plane 1 in pitch order.'''
+    a = make_two_plane_anode()
+    assert wan.anode_chids(a) == [10, 20, 30, 4, 5, 6]
+
+
+def test_anode_chids_two_faces():
+    '''Two faces: face 0 plane 0, then face 1 plane 0.'''
+    face0 = make_face(0, [make_y_plane([2.0, 1.0], channels=[20, 10])])
+    face1 = make_face(1, [make_y_plane([4.0, 3.0], channels=[40, 30])])
+    a = make_anode(0, [face0, face1])
+    # face 0: [10, 20], face 1: [30, 40]
+    assert wan.anode_chids(a) == [10, 20, 30, 40]
+
+
+def test_anode_chids_planes_sorted_by_ident():
+    '''Planes within a face are ordered by ascending plane ident, not storage order.'''
+    # Store plane 1 before plane 0 in the list; anode_chids must sort by ident.
+    p1 = make_plane(1, [y_wire(99, 0, 0.0)])   # ident=1, would be first if unsorted
+    p0 = make_plane(0, [y_wire(7, 0, 1.0)])    # ident=0, should come first
+    f = make_face(0, [p1, p0])                 # intentionally backwards storage order
+    a = make_anode(0, [f])
+    assert wan.anode_chids(a) == [7, 99]       # ident 0 before ident 1
+
+
+def test_anode_chids_no_duplicates():
+    a = make_two_plane_anode()
+    chids = wan.anode_chids(a)
+    assert len(chids) == len(set(chids))
+
+
+def test_anode_chids_matches_anode_channels():
+    '''The set of anode_chids equals anode_channels.'''
+    a = make_two_plane_anode()
+    assert set(wan.anode_chids(a)) == wan.anode_channels(a)
+
+
+def test_anode_chids_empty_anode():
+    a = make_anode(0, [])
+    assert wan.anode_chids(a) == []
+
+
+# ---------------------------------------------------------------------------
 # wan.anode_faces() tests
 # ---------------------------------------------------------------------------
 
@@ -400,6 +465,17 @@ def test_pdsp_pitch_strictly_increasing(pdsp_anode):
             assert np.all(diffs > 0), (
                 f"plane {p['ident']} has non-strictly-increasing pitch positions"
             )
+
+
+def test_pdsp_anode_chids_count(pdsp_anode):
+    '''anode_chids returns exactly the same channels as anode_channels.'''
+    chids = wan.anode_chids(pdsp_anode)
+    assert set(chids) == wan.anode_channels(pdsp_anode)
+
+
+def test_pdsp_anode_chids_no_duplicates(pdsp_anode):
+    chids = wan.anode_chids(pdsp_anode)
+    assert len(chids) == len(set(chids))
 
 
 def test_pdsp_anode_partition_covers_all(pdsp_detector):

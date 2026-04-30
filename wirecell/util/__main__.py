@@ -1612,6 +1612,52 @@ def frame_block(output, channel_start, channel_count, tick_start, tick_count, de
 
 
 
+@cli.command("frame-wan-block")
+@click.option("-o", "--output", default="/dev/stdout", help="Output filename")
+@click.option("-w", "--wires", required=True, type=str,
+              help="Wire file or canonical detector name used to define WAN channel ordering")
+@click.argument("framefile")
+def frame_wan_block(output, wires, framefile):
+    '''
+    Reorder and zero-pad a frame file into per-anode WAN-ordered frames.
+
+    For each frame in FRAMEFILE and each anode that contributes channels to
+    that frame, one output frame is produced.  Its rows span all channels owned
+    by the anode in WAN order (face → plane → increasing pitch), zero-padded
+    wherever the input had no data.
+
+    The --wires argument is passed to wirecell.util.wires.persist.load(), so it
+    accepts either a path to a .json/.json.bz2 wire file or a canonical detector
+    name (e.g. "pdhd", "pdsp") found on WIRECELL_PATH.
+
+    Output array naming: input tag and frame number are preserved; the anode
+    ident is appended to the tag.  For example, frame_sig_0 produces
+    frame_sig_a0_0 (anode 0) and frame_sig_a1_0 (anode 1).
+    '''
+    import numpy
+    from wirecell.util import frames as frmod
+    from wirecell.util.wires import persist as wpersist, info as winfo
+
+    store = wpersist.load(wires)
+    det = winfo.todict(store)[0]   # first (and usually only) detector
+
+    out_arrays = {}
+
+    for fr in frmod.load(framefile):
+        _, tag, num = fr.name.split("_")
+
+        anode_frames = frmod.wan_pad(fr, det, detname=wires)
+
+        for anode_ident, afr in sorted(anode_frames.items()):
+            new_tag = f'{tag}_a{anode_ident}'
+            out_arrays[f'frame_{new_tag}_{num}']    = afr.samples
+            out_arrays[f'channels_{new_tag}_{num}'] = afr.channels
+            out_arrays[f'tickinfo_{new_tag}_{num}'] = numpy.array(
+                [afr.tref, afr.period, afr.tbin])
+
+    numpy.savez_compressed(output, **out_arrays)
+
+
 @cli.command("framels")
 @click.option("-o", "--output", default="/dev/stdout", help="Output filename")
 @click.argument("framefile")
@@ -1619,26 +1665,9 @@ def framels(output, framefile):
     '''
     Print information about a frame file
     '''
-    import numpy
-    f = numpy.load(framefile)
-
-    # fixme: make more flexible as for order.
-
-    assert f.files[0].startswith("frame_")
-    fr = f[f.files[0]]
-    _,tag,ident = f.files[0].split("_")
-
-    assert f.files[1].startswith("channels_")
-    ch = f[f.files[1]]
-
-    assert f.files[2].startswith("tickinfo_")
-    ti = f[f.files[2]]
-
-    summary = dict(tag=tag, ident=int(ident),
-                   shape=fr.shape,
-                   chmin=int(numpy.min(ch)), chmax=int(numpy.max(ch)),
-                   t0=ti[0], tick=ti[1], tbin=int(ti[2]))
-    open(output,"w").write(json.dumps(summary, indent=4) + "\n")
+    from wirecell.util import frames as frmod
+    dat = [f.summary for f in frmod.load(framefile)]
+    open(output,"w").write(json.dumps(dat, indent=4) + "\n")
 
 def main():
     cli(obj=dict())

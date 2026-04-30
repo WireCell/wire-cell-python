@@ -146,6 +146,42 @@ def anode_partition(detector, chids):
     return result
 
 
+def anode_chids(a, det=None):
+    '''Return a flat, WAN-ordered list of all CHIDs for an anode.
+
+    The ordering is deterministic and hierarchical:
+
+    * Faces are visited in ``anode_faces(a, det)`` order (natural storage order
+      by default).
+    * Within each face, planes are visited in ascending plane-ident order
+      (0 = U induction, 1 = V induction, 2 = W/X collection).
+    * Within each plane, channels are in WAN pitch order (``plane()``).
+
+    This list defines the canonical row layout used by ``frames.wan_pad``:
+    row *i* in the output array belongs to ``anode_chids(a)[i]``.
+
+    Parameters
+    ----------
+    a : dict
+        One anode object from ``info.todict()``.
+    det : ignored
+        Passed through to ``anode_faces()``; reserved for future face-ordering
+        changes.
+
+    Returns
+    -------
+    list of int
+        All CHIDs owned by the anode (segment-0 wires only) in WAN order.
+    '''
+    face_by_ident = {f['ident']: f for f in a['faces']}
+    chids = []
+    for fid in anode_faces(a, det=det):
+        face_planes = face(face_by_ident[fid])       # {plane_ident: [chid, ...]}
+        for pid in sorted(face_planes.keys()):
+            chids.extend(face_planes[pid])
+    return chids
+
+
 def anode_faces(a, det=None):
     '''Return an ordered list of face ident numbers for an anode.
 
