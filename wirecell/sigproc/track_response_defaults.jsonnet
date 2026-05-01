@@ -52,7 +52,7 @@
         chndb_resp: "pgrapher/experiment/pdhd/chndb-resp.jsonnet",
     },
     "pdvd-bottom": {
-        fr:         "protodunevd_FR_norminal_260324.json.bz2",
+        fr:         "protodunevd_FR_imbalance3p_260501.json.bz2",
         er_kind:    "cold",
         er_file:    null,
         gain:       "7.8*mV/fC",
@@ -66,7 +66,7 @@
         output_window: "160*us",
     },
     "pdvd-top": {
-        fr:         "protodunevd_FR_norminal_260324.json.bz2",
+        fr:         "protodunevd_FR_imbalance3p_260501.json.bz2",
         er_kind:    "json",
         er_file:    "dunevd-coldbox-elecresp-top-psnorm_400.json.bz2",
         gain:       null,
