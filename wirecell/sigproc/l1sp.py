@@ -113,7 +113,8 @@ def build_l1sp_kernels(fr_file,
                        fine_time_offset_us=0.0,
                        elec_type='cold',
                        induction_plane_indices=(0, 1),
-                       collection_plane_index=2):
+                       collection_plane_index=2,
+                       frame_origin_plane_index=1):
     '''
     Build the L1SPFilterPD kernel dictionary from a field-response file
     plus electronics parameters.
@@ -174,6 +175,18 @@ def build_l1sp_kernels(fr_file,
             },
         })
 
+    # Global LASSO frame origin: kernel native time corresponding to "source
+    # signal at t = 0" in the LASSO fit.  Per Strategy B (DUNE/PDHD), this is
+    # the bipolar zero crossing of the configured reference induction plane
+    # (typically V).  Both U and V channel fits use this single value as the
+    # overall_time_offset; the per-plane geometric difference between U and V
+    # arrival is already encoded in each plane's kernel shape.
+    by_plane = {p['plane_index']: p for p in planes}
+    if frame_origin_plane_index not in by_plane:
+        raise KeyError(f'frame_origin_plane_index {frame_origin_plane_index} '
+                       f'not in induction_plane_indices={induction_plane_indices}')
+    frame_origin_us = float(by_plane[frame_origin_plane_index]['zero_crossing_us'])
+
     return {
         'meta': {
             'fr_file': fr_file,
@@ -191,6 +204,8 @@ def build_l1sp_kernels(fr_file,
             'fr_speed': float(fr.speed),
             'collection_plane_index': int(collection_plane_index),
             'collection_peak_us': t_pk_W_us,
+            'frame_origin_plane_index': int(frame_origin_plane_index),
+            'frame_origin_us': frame_origin_us,
         },
         'planes': planes,
     }
