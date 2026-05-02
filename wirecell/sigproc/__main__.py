@@ -916,6 +916,69 @@ def fwd(plots, output, detector):
 # - [ ] plot (normalized) signal/noise spectra with shrinkage coefficients overlayed
                 
 
+@cli.command("gen-l1sp-kernels")
+@click.option("-g", "--gain", default="14.0*mV/fC", type=str,
+              help="FE peak gain, e.g. '14*mV/fC'.")
+@click.option("-s", "--shaping", default="2.2*us", type=str,
+              help="FE shaping time, e.g. '2.2*us'.")
+@click.option("--postgain", default=1.2, type=float,
+              help="Post-FE gain factor (L1SPFilterPD default 1.2).")
+@click.option("--adc-per-mv", default=4096.0/2000.0, type=float,
+              help="ADC counts per mV at the input of the digitizer "
+                   "(default 2.048 = 12-bit, 0–2 V fullscale).")
+@click.option("--coarse-time-offset", default="-8.0*us", type=str,
+              help="L1SPFilterPD m_coarse_time_offset (default -8 µs).")
+@click.option("--fine-time-offset", default="0.0*us", type=str,
+              help="L1SPFilterPD m_fine_time_offset (default 0 µs).")
+@click.option("--induction-planes", default="0,1", type=str,
+              help="Comma-separated induction plane indices (default '0,1').")
+@click.option("--collection-plane", default=2, type=int,
+              help="Collection plane index used as positive-case unipolar "
+                   "basis (default 2 = W).")
+@click.option("--elec-type", default="cold", type=str,
+              help="Electronics response model: cold or warm (default cold).")
+@click.argument("fr-file")
+@click.argument("output")
+def gen_l1sp_kernels(gain, shaping, postgain, adc_per_mv,
+                     coarse_time_offset, fine_time_offset,
+                     induction_planes, collection_plane, elec_type,
+                     fr_file, output):
+    '''
+    Generate the L1SPFilterPD response-kernel JSON+bz2 file.
+
+    FR-FILE   : field-response tarball (path or WIRECELL_PATH-relative).
+    OUTPUT    : output path, must end in .json or .json.bz2.
+
+    Example::
+
+        wirecell-sigproc gen-l1sp-kernels \\
+            --gain '14*mV/fC' --shaping '2.2*us' \\
+            --postgain 1.2 --adc-per-mv 2.048 \\
+            --coarse-time-offset '-8*us' \\
+            dune-garfield-1d565.json.bz2  pdhd_l1sp_kernels.json.bz2
+    '''
+    from wirecell.sigproc.l1sp import build_l1sp_kernels, save_l1sp_kernels
+
+    induction_idx = tuple(int(x) for x in induction_planes.split(",") if x.strip())
+
+    data = build_l1sp_kernels(
+        fr_file=fr_file,
+        gain=unitify(gain),
+        shaping=unitify(shaping),
+        postgain=postgain,
+        adc_per_mv=adc_per_mv,
+        coarse_time_offset_us=unitify(coarse_time_offset) / units.us,
+        fine_time_offset_us=unitify(fine_time_offset) / units.us,
+        elec_type=elec_type,
+        induction_plane_indices=induction_idx,
+        collection_plane_index=collection_plane,
+    )
+    save_l1sp_kernels(data, output)
+    log.info(f"wrote {output}: {len(data['planes'])} induction plane(s), "
+             f"n_samples={data['meta']['n_samples']}, "
+             f"period={data['meta']['period_ns']} ns")
+
+
 def main():
     cli(obj=dict())
 

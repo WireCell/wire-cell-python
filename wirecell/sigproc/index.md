@@ -18,6 +18,7 @@ Signal processing toolkit for Wire Cell, covering field response loading and con
 | `test/` | pytest suite for `fwd` module | `test_signal`, `test_detector_response`, `test_noise` |
 | `fwd.py` | ForWaRD signal/noise simulation: Signal, Noise, Convolution classes and plotting | `Signal`, `Noise`, `Convolution`, `DetectorResponse`, `FieldResponse`, `ElecResponse`, `gauss_wave`, `rebin` |
 | `garfield.py` | Load and normalize Garfield `.dat` tarball archives into `ResponseFunction` lists | `load`, `toarrays`, `convert` |
+| `l1sp.py` | Build L1SPFilterPD response-kernel files from FR + electronics | `build_l1sp_kernels`, `save_l1sp_kernels`, `load_l1sp_kernels`, `negative_half` |
 | `track_response.py` | FR⊗ER perpendicular-line track response for wire-plane detectors | `load_detector_config`, `make_track_response`, `make_plot`, `parse_chndb_resp`, `line_source_response` |
 | `plots.py` | Matplotlib plotting utilities for field responses, electronics, and digitized waveforms | `plot_digitized_line`, `garfield_exhaustive`, `one_electronics`, `fine_response`, `plane_impact_blocks` |
 | `minisim.py` | Minimal drift simulation applying response functions to Geant4 hits | `Minisim`, `Hit` |
@@ -44,6 +45,7 @@ Signal processing toolkit for Wire Cell, covering field response loading and con
 | `channel-responses` | Produce per-channel calibrated response JSON from a ROOT TH2D |
 | `plot-configured-spectra` | Plot spectra from a configured WCT noise model component |
 | `track-response` | Compute and plot FR⊗ER perpendicular-line track response per plane (U, V) |
+| `gen-l1sp-kernels` | Build per-detector `L1SPFilterPD` bipolar/unipolar kernel file (JSON+bz2) from a field-response archive |
 | `fwd` | Exercise the ForWaRD technique with track/blip signals and noise |
 
 ## Dependencies
