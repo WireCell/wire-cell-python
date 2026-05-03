@@ -62,9 +62,13 @@ def line_source_response(plane):
 
     by_r = defaultdict(list)
     for path in plane.paths:
+        cur = np.asarray(path.current, dtype=float)
+        # Skip identically-zero sentinel paths (PDVD W FR has one at pp=0).
+        if not np.any(cur):
+            continue
         r  = int(round(path.pitchpos / pitch))
         xi = path.pitchpos - r * pitch
-        by_r[r].append((xi, np.asarray(path.current, dtype=float)))
+        by_r[r].append((xi, cur))
 
     integral = np.zeros(N)
     for items in by_r.values():

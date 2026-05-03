@@ -47,7 +47,8 @@
         gain:       "14.0*mV/fC",
         shaping:    "2.2*us",
         postgain:   1.0,
-        adc_per_mv: 11.70,
+        // 14-bit ADC, 0.2 V – 1.6 V fullscale → 16384 / 1400 mV.
+        adc_per_mv: 16384.0 / 1400.0,
         adc_tick:   "500*ns",
         chndb_resp: "pgrapher/experiment/pdhd/chndb-resp.jsonnet",
     },
@@ -58,7 +59,8 @@
         gain:       "7.8*mV/fC",
         shaping:    "2.2*us",
         postgain:   1.1365,
-        adc_per_mv: 11.70,
+        // Same 14-bit / 1.4 V chip as PDHD bottom electronics.
+        adc_per_mv: 16384.0 / 1400.0,
         adc_tick:   "500*ns",
         chndb_resp: "pgrapher/experiment/protodunevd/chndb-resp-bot.jsonnet",
         // PDVD FR file is ~132.5 µs; bipolar induction tail wraps without
