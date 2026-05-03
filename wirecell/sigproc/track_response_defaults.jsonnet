@@ -58,6 +58,16 @@
         er_file:    null,
         gain:       "7.8*mV/fC",
         shaping:    "2.2*us",
+        // PROVISIONAL: postgain absorbs the ~12% W-plane FR
+        // under-normalisation caused by an all-zero "sentinel" path at
+        // pp=0 in protodunevd_FR_imbalance3p_260501.json.bz2 (calibration
+        // is done through the W collection plane).  PDVD-bottom shares
+        // electronics with PDHD (postgain = 1.0); 1.1365 / 1.0 ≈ 1.137
+        // tracks the FR deficit (peak ×1.124, integral ×1.117).  When
+        // the corrected FR lands, drop postgain to 1.0 and regenerate
+        // wire-cell-data/pdvd_bottom_l1sp_kernels.json.bz2.  See
+        // pdvd/sp_plot/README.md and pdvd/nf_plot/track_response_tool.md
+        // in wcp-porting-validation for the full follow-up checklist.
         postgain:   1.1365,
         // Same 14-bit / 1.4 V chip as PDHD bottom electronics.
         adc_per_mv: 16384.0 / 1400.0,
@@ -73,6 +83,9 @@
         er_file:    "dunevd-coldbox-elecresp-top-psnorm_400.json.bz2",
         gain:       null,
         shaping:    null,
+        // PROVISIONAL: same FR-driven over-correction as pdvd-bottom.
+        // When the corrected FR lands, scale postgain down by ~12%
+        // (≈ 1.52 / 1.117 ≈ 1.36); confirm against a fresh calibration.
         postgain:   1.52,
         adc_per_mv: 8.192,
         adc_tick:   "500*ns",
