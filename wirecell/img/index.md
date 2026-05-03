@@ -20,6 +20,7 @@ Tools for Wire-Cell Toolkit imaging: loading and inspecting cluster graphs, conv
 | `dump_blobs` | Text dump of per-blob signatures for debugging | `bsignature()`, `dump_blobs()` |
 | `dump_bb_clusters` | Text dump of blob-cluster signatures | `csignature()`, `dump_bb_clusters()` |
 | `anidfg` | Animate a TbbFlow data-flow graph from log output | `parse_log()`, `generate_graph()`, `render_graph()` |
+| `test/` | pytest suite for `tap` cluster-graph loader | `test_corners_truncated_to_ncorners`, `test_corners_per_blob_independent_truncation` |
 
 ## CLI Commands
 

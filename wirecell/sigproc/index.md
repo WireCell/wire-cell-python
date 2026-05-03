@@ -15,7 +15,7 @@ Signal processing toolkit for Wire Cell, covering field response loading and con
 | `response/` | Field and electronics response math, schema, arrays, persistence, plots | `ResponseFunction`, `electronics`, `convolve`, `rf1dtoschema`, `persist` |
 | `noise/` | Noise spectrum schema, loaders, persistence, and plots | `NoiseSpectrum`, `load`, `dump`, `plot_many` |
 | `paper/` | Figure generation scripts for signal processing publications | `figure_adc`, `filter_response_functions` |
-| `test/` | pytest suite for `fwd` module | `test_signal`, `test_detector_response`, `test_noise` |
+| `test/` | pytest suite for `fwd`, `l1sp`, and `track_response` modules | `test_signal`, `test_build_l1sp_kernels_*`, `test_load_detector_config_*` |
 | `fwd.py` | ForWaRD signal/noise simulation: Signal, Noise, Convolution classes and plotting | `Signal`, `Noise`, `Convolution`, `DetectorResponse`, `FieldResponse`, `ElecResponse`, `gauss_wave`, `rebin` |
 | `garfield.py` | Load and normalize Garfield `.dat` tarball archives into `ResponseFunction` lists | `load`, `toarrays`, `convert` |
 | `l1sp.py` | Build L1SPFilterPD response-kernel files from FR + electronics | `build_l1sp_kernels`, `save_l1sp_kernels`, `load_l1sp_kernels`, `negative_half` |
