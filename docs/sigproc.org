@@ -102,4 +102,4 @@ for any runtime FE gain that differs from the reference 14 mV/fC.
   so all internal arithmetic stays in WC units.
 - For PDVD the two CRP electronics sets use separate chndb-resp files:
   ~chndb-resp-bot.jsonnet~ (cold ER, gain 7.8 mV/fC) and
-  ~chndb-resp-top.jsonnet~ (JsonElecResponse, postgain 1.52).
+  ~chndb-resp-top.jsonnet~ (JsonElecResponse, postgain 1.36).
