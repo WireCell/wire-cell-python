@@ -9,23 +9,30 @@ This project is managed with [uv](https://github.com/astral-sh/uv).
 ```sh
 uv sync                  # install core dependencies into .venv
 uv sync --all-extras     # also install optional torch/dnn dependencies
-source .venv/bin/activate  # or prefix every command with `uv run`
 ```
 
-The unified CLI entry point is `wcpy` (also aliased as `wirecell`):
+During development, prepend `uv run` to run a command.  
 
 ```sh
-wcpy --help
-wcpy help all            # show every namespace and its commands
-wcpy help wirecell.util  # show just the util namespace (dot or slash notation)
+uv run wcpy              # runs the main program, printing its help message
+uv run wcpy help all     # show every namespace and its commands
+uv run wcpy help wirecell.util  # show just the util namespace (dot or slash notation)
+```
+
+LLM-generated summaries of different modules are in `index.md` files in the source and accessible with `wcpy docs` commands:
+
+```sh
+uv run wcpy docs show wirecell.util # sub-module summary
+uv run wcpy docs show wirecell      # top-level summary
+uv run wcpy docs show all           # all summaries (warning: a lot of text)
 ```
 
 Run tests with the system `pytest` (the venv pytest is currently broken due to a missing `iniconfig` dependency):
 
 ```sh
-pytest test/                                  # top-level test suite
-pytest wirecell/util/test/test_tdm.py         # single test file
-pytest wirecell/util/test/test_tdm.py::test_tree_empty  # single test
+uv run pytest test/                                  # top-level test suite
+uv run pytest wirecell/util/test/test_tdm.py         # single test file
+uv run pytest wirecell/util/test/test_tdm.py::test_tree_empty  # single test
 ```
 
 Build a wheel:
@@ -111,3 +118,51 @@ wcpy docs prompt --script                 # emit shell script using $WCPY_LLM
 wcpy docs apply < llm_output.md          # write FILE blocks from LLM response
 wcpy docs show wirecell.util             # display a module's index.md
 ```
+
+
+<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
+## Beads Issue Tracker
+
+This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
+
+### Quick Reference
+
+```bash
+bd ready              # Find available work
+bd show <id>          # View issue details
+bd update <id> --claim  # Claim work
+bd close <id>         # Complete work
+```
+
+### Rules
+
+- Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
+- Run `bd prime` for detailed command reference and session close protocol
+- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
+
+## Session Completion
+
+**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+
+**MANDATORY WORKFLOW:**
+
+1. **File issues for remaining work** - Create issues for anything that needs follow-up
+2. **Run quality gates** (if code changed) - Tests, linters, builds
+3. **Update issue status** - Close finished work, update in-progress items
+4. **PUSH TO REMOTE** - This is MANDATORY:
+   ```bash
+   git pull --rebase
+   bd dolt push
+   git push
+   git status  # MUST show "up to date with origin"
+   ```
+5. **Clean up** - Clear stashes, prune remote branches
+6. **Verify** - All changes committed AND pushed
+7. **Hand off** - Provide context for next session
+
+**CRITICAL RULES:**
+- Work is NOT complete until `git push` succeeds
+- NEVER stop before pushing - that leaves work stranded locally
+- NEVER say "ready to push when you are" - YOU must push
+- If push fails, resolve and retry until it succeeds
+<!-- END BEADS INTEGRATION -->
