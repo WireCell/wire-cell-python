@@ -351,6 +351,116 @@ def parse_solids(gdml_root) -> dict:
     return tubes
 
 
+def parse_structure(gdml_root, defines: dict, solids: dict) -> dict:
+    """Parse the GDML <structure> section into a logical volume tree.
+
+    Args:
+        gdml_root: Root Element of a parsed GDML document.
+        defines:   Output of :func:`parse_define` — supplies named position
+                   and rotation lookups.
+        solids:    Output of :func:`parse_solids` — currently unused but
+                   accepted for a consistent call signature.
+
+    Returns:
+        ``dict[str, dict]`` mapping each logical volume name to::
+
+            {
+                "solid":    str,          # solidref name
+                "physvols": [             # child placements, in order
+                    {
+                        "name": str,      # physvol name (or volumeref if anonymous)
+                        "vol":  str,      # child logical volume name
+                        "pos":  ndarray,  # translation in mm, shape (3,)
+                        "rot":  ndarray,  # Euler angles in radians (rx,ry,rz), shape (3,)
+                    },
+                    ...
+                ],
+            }
+    """
+    _UNIT_TO_MM = {"mm": 1.0, "cm": 10.0, "m": 1000.0}
+    _UNIT_TO_RAD = {"deg": np.pi / 180.0, "rad": 1.0}
+
+    def _pos_from_elem(elem) -> np.ndarray:
+        unit = elem.get("unit", "mm")
+        scale = _UNIT_TO_MM.get(unit, 1.0)
+        return np.array(
+            [float(elem.get("x", 0.0)) * scale,
+             float(elem.get("y", 0.0)) * scale,
+             float(elem.get("z", 0.0)) * scale],
+            dtype=float,
+        )
+
+    def _rot_from_elem(elem) -> np.ndarray:
+        unit = elem.get("unit", "deg")
+        scale = _UNIT_TO_RAD.get(unit, np.pi / 180.0)
+        return np.array(
+            [float(elem.get("x", 0.0)) * scale,
+             float(elem.get("y", 0.0)) * scale,
+             float(elem.get("z", 0.0)) * scale],
+            dtype=float,
+        )
+
+    positions = defines.get("positions", {})
+    rotations = defines.get("rotations", {})
+    _zero3 = np.zeros(3, dtype=float)
+
+    volumes: dict = {}
+
+    structure = gdml_root.find("structure")
+    if structure is None:
+        return volumes
+
+    for vol_elem in structure.findall("volume"):
+        vol_name = vol_elem.get("name")
+        if vol_name is None:
+            continue
+
+        solid_ref = ""
+        solidref_elem = vol_elem.find("solidref")
+        if solidref_elem is not None:
+            solid_ref = solidref_elem.get("ref", "")
+
+        physvol_list = []
+        for pv_elem in vol_elem.findall("physvol"):
+            volref_elem = pv_elem.find("volumeref")
+            if volref_elem is None:
+                continue
+            child_vol = volref_elem.get("ref", "")
+
+            pv_name = pv_elem.get("name") or child_vol
+
+            # Resolve position
+            posref = pv_elem.find("positionref")
+            pos_inline = pv_elem.find("position")
+            if posref is not None:
+                pos = positions.get(posref.get("ref", ""), _zero3.copy())
+            elif pos_inline is not None:
+                pos = _pos_from_elem(pos_inline)
+            else:
+                pos = _zero3.copy()
+
+            # Resolve rotation
+            rotref = pv_elem.find("rotationref")
+            rot_inline = pv_elem.find("rotation")
+            if rotref is not None:
+                rot = rotations.get(rotref.get("ref", ""), _zero3.copy())
+            elif rot_inline is not None:
+                rot = _rot_from_elem(rot_inline)
+            else:
+                rot = _zero3.copy()
+
+            physvol_list.append({
+                "name": pv_name,
+                "vol": child_vol,
+                "pos": pos,
+                "rot": rot,
+            })
+
+        volumes[vol_name] = {"solid": solid_ref, "physvols": physvol_list}
+
+    return volumes
+
+
 def gdml_transform(pos_xyz_mm, rot_xyz_deg):
     """
     Build a 4x4 local-to-world homogeneous transform from a GDML physvol.
