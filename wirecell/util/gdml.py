@@ -266,6 +266,91 @@ def assign_vd_channels(
     return ch
 
 
+def parse_define(gdml_root) -> dict:
+    """Parse the GDML <define> section into named positions and rotations.
+
+    Args:
+        gdml_root: The root Element of a parsed GDML document.
+
+    Returns:
+        A dict with two keys:
+
+        * ``"positions"`` — ``dict[str, np.ndarray]``: named position vectors
+          in mm (shape ``(3,)``).
+        * ``"rotations"`` — ``dict[str, np.ndarray]``: named rotation Euler
+          angles in **radians** (shape ``(3,)``), ordered ``(rx, ry, rz)`` in
+          the GDML extrinsic X→Y→Z convention.
+    """
+    _UNIT_TO_MM = {"mm": 1.0, "cm": 10.0, "m": 1000.0}
+    _UNIT_TO_RAD = {"deg": np.pi / 180.0, "rad": 1.0}
+
+    positions: dict[str, np.ndarray] = {}
+    rotations: dict[str, np.ndarray] = {}
+
+    define = gdml_root.find("define")
+    if define is None:
+        return {"positions": positions, "rotations": rotations}
+
+    for elem in define:
+        name = elem.get("name")
+        if name is None:
+            continue
+        if elem.tag == "position":
+            unit = elem.get("unit", "mm")
+            scale = _UNIT_TO_MM.get(unit, 1.0)
+            x = float(elem.get("x", 0.0)) * scale
+            y = float(elem.get("y", 0.0)) * scale
+            z = float(elem.get("z", 0.0)) * scale
+            positions[name] = np.array([x, y, z], dtype=float)
+        elif elem.tag == "rotation":
+            unit = elem.get("unit", "deg")
+            scale = _UNIT_TO_RAD.get(unit, np.pi / 180.0)
+            rx = float(elem.get("x", 0.0)) * scale
+            ry = float(elem.get("y", 0.0)) * scale
+            rz = float(elem.get("z", 0.0)) * scale
+            rotations[name] = np.array([rx, ry, rz], dtype=float)
+
+    return {"positions": positions, "rotations": rotations}
+
+
+def parse_solids(gdml_root) -> dict:
+    """Parse the GDML <solids> section and return tube dimensions.
+
+    Only ``<tube>`` elements are returned; box and other solid types are
+    ignored.
+
+    Args:
+        gdml_root: The root Element of a parsed GDML document.
+
+    Returns:
+        ``dict[str, dict]`` mapping each tube solid name to::
+
+            {"rmax": float,   # outer radius in mm
+             "half_z": float} # half-length in mm (GDML z attribute / 2)
+    """
+    _UNIT_TO_MM = {"mm": 1.0, "cm": 10.0, "m": 1000.0}
+
+    tubes: dict[str, dict] = {}
+
+    solids = gdml_root.find("solids")
+    if solids is None:
+        return tubes
+
+    for elem in solids:
+        if elem.tag != "tube":
+            continue
+        name = elem.get("name")
+        if name is None:
+            continue
+        unit = elem.get("lunit", "mm")
+        scale = _UNIT_TO_MM.get(unit, 1.0)
+        rmax = float(elem.get("rmax", 0.0)) * scale
+        full_z = float(elem.get("z", 0.0)) * scale
+        tubes[name] = {"rmax": rmax, "half_z": full_z / 2.0}
+
+    return tubes
+
+
 def gdml_transform(pos_xyz_mm, rot_xyz_deg):
     """
     Build a 4x4 local-to-world homogeneous transform from a GDML physvol.
