@@ -53,6 +53,8 @@ class WireGeom:
     head: Optional[np.ndarray]
     radius: float
     plane_name: str
+    channel: Optional[int] = None
+    segment: Optional[int] = None
 
 
 @dataclass
@@ -145,6 +147,69 @@ def find_cross_face_pairs(
             continue
         pairs.extend(_match_plane_wires(plane0, plane1))
     return pairs
+
+
+def assign_vd_channels(
+    face0: FaceGeom,
+    face1: FaceGeom,
+    start_channel: int = 0,
+    skip_collection: bool = True,
+) -> int:
+    """Assign channel and segment numbers to wires across two VD anode faces.
+
+    Populates ``WireGeom.channel`` and ``WireGeom.segment`` in-place for every
+    wire in ``face0`` and ``face1``.
+
+    Rules (from research wcpy-zv1):
+
+    * **Cross-face connected pair** — found by :func:`find_cross_face_pairs`:
+      both wires share one channel number; the ``face1`` (index-1, higher ident)
+      wire gets ``segment=0``; the ``face0`` (index-0, lower ident) wire gets
+      ``segment=1``.
+    * **Standalone wire** (no cross-face match): ``segment=0``, unique channel.
+
+    Collection planes (``skip_collection=True``) are not matched across faces so
+    all their wires are treated as standalone.
+
+    Args:
+        face0: First face (lower ident, ``segment=1`` for cross-face wires).
+        face1: Second face (higher ident, ``segment=0`` for cross-face wires).
+        start_channel: First channel number to assign (enables global uniqueness
+            when chaining across anodes).
+        skip_collection: If True (default), collection planes are not matched.
+
+    Returns:
+        The next available channel number (= ``start_channel`` + total channels
+        assigned).
+    """
+    ch = start_channel
+
+    # Identify cross-face connected pairs.
+    pairs = find_cross_face_pairs(face0, face1, skip_collection=skip_collection)
+
+    # Track which wires are in a pair (by name, since np.ndarray prevents hashing).
+    matched0: dict[str, int] = {}  # wire.name → assigned channel
+    matched1: dict[str, int] = {}
+
+    for wire0, wire1 in pairs:
+        wire0.channel = ch
+        wire0.segment = 1
+        wire1.channel = ch
+        wire1.segment = 0
+        matched0[wire0.name] = ch
+        matched1[wire1.name] = ch
+        ch += 1
+
+    # Assign standalone channels to all unmatched wires in both faces.
+    for face, matched in ((face0, matched0), (face1, matched1)):
+        for plane in face.planes:
+            for wire in plane.wires:
+                if wire.name not in matched:
+                    wire.channel = ch
+                    wire.segment = 0
+                    ch += 1
+
+    return ch
 
 
 def gdml_transform(pos_xyz_mm, rot_xyz_deg):
