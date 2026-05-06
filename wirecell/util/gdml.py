@@ -81,6 +81,72 @@ class DetectorGeom:
     anodes: list[AnodeGeom] = field(default_factory=list)
 
 
+def _endpoint_key(point: np.ndarray) -> tuple[int, int, int]:
+    """Round a 3-vector to the nearest mm for spatial hashing."""
+    return (int(round(point[0])), int(round(point[1])), int(round(point[2])))
+
+
+def _is_collection_plane(plane: PlaneGeom) -> bool:
+    """True if the plane name indicates a collection (Z or W) plane."""
+    return 'Z' in plane.name or 'W' in plane.name
+
+
+def _match_plane_wires(
+    plane0: PlaneGeom,
+    plane1: PlaneGeom,
+) -> list[tuple[WireGeom, WireGeom]]:
+    """Return (wire_from_plane0, wire_from_plane1) pairs that share an endpoint.
+
+    Matching uses a 1 mm grid hash: two endpoints whose coordinates all round to
+    the same integer mm values are considered coincident.  This handles floating-
+    point noise in GDML world-frame coordinates (GDML endpoints either coincide
+    exactly or are separated by at least the wire pitch, >> 1 mm).
+    Each wire from plane0 appears in at most one returned pair.
+    """
+    # Build endpoint → wire lookup for plane0
+    endpoint_map: dict[tuple[int, int, int], WireGeom] = {}
+    for wire in plane0.wires:
+        for pt in (wire.tail, wire.head):
+            if pt is not None:
+                endpoint_map[_endpoint_key(pt)] = wire
+
+    pairs: list[tuple[WireGeom, WireGeom]] = []
+    matched_wire0_names: set[str] = set()
+    for wire1 in plane1.wires:
+        for pt in (wire1.tail, wire1.head):
+            if pt is None:
+                continue
+            wire0 = endpoint_map.get(_endpoint_key(pt))
+            if wire0 is not None and wire0.name not in matched_wire0_names:
+                pairs.append((wire0, wire1))
+                matched_wire0_names.add(wire0.name)
+                break
+    return pairs
+
+
+def find_cross_face_pairs(
+    face0: FaceGeom,
+    face1: FaceGeom,
+    skip_collection: bool = True,
+) -> list[tuple[WireGeom, WireGeom]]:
+    """Find cross-face connected wire pairs between two faces of the same anode.
+
+    For each corresponding plane pair (matched by position in the ``planes``
+    list), finds wires from ``face0`` and ``face1`` that share a world-frame
+    endpoint.  Collection planes (names containing ``'Z'`` or ``'W'``) are
+    skipped when ``skip_collection=True`` (the default), since VD collection
+    wires are never connected across faces.
+
+    Returns a list of ``(wire_from_face0, wire_from_face1)`` tuples.
+    """
+    pairs: list[tuple[WireGeom, WireGeom]] = []
+    for plane0, plane1 in zip(face0.planes, face1.planes):
+        if skip_collection and _is_collection_plane(plane0):
+            continue
+        pairs.extend(_match_plane_wires(plane0, plane1))
+    return pairs
+
+
 def gdml_transform(pos_xyz_mm, rot_xyz_deg):
     """
     Build a 4x4 local-to-world homogeneous transform from a GDML physvol.
