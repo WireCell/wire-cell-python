@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 from dataclasses import dataclass, field
 from typing import Optional, Union
 
@@ -264,6 +265,45 @@ def assign_vd_channels(
                     ch += 1
 
     return ch
+
+
+def match_role(name: str, patterns: dict) -> Optional[str]:
+    """Return the first role whose regex pattern fully matches *name*, or None.
+
+    Args:
+        name:     A GDML logical volume name.
+        patterns: ``dict[str, str]`` mapping role names to regex strings
+                  (as returned by the ``role_patterns`` key of a detector
+                  config loaded with :func:`load_config`).
+
+    Returns:
+        The matching role name (e.g. ``"wire"``, ``"plane"``), or ``None`` if
+        no pattern matches.
+    """
+    for role, pattern in patterns.items():
+        if re.fullmatch(pattern, name):
+            return role
+    return None
+
+
+def classify_volumes(vol_names, patterns: dict) -> dict:
+    """Partition a collection of volume names into roles.
+
+    Args:
+        vol_names: Iterable of GDML logical volume name strings.
+        patterns:  ``dict[str, str]`` role→regex map (see :func:`match_role`).
+
+    Returns:
+        ``dict[str, list[str]]`` mapping each role to the list of volume names
+        that matched it.  Volumes that match no pattern are silently omitted.
+        The order of names within each role list matches the input order.
+    """
+    result: dict[str, list] = {}
+    for name in vol_names:
+        role = match_role(name, patterns)
+        if role is not None:
+            result.setdefault(role, []).append(name)
+    return result
 
 
 def parse_define(gdml_root) -> dict:
