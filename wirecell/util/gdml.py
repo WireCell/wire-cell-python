@@ -626,6 +626,188 @@ def build_detector_faces(vol_tree: dict, wires_list: list, patterns: dict) -> li
     return faces
 
 
+def sort_wires_by_pitch(plane_geom) -> list:
+    """Return wires in a plane sorted by ascending pitch coordinate.
+
+    The pitch direction is determined geometrically as the principal axis of
+    wire-midpoint displacement perpendicular to the wire direction.
+
+    Args:
+        plane_geom: A :class:`PlaneGeom` whose wires all have valid
+                    ``tail`` and ``head`` endpoints.
+
+    Returns:
+        New list of :class:`WireGeom` objects (same objects, reordered).
+        An empty or single-wire plane is returned as-is.
+    """
+    wires = plane_geom.wires
+    if len(wires) <= 1:
+        return list(wires)
+
+    # Determine wire direction from the first valid wire
+    wire_dir = None
+    for w in wires:
+        d = w.head - w.tail
+        n = np.linalg.norm(d)
+        if n > 1e-9:
+            wire_dir = d / n
+            break
+    if wire_dir is None:
+        return list(wires)
+
+    midpoints = np.array([0.5 * (w.head + w.tail) for w in wires])
+    centroid = midpoints.mean(axis=0)
+    centered = midpoints - centroid
+
+    # Project out the wire-direction component to get the pitch displacement
+    perp = centered - np.outer(centered @ wire_dir, wire_dir)
+
+    # Principal axis of perp displacements = pitch direction (via SVD)
+    _, _, vt = np.linalg.svd(perp, full_matrices=False)
+    pitch_dir = vt[0]
+
+    # Fix sign: ensure the largest-magnitude component is positive so that
+    # the sort is consistent (ascending = toward more-positive dominant axis).
+    dominant = np.argmax(np.abs(pitch_dir))
+    if pitch_dir[dominant] < 0:
+        pitch_dir = -pitch_dir
+
+    projections = perp @ pitch_dir
+    return [w for _, w in sorted(zip(projections, wires))]
+
+
+def sort_planes_by_drift(face_geom) -> list:
+    """Return planes sorted in U→V→W (first-induction to collection) order.
+
+    The drift direction is inferred from the cross product of wire directions
+    belonging to two non-parallel planes.  The cross product points away from
+    the cathode (toward the collection plane).  Planes are sorted by
+    *increasing* projection onto this direction so that U (closest to cathode)
+    comes first.
+
+    Args:
+        face_geom: A :class:`FaceGeom` containing planes with wires.
+
+    Returns:
+        New list of :class:`PlaneGeom` objects (same objects, reordered).
+        A single-plane face is returned as-is.
+    """
+    planes = face_geom.planes
+    if len(planes) <= 1:
+        return list(planes)
+
+    def _wire_dir(plane):
+        for w in plane.wires:
+            d = w.head - w.tail
+            n = np.linalg.norm(d)
+            if n > 1e-9:
+                return d / n
+        return None
+
+    dirs = [_wire_dir(p) for p in planes]
+
+    # Find drift direction as cross product of first two non-parallel wire dirs
+    drift_dir = None
+    for i in range(len(dirs)):
+        for j in range(i + 1, len(dirs)):
+            if dirs[i] is not None and dirs[j] is not None:
+                cross = np.cross(dirs[i], dirs[j])
+                n = np.linalg.norm(cross)
+                if n > 1e-9:
+                    drift_dir = cross / n
+                    break
+        if drift_dir is not None:
+            break
+
+    if drift_dir is None:
+        return list(planes)
+
+    def _mean_pos(plane):
+        mids = [0.5 * (w.head + w.tail) for w in plane.wires]
+        return np.mean(mids, axis=0)
+
+    projections = [_mean_pos(p) @ drift_dir for p in planes]
+    return [p for _, p in sorted(zip(projections, planes))]
+
+
+def _face_mean_pos(face) -> np.ndarray:
+    """Return mean world-frame position of all wire midpoints in a face."""
+    mids = [0.5 * (w.head + w.tail) for p in face.planes for w in p.wires]
+    return np.mean(mids, axis=0) if mids else np.zeros(3)
+
+
+def pair_faces_into_anodes(faces: list, connectivity_mode: str) -> list:
+    """Group :class:`FaceGeom` objects into :class:`AnodeGeom` pairs.
+
+    Args:
+        faces:              List of :class:`FaceGeom` from
+                            :func:`build_detector_faces`.
+        connectivity_mode:  ``"vd"`` or ``"hd"``.
+
+            * **VD** — *open-book*: pairs share the same TPC logical-volume
+              name (encoded in ``face.name`` as ``"<lv>_<tag>"``).  The LV
+              name is recovered by dropping the last ``_``-delimited token.
+              Faces from the same LV are paired together.
+            * **HD** — *closed-book*: pairs share the same Y-Z centroid.
+              Faces are clustered by their rounded (Y, Z) mean position and
+              paired within each cluster.
+
+    Returns:
+        List of :class:`AnodeGeom` objects.  Each anode contains exactly
+        two faces.
+
+    Raises:
+        ValueError: If any cluster contains an odd number of faces (unpaired).
+        ValueError: If *connectivity_mode* is not ``"vd"`` or ``"hd"``.
+    """
+    if not faces:
+        return []
+
+    if connectivity_mode == "vd":
+        groups = _group_by_lv_name(faces)
+    elif connectivity_mode == "hd":
+        groups = _group_by_yz_centroid(faces)
+    else:
+        raise ValueError(
+            f"Unknown connectivity_mode {connectivity_mode!r}. "
+            "Must be 'vd' or 'hd'."
+        )
+
+    anodes = []
+    for key, group in groups.items():
+        if len(group) % 2 != 0:
+            raise ValueError(
+                f"Odd number of faces ({len(group)}) in group {key!r}; "
+                "cannot form complete anode pairs."
+            )
+        for i in range(0, len(group), 2):
+            anode = AnodeGeom(faces=list(group[i:i + 2]))
+            anodes.append(anode)
+    return anodes
+
+
+def _group_by_lv_name(faces: list) -> dict:
+    """Group faces by TPC logical-volume name (VD open-book pairing)."""
+    groups: dict = {}
+    for face in faces:
+        # face.name is the physvol placement name, e.g. "volTPC0_top".
+        # The LV name is everything before the last underscore-prefixed token.
+        parts = face.name.rsplit("_", 1)
+        lv_name = parts[0] if len(parts) == 2 else face.name
+        groups.setdefault(lv_name, []).append(face)
+    return groups
+
+
+def _group_by_yz_centroid(faces: list, mm_tolerance: float = 1.0) -> dict:
+    """Group faces by rounded Y-Z centroid (HD closed-book pairing)."""
+    groups: dict = {}
+    for face in faces:
+        pos = _face_mean_pos(face)
+        key = (round(pos[1] / mm_tolerance), round(pos[2] / mm_tolerance))
+        groups.setdefault(key, []).append(face)
+    return groups
+
+
 def gdml_transform(pos_xyz_mm, rot_xyz_deg):
     """
     Build a 4x4 local-to-world homogeneous transform from a GDML physvol.
