@@ -36,8 +36,49 @@ The wire axis is the local Z-axis; the two endpoints in local coordinates are::
 Apply the world transform to get world-frame endpoints.
 """
 
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Optional
+
 import numpy as np
 from scipy.spatial.transform import Rotation
+
+
+@dataclass
+class WireGeom:
+    """Intermediate representation of a single wire in world-frame coordinates."""
+    name: str
+    tail: Optional[np.ndarray]
+    head: Optional[np.ndarray]
+    radius: float
+    plane_name: str
+
+
+@dataclass
+class PlaneGeom:
+    """Intermediate representation of a wire plane."""
+    name: str
+    wires: list[WireGeom] = field(default_factory=list)
+
+
+@dataclass
+class FaceGeom:
+    """Intermediate representation of one TPC face (collection of planes)."""
+    name: str
+    planes: list[PlaneGeom] = field(default_factory=list)
+
+
+@dataclass
+class AnodeGeom:
+    """Intermediate representation of an anode (one or two faces)."""
+    faces: list[FaceGeom] = field(default_factory=list)
+
+
+@dataclass
+class DetectorGeom:
+    """Intermediate representation of a full detector (collection of anodes)."""
+    anodes: list[AnodeGeom] = field(default_factory=list)
 
 
 def gdml_transform(pos_xyz_mm, rot_xyz_deg):
