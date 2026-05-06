@@ -1,0 +1,343 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Minimal synthetic GDML for unit testing Wire-Cell GDML parsing.
+  One TPC (volTPC0) containing three wire planes:
+    volTPCPlaneU0: 5 U wires, tube axis at +30 deg from local Z toward +Y
+    volTPCPlaneV0: 5 V wires, tube axis at -30 deg from local Z toward -Y
+    volTPCPlaneZ0: 5 Z (collection) wires, tube axis parallel to local Y
+  Each plane demonstrates both position styles:
+    positionref and inline position elements.
+  At least one physvol has no name attribute (anonymous placement).
+  Wire rotation convention:
+    rWireU: rotation x=30  deg, wire axis points to (0, +sin30, +cos30)
+    rWireV: rotation x=-30 deg, wire axis points to (0, -sin30, +cos30)
+    rWireW: rotation x=90  deg, wire axis points to (0, +1, 0)
+  All lengths in mm.
+-->
+<gdml xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="GDMLSchema/gdml.xsd">
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       DEFINE  – named positions and rotations
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <define>
+    <!-- Rotations -->
+    <rotation name="rIdentity"       unit="deg" x="0"   y="0" z="0"/>
+    <rotation name="rWireU"          unit="deg" x="30"  y="0" z="0"/>
+    <rotation name="rWireV"          unit="deg" x="-30" y="0" z="0"/>
+    <rotation name="rWireW"          unit="deg" x="90"  y="0" z="0"/>
+    <rotation name="rPlus180AboutY"  unit="deg" x="0"   y="180" z="0"/>
+
+    <!-- Plane positions within the TPC (offset along drift X) -->
+    <position name="posPlaneU0" unit="mm" x="-4.76" y="0" z="0"/>
+    <position name="posPlaneV0" unit="mm" x="0"     y="0" z="0"/>
+    <position name="posPlaneZ0" unit="mm" x="4.76"  y="0" z="0"/>
+
+    <!-- U wire positions within the U plane (pitch in Y) -->
+    <position name="posWireU0" unit="mm" x="0" y="-9.52" z="0"/>
+    <position name="posWireU1" unit="mm" x="0" y="-4.76" z="0"/>
+    <position name="posWireU2" unit="mm" x="0" y="0"     z="0"/>
+    <position name="posWireU3" unit="mm" x="0" y="4.76"  z="0"/>
+    <!-- posWireU4 is supplied inline in the physvol below -->
+
+    <!-- V wire positions within the V plane (pitch in Y) -->
+    <position name="posWireV0" unit="mm" x="0" y="-9.52" z="0"/>
+    <position name="posWireV1" unit="mm" x="0" y="-4.76" z="0"/>
+    <position name="posWireV2" unit="mm" x="0" y="0"     z="0"/>
+    <!-- posWireV3 and posWireV4 are supplied inline in the physvols below -->
+
+    <!-- Z wire positions within the Z plane (pitch in Z) -->
+    <position name="posWireZ0" unit="mm" x="0" y="0" z="-9.52"/>
+    <position name="posWireZ1" unit="mm" x="0" y="0" z="-4.76"/>
+    <position name="posWireZ2" unit="mm" x="0" y="0" z="0"/>
+    <position name="posWireZ3" unit="mm" x="0" y="0" z="4.76"/>
+    <position name="posWireZ4" unit="mm" x="0" y="0" z="9.52"/>
+  </define>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       MATERIALS
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <materials>
+    <element name="Argon_el" formula="Ar" Z="18">
+      <atom value="39.948"/>
+    </element>
+    <element name="Copper_el" formula="Cu" Z="29">
+      <atom value="63.546"/>
+    </element>
+    <material name="LAr" formula="LAr">
+      <D value="1.390" unit="g/cm3"/>
+      <fraction n="1.0" ref="Argon_el"/>
+    </material>
+    <material name="CuBe" formula="CuBe">
+      <D value="8.96" unit="g/cm3"/>
+      <fraction n="1.0" ref="Copper_el"/>
+    </material>
+  </materials>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       SOLIDS
+       The z attribute of a <tube> is the FULL length; half-length = z/2.
+       Wire axis is the local Z axis; endpoints at ±z/2 in local coords.
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <solids>
+    <!-- Wire tubes: rmax in mm, z = full length in mm -->
+    <tube name="CRMWireU" rmax="0.076" z="100.0"
+          deltaphi="360" startphi="0" aunit="deg" lunit="mm"/>
+    <tube name="CRMWireV" rmax="0.076" z="100.0"
+          deltaphi="360" startphi="0" aunit="deg" lunit="mm"/>
+    <tube name="CRMWireZ" rmax="0.076" z="50.0"
+          deltaphi="360" startphi="0" aunit="deg" lunit="mm"/>
+
+    <!-- Plane boxes: thin in X (drift), 50 mm in Y and Z -->
+    <box name="CRMPlaneU" x="0.02" y="50" z="50" lunit="mm"/>
+    <box name="CRMPlaneV" x="0.02" y="50" z="50" lunit="mm"/>
+    <box name="CRMPlaneZ" x="0.02" y="50" z="50" lunit="mm"/>
+
+    <!-- TPC active volume -->
+    <box name="CRMActive" x="29.0" y="50" z="50" lunit="mm"/>
+
+    <!-- TPC envelope (slightly larger) -->
+    <box name="CRM" x="30" y="50" z="50" lunit="mm"/>
+
+    <!-- World volume -->
+    <box name="World" x="200" y="200" z="200" lunit="mm"/>
+  </solids>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       STRUCTURE – logical volumes and placements
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <structure>
+
+    <!-- ── U wire logical volumes ──────────────────────────────────────── -->
+    <volume name="volTPCWireU0">
+      <materialref ref="CuBe"/>
+      <solidref ref="CRMWireU"/>
+    </volume>
+    <volume name="volTPCWireU1">
+      <materialref ref="CuBe"/>
+      <solidref ref="CRMWireU"/>
+    </volume>
+    <volume name="volTPCWireU2">
+      <materialref ref="CuBe"/>
+      <solidref ref="CRMWireU"/>
+    </volume>
+    <volume name="volTPCWireU3">
+      <materialref ref="CuBe"/>
+      <solidref ref="CRMWireU"/>
+    </volume>
+    <volume name="volTPCWireU4">
+      <materialref ref="CuBe"/>
+      <solidref ref="CRMWireU"/>
+    </volume>
+
+    <!-- ── V wire logical volumes ──────────────────────────────────────── -->
+    <volume name="volTPCWireV0">
+      <materialref ref="CuBe"/>
+      <solidref ref="CRMWireV"/>
+    </volume>
+    <volume name="volTPCWireV1">
+      <materialref ref="CuBe"/>
+      <solidref ref="CRMWireV"/>
+    </volume>
+    <volume name="volTPCWireV2">
+      <materialref ref="CuBe"/>
+      <solidref ref="CRMWireV"/>
+    </volume>
+    <volume name="volTPCWireV3">
+      <materialref ref="CuBe"/>
+      <solidref ref="CRMWireV"/>
+    </volume>
+    <volume name="volTPCWireV4">
+      <materialref ref="CuBe"/>
+      <solidref ref="CRMWireV"/>
+    </volume>
+
+    <!-- ── Z (collection) wire logical volumes ─────────────────────────── -->
+    <volume name="volTPCWireZ0">
+      <materialref ref="CuBe"/>
+      <solidref ref="CRMWireZ"/>
+    </volume>
+    <volume name="volTPCWireZ1">
+      <materialref ref="CuBe"/>
+      <solidref ref="CRMWireZ"/>
+    </volume>
+    <volume name="volTPCWireZ2">
+      <materialref ref="CuBe"/>
+      <solidref ref="CRMWireZ"/>
+    </volume>
+    <volume name="volTPCWireZ3">
+      <materialref ref="CuBe"/>
+      <solidref ref="CRMWireZ"/>
+    </volume>
+    <volume name="volTPCWireZ4">
+      <materialref ref="CuBe"/>
+      <solidref ref="CRMWireZ"/>
+    </volume>
+
+    <!-- ── U plane – demonstrates both position styles ─────────────────── -->
+    <volume name="volTPCPlaneU0">
+      <materialref ref="LAr"/>
+      <solidref ref="CRMPlaneU"/>
+
+      <!-- wires 0-3: positionref style (named position in <define>) -->
+      <physvol name="volTPCWireU0_pv">
+        <volumeref ref="volTPCWireU0"/>
+        <positionref ref="posWireU0"/>
+        <rotationref ref="rWireU"/>
+      </physvol>
+      <physvol name="volTPCWireU1_pv">
+        <volumeref ref="volTPCWireU1"/>
+        <positionref ref="posWireU1"/>
+        <rotationref ref="rWireU"/>
+      </physvol>
+      <physvol name="volTPCWireU2_pv">
+        <volumeref ref="volTPCWireU2"/>
+        <positionref ref="posWireU2"/>
+        <rotationref ref="rWireU"/>
+      </physvol>
+      <physvol name="volTPCWireU3_pv">
+        <volumeref ref="volTPCWireU3"/>
+        <positionref ref="posWireU3"/>
+        <rotationref ref="rWireU"/>
+      </physvol>
+
+      <!-- wire 4: inline position, NO physvol name (anonymous placement) -->
+      <physvol>
+        <volumeref ref="volTPCWireU4"/>
+        <position name="posWireU4" unit="mm" x="0" y="9.52" z="0"/>
+        <rotationref ref="rWireU"/>
+      </physvol>
+    </volume>
+
+    <!-- ── V plane – mix of positionref and inline styles ──────────────── -->
+    <volume name="volTPCPlaneV0">
+      <materialref ref="LAr"/>
+      <solidref ref="CRMPlaneV"/>
+
+      <!-- wires 0-1: positionref -->
+      <physvol name="volTPCWireV0_pv">
+        <volumeref ref="volTPCWireV0"/>
+        <positionref ref="posWireV0"/>
+        <rotationref ref="rWireV"/>
+      </physvol>
+      <physvol name="volTPCWireV1_pv">
+        <volumeref ref="volTPCWireV1"/>
+        <positionref ref="posWireV1"/>
+        <rotationref ref="rWireV"/>
+      </physvol>
+      <physvol name="volTPCWireV2_pv">
+        <volumeref ref="volTPCWireV2"/>
+        <positionref ref="posWireV2"/>
+        <rotationref ref="rWireV"/>
+      </physvol>
+
+      <!-- wire 3: inline position, NO physvol name -->
+      <physvol>
+        <volumeref ref="volTPCWireV3"/>
+        <position name="posWireV3" unit="mm" x="0" y="4.76" z="0"/>
+        <rotationref ref="rWireV"/>
+      </physvol>
+
+      <!-- wire 4: inline position, WITH physvol name -->
+      <physvol name="volTPCWireV4_pv">
+        <volumeref ref="volTPCWireV4"/>
+        <position name="posWireV4" unit="mm" x="0" y="9.52" z="0"/>
+        <rotationref ref="rWireV"/>
+      </physvol>
+    </volume>
+
+    <!-- ── Z (collection) plane – all positionref ──────────────────────── -->
+    <volume name="volTPCPlaneZ0">
+      <materialref ref="LAr"/>
+      <solidref ref="CRMPlaneZ"/>
+
+      <physvol name="volTPCWireZ0_pv">
+        <volumeref ref="volTPCWireZ0"/>
+        <positionref ref="posWireZ0"/>
+        <rotationref ref="rWireW"/>
+      </physvol>
+      <physvol name="volTPCWireZ1_pv">
+        <volumeref ref="volTPCWireZ1"/>
+        <positionref ref="posWireZ1"/>
+        <rotationref ref="rWireW"/>
+      </physvol>
+      <physvol name="volTPCWireZ2_pv">
+        <volumeref ref="volTPCWireZ2"/>
+        <positionref ref="posWireZ2"/>
+        <rotationref ref="rWireW"/>
+      </physvol>
+      <physvol name="volTPCWireZ3_pv">
+        <volumeref ref="volTPCWireZ3"/>
+        <positionref ref="posWireZ3"/>
+        <rotationref ref="rWireW"/>
+      </physvol>
+      <physvol name="volTPCWireZ4_pv">
+        <volumeref ref="volTPCWireZ4"/>
+        <positionref ref="posWireZ4"/>
+        <rotationref ref="rWireW"/>
+      </physvol>
+    </volume>
+
+    <!-- ── Active volume ───────────────────────────────────────────────── -->
+    <volume name="volTPCActive">
+      <materialref ref="LAr"/>
+      <solidref ref="CRMActive"/>
+    </volume>
+
+    <!-- ── TPC – contains the three planes and active volume ───────────── -->
+    <volume name="volTPC0">
+      <materialref ref="LAr"/>
+      <solidref ref="CRM"/>
+
+      <physvol name="volTPCPlaneU0_pv">
+        <volumeref ref="volTPCPlaneU0"/>
+        <positionref ref="posPlaneU0"/>
+        <rotationref ref="rIdentity"/>
+      </physvol>
+      <physvol name="volTPCPlaneV0_pv">
+        <volumeref ref="volTPCPlaneV0"/>
+        <positionref ref="posPlaneV0"/>
+        <rotationref ref="rIdentity"/>
+      </physvol>
+      <physvol name="volTPCPlaneZ0_pv">
+        <volumeref ref="volTPCPlaneZ0"/>
+        <positionref ref="posPlaneZ0"/>
+        <rotationref ref="rIdentity"/>
+      </physvol>
+      <physvol name="volTPCActive_pv">
+        <volumeref ref="volTPCActive"/>
+        <position name="posActive" unit="mm" x="-0.5" y="0" z="0"/>
+        <rotationref ref="rIdentity"/>
+      </physvol>
+    </volume>
+
+    <!-- ── World volume ─────────────────────────────────────────────────── -->
+    <volume name="volWorld">
+      <materialref ref="LAr"/>
+      <solidref ref="World"/>
+
+      <!-- Top face: identity placement -->
+      <physvol name="volTPC0_top">
+        <volumeref ref="volTPC0"/>
+        <position name="posTPC0_top" unit="mm" x="15.0" y="0" z="0"/>
+        <rotationref ref="rIdentity"/>
+      </physvol>
+
+      <!-- Bot face: 180-degree rotation about Y (open-book pair) -->
+      <physvol name="volTPC0_bot">
+        <volumeref ref="volTPC0"/>
+        <position name="posTPC0_bot" unit="mm" x="-19.0" y="0" z="0"/>
+        <rotationref ref="rPlus180AboutY"/>
+      </physvol>
+    </volume>
+
+  </structure>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       SETUP
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <setup name="Default" version="1.0">
+    <world ref="volWorld"/>
+  </setup>
+
+</gdml>
