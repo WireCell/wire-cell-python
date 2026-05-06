@@ -38,11 +38,65 @@ Apply the world transform to get world-frame endpoints.
 
 from __future__ import annotations
 
+import json
+import pathlib
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Union
 
 import numpy as np
 from scipy.spatial.transform import Rotation
+
+# ── Detector config ────────────────────────────────────────────────────────────
+
+_REQUIRED_CONFIG_KEYS = frozenset({"role_patterns", "connectivity_mode", "nearness_tolerance"})
+
+# Named built-in configs.  Populated by wcpy-8z5 (protodunevd_v4, protodunevd_v5).
+BUILTIN_CONFIGS: dict[str, dict] = {}
+
+
+def load_config(path_or_name: Union[str, pathlib.Path]) -> dict:
+    """Load a detector configuration dict from a JSON file or a built-in name.
+
+    Args:
+        path_or_name: Either a path to a JSON config file (``str`` or
+            ``pathlib.Path``) or the name of a built-in detector config.
+
+    Required JSON keys:
+
+    * ``role_patterns`` — ``dict[str, str]``: maps role names
+      (``"wire"``, ``"plane"``, ``"face"``, ``"detector"``) to regex strings
+      that match the corresponding GDML logical-volume names.
+    * ``connectivity_mode`` — ``"vd"`` or ``"hd"``.
+    * ``nearness_tolerance`` — positive ``float``, in cm; used when matching
+      wire endpoints across faces.
+
+    Returns:
+        The validated config dict (a fresh copy for file-based configs).
+
+    Raises:
+        ValueError: If the name is not a known built-in and not a valid file
+            path, or if any required key is absent from the loaded config.
+    """
+    p = pathlib.Path(path_or_name)
+    if p.exists():
+        with p.open() as fh:
+            cfg = json.load(fh)
+    elif str(path_or_name) in BUILTIN_CONFIGS:
+        cfg = dict(BUILTIN_CONFIGS[str(path_or_name)])
+    else:
+        known = sorted(BUILTIN_CONFIGS)
+        raise ValueError(
+            f"Unknown detector config {path_or_name!r}. "
+            f"Provide a JSON file path or one of the built-in names: {known}"
+        )
+
+    missing = _REQUIRED_CONFIG_KEYS - cfg.keys()
+    if missing:
+        raise ValueError(
+            f"Detector config is missing required key(s): {sorted(missing)}"
+        )
+
+    return cfg
 
 
 @dataclass
