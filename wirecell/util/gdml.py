@@ -108,6 +108,7 @@ class WireGeom:
     head: Optional[np.ndarray]
     radius: float
     plane_name: str
+    face_name: str = ""
     channel: Optional[int] = None
     segment: Optional[int] = None
 
@@ -536,7 +537,7 @@ def extract_wires(
     """
     result = []
 
-    def _recurse(vol_name, transform_chain, plane_name):
+    def _recurse(vol_name, pv_name, transform_chain, plane_name, face_name):
         entry = vol_tree.get(vol_name)
         if entry is None:
             return
@@ -556,18 +557,73 @@ def extract_wires(
                     head=head,
                     radius=dims["rmax"],
                     plane_name=plane_name,
+                    face_name=face_name,
                 ))
             return  # leaf — do not recurse into wire volumes
 
-        if role == "plane":
+        if role == "face":
+            # Use the physvol placement name to distinguish multiple instances
+            # of the same face logical volume (e.g. Top vs Bot in VD open-book).
+            face_name = pv_name
+        elif role == "plane":
             plane_name = vol_name
 
         for pv in entry.get("physvols", []):
             T_pv = gdml_transform(pv["pos"], np.degrees(pv["rot"]))
-            _recurse(pv["vol"], transform_chain + [T_pv], plane_name)
+            _recurse(pv["vol"], pv["name"], transform_chain + [T_pv], plane_name, face_name)
 
-    _recurse(root_vol, [], "")
+    _recurse(root_vol, root_vol, [], "", "")
     return result
+
+
+def build_detector_faces(vol_tree: dict, wires_list: list, patterns: dict) -> list:
+    """Group WireGeom objects into a PlaneGeom/FaceGeom hierarchy.
+
+    Uses :attr:`WireGeom.face_name` (the physvol placement name set by
+    :func:`extract_wires`) and :attr:`WireGeom.plane_name` to partition wires
+    into faces and planes.  When ``face_name`` is empty (e.g. traversal started
+    below the face level), the face LV name is looked up via the *vol_tree*
+    parent chain as a fallback.
+
+    Args:
+        vol_tree: Output of :func:`parse_structure`.
+        wires_list: Flat list of :class:`WireGeom` from :func:`extract_wires`.
+        patterns:  ``dict[str, str]`` role→regex map from the detector config.
+
+    Returns:
+        List of :class:`FaceGeom` objects, each containing
+        :class:`PlaneGeom` children whose ``wires`` lists are slices of
+        *wires_list* (no copies made).
+    """
+    # Build LV child→parent map for face_name fallback.
+    lv_parent: dict[str, str] = {}
+    for vol_name, entry in vol_tree.items():
+        for pv in entry.get("physvols", []):
+            lv_parent[pv["vol"]] = vol_name
+
+    def _face_lv(vol_name: str) -> str:
+        visited: set = set()
+        current = lv_parent.get(vol_name)
+        while current and current not in visited:
+            visited.add(current)
+            if match_role(current, patterns) == "face":
+                return current
+            current = lv_parent.get(current)
+        return ""
+
+    face_plane_wires: dict = {}  # face_id → {plane_name → [WireGeom]}
+    for wire in wires_list:
+        face_id = wire.face_name if wire.face_name else _face_lv(wire.plane_name)
+        plane_id = wire.plane_name or ""
+        face_plane_wires.setdefault(face_id, {}).setdefault(plane_id, []).append(wire)
+
+    faces = []
+    for face_name, plane_dict in face_plane_wires.items():
+        face = FaceGeom(name=face_name)
+        for plane_name, wires in plane_dict.items():
+            face.planes.append(PlaneGeom(name=plane_name, wires=list(wires)))
+        faces.append(face)
+    return faces
 
 
 def gdml_transform(pos_xyz_mm, rot_xyz_deg):
