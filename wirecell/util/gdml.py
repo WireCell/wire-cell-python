@@ -501,6 +501,75 @@ def parse_structure(gdml_root, defines: dict, solids: dict) -> dict:
     return volumes
 
 
+def extract_wires(
+    vol_tree: dict,
+    defines: dict,
+    solids: dict,
+    root_vol: str,
+    patterns: dict,
+) -> list:
+    """Traverse a GDML logical volume tree and extract wire endpoints in world frame.
+
+    Walks the hierarchy starting at *root_vol*.  When a volume whose name
+    matches role ``"wire"`` is encountered its two endpoints are computed by
+    applying the accumulated local-to-world transform to the canonical local
+    tube endpoints ``[0, 0, ±half_z]``.  A volume whose name matches role
+    ``"plane"`` sets the ``plane_name`` attribute carried down to its wire
+    descendants.
+
+    Args:
+        vol_tree: Output of :func:`parse_structure`.
+        defines:  Output of :func:`parse_define` (accepted for API symmetry;
+                  transforms are already embedded in *vol_tree*).
+        solids:   Output of :func:`parse_solids` — provides ``rmax`` and
+                  ``half_z`` for each tube solid.
+        root_vol: Name of the logical volume to start traversal from
+                  (e.g. ``"volWorld"``).
+        patterns: ``dict[str, str]`` role→regex map as returned by the
+                  ``role_patterns`` key of a detector config.
+
+    Returns:
+        List of :class:`WireGeom` objects with world-frame ``tail`` and
+        ``head`` endpoints, ``radius``, and ``plane_name`` populated.
+        ``channel`` and ``segment`` are left ``None`` (filled later by
+        :func:`assign_vd_channels`).
+    """
+    result = []
+
+    def _recurse(vol_name, transform_chain, plane_name):
+        entry = vol_tree.get(vol_name)
+        if entry is None:
+            return
+
+        role = match_role(vol_name, patterns)
+
+        if role == "wire":
+            solid_name = entry.get("solid", "")
+            dims = solids.get(solid_name)
+            if dims is not None:
+                T = compose_transforms(*transform_chain)
+                tail = apply_transform(T, [0.0, 0.0, -dims["half_z"]])
+                head = apply_transform(T, [0.0, 0.0, +dims["half_z"]])
+                result.append(WireGeom(
+                    name=vol_name,
+                    tail=tail,
+                    head=head,
+                    radius=dims["rmax"],
+                    plane_name=plane_name,
+                ))
+            return  # leaf — do not recurse into wire volumes
+
+        if role == "plane":
+            plane_name = vol_name
+
+        for pv in entry.get("physvols", []):
+            T_pv = gdml_transform(pv["pos"], np.degrees(pv["rot"]))
+            _recurse(pv["vol"], transform_chain + [T_pv], plane_name)
+
+    _recurse(root_vol, [], "")
+    return result
+
+
 def gdml_transform(pos_xyz_mm, rot_xyz_deg):
     """
     Build a 4x4 local-to-world homogeneous transform from a GDML physvol.
