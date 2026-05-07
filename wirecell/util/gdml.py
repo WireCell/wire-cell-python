@@ -268,6 +268,77 @@ def assign_vd_channels(
     return ch
 
 
+def find_vd_connected_pairs(anode_geom, nearness_tolerance: float) -> dict:
+    """Identify cross-face wire connectivity for a VD anode.
+
+    Matches wires between the two faces of *anode_geom* by comparing all
+    endpoint pairs.  Two wires are considered connected when at least one
+    endpoint from each lies within *nearness_tolerance* mm of each other.
+    Collection planes (names containing ``'Z'`` or ``'W'``) are not matched.
+
+    Segment convention (from wcpy-zv1 research):
+
+    * **face0** (``anode_geom.faces[0]``) connected wires → ``segment = 1``
+    * **face1** (``anode_geom.faces[1]``) connected wires → ``segment = 0``
+    * Collection and standalone wires → ``segment = 0``
+
+    Args:
+        anode_geom:          An :class:`AnodeGeom` with exactly two faces.
+        nearness_tolerance:  Maximum distance in mm for two endpoints to be
+                             considered coincident.
+
+    Returns:
+        ``dict[str, dict]`` keyed by ``wire.name`` (assumed unique within the
+        anode).  Each value is::
+
+            {"segment": int, "connected_to": str or None}
+
+    Raises:
+        ValueError: If *anode_geom* does not contain exactly two faces.
+    """
+    if len(anode_geom.faces) != 2:
+        raise ValueError(
+            f"VD anode must have exactly 2 faces; got {len(anode_geom.faces)}."
+        )
+
+    face0, face1 = anode_geom.faces
+    result: dict = {}
+
+    def _close(w0, w1) -> bool:
+        for pt0 in (w0.tail, w0.head):
+            for pt1 in (w1.tail, w1.head):
+                if pt0 is not None and pt1 is not None:
+                    if np.linalg.norm(pt0 - pt1) <= nearness_tolerance:
+                        return True
+        return False
+
+    matched0: set = set()
+    matched1: set = set()
+
+    for plane0, plane1 in zip(face0.planes, face1.planes):
+        if _is_collection_plane(plane0):
+            continue
+        for wire1 in plane1.wires:
+            for wire0 in plane0.wires:
+                if wire0.name in matched0:
+                    continue
+                if _close(wire0, wire1):
+                    result[wire0.name] = {"segment": 1, "connected_to": wire1.name}
+                    result[wire1.name] = {"segment": 0, "connected_to": wire0.name}
+                    matched0.add(wire0.name)
+                    matched1.add(wire1.name)
+                    break
+
+    # Standalone wires (unmatched or in collection planes)
+    for face in (face0, face1):
+        for plane in face.planes:
+            for wire in plane.wires:
+                if wire.name not in result:
+                    result[wire.name] = {"segment": 0, "connected_to": None}
+
+    return result
+
+
 def match_role(name: str, patterns: dict) -> Optional[str]:
     """Return the first role whose regex pattern fully matches *name*, or None.
 
