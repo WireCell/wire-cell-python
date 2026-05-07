@@ -408,6 +408,89 @@ def assign_vd_channels(anodes: list, connectivity: dict) -> dict:
     return result
 
 
+def build_store(anodes: list, channel_map: dict):
+    """Build a :class:`~wirecell.util.wires.schema.Store` from intermediate geometry.
+
+    Args:
+        anodes:      List of :class:`AnodeGeom` in detector order, as returned
+                     by :func:`pair_faces_into_anodes`.
+        channel_map: Mapping ``{wire_name: (channel_id, segment)}`` combining the
+                     results of :func:`assign_vd_channels` (for channel IDs) and
+                     :func:`find_vd_connected_pairs` (for segment values).
+
+    Returns:
+        A :class:`wirecell.util.wires.schema.Store` with one
+        :class:`~wirecell.util.wires.schema.Detector` containing all anodes,
+        faces, planes, wires, and points.
+
+    Hierarchy:
+        * Anode ``ident`` = global anode index (0-based).
+        * Face ``ident`` = face position within the anode (0 or 1).
+        * Plane ``ident`` = 0/1/2 for U/V/W (drift order).
+        * Wire ``ident`` = wire index in pitch-sorted order within its plane.
+        * Points are deduplicated at 0.001 mm precision (µm-level).
+    """
+    from wirecell.util.wires import schema as wschema
+
+    pts: list = []
+    wires: list = []
+    planes: list = []
+    faces: list = []
+    s_anodes: list = []
+
+    _pt_key: dict = {}
+
+    def _point(xyz) -> int:
+        key = (round(float(xyz[0]), 3), round(float(xyz[1]), 3), round(float(xyz[2]), 3))
+        if key not in _pt_key:
+            _pt_key[key] = len(pts)
+            pts.append(wschema.Point(x=key[0], y=key[1], z=key[2]))
+        return _pt_key[key]
+
+    for anode_idx, anode in enumerate(anodes):
+        face_indices: list = []
+
+        for face_idx, face in enumerate(anode.faces):
+            plane_indices: list = []
+
+            for plane_ident, plane in enumerate(sort_planes_by_drift(face)):
+                wire_indices: list = []
+
+                for wire_ident, geom_wire in enumerate(sort_wires_by_pitch(plane)):
+                    channel_id, segment = channel_map.get(geom_wire.name, (0, 0))
+                    tail_idx = _point(geom_wire.tail)
+                    head_idx = _point(geom_wire.head)
+                    wire_store_idx = len(wires)
+                    wires.append(wschema.Wire(
+                        ident=wire_ident,
+                        channel=channel_id,
+                        segment=segment,
+                        tail=tail_idx,
+                        head=head_idx,
+                    ))
+                    wire_indices.append(wire_store_idx)
+
+                plane_store_idx = len(planes)
+                planes.append(wschema.Plane(ident=plane_ident, wires=wire_indices))
+                plane_indices.append(plane_store_idx)
+
+            face_store_idx = len(faces)
+            faces.append(wschema.Face(ident=face_idx, planes=plane_indices))
+            face_indices.append(face_store_idx)
+
+        s_anodes.append(wschema.Anode(ident=anode_idx, faces=face_indices))
+
+    detector = wschema.Detector(ident=0, anodes=list(range(len(s_anodes))))
+    return wschema.Store(
+        detectors=[detector],
+        anodes=s_anodes,
+        faces=faces,
+        planes=planes,
+        wires=wires,
+        points=pts,
+    )
+
+
 def match_role(name: str, patterns: dict) -> Optional[str]:
     """Return the first role whose regex pattern fully matches *name*, or None.
 
