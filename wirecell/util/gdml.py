@@ -51,8 +51,28 @@ from scipy.spatial.transform import Rotation
 
 _REQUIRED_CONFIG_KEYS = frozenset({"role_patterns", "connectivity_mode", "nearness_tolerance"})
 
-# Named built-in configs.  Populated by wcpy-8z5 (protodunevd_v4, protodunevd_v5).
-BUILTIN_CONFIGS: dict[str, dict] = {}
+BUILTIN_CONFIGS: dict[str, dict] = {
+    "protodunevd_v4": {
+        "role_patterns": {
+            "wire":     r"volTPCWire[UVZ]\d+",
+            "plane":    r"volTPCPlane[UVZ]\d+",
+            "face":     r"volTPC\d+",
+            "detector": r"volCryostat",
+        },
+        "connectivity_mode": "vd",
+        "nearness_tolerance": 0.1,
+    },
+    "protodunevd_v5": {
+        "role_patterns": {
+            "wire":     r"volTPCWire[UVZ]\d*_\d+",
+            "plane":    r"volTPCPlane[UVZ]_\d+",
+            "face":     r"volTPC_\d+",
+            "detector": r"volCryostat",
+        },
+        "connectivity_mode": "vd",
+        "nearness_tolerance": 0.1,
+    },
+}
 
 
 def load_config(path_or_name: Union[str, pathlib.Path]) -> dict:
