@@ -359,6 +359,55 @@ def find_vd_connected_pairs(anode_geom, nearness_tolerance: float) -> dict:
     return result
 
 
+def assign_vd_channels(anodes: list, connectivity: dict) -> dict:
+    """Assign globally unique channel IDs to all wires in a VD detector.
+
+    Channels are assigned sequentially across anodes.  Within each anode the
+    iteration order is: face1 (directly connected to electronics, seg=0) then
+    face0 (far face, seg=1), each face traversed plane-by-plane in
+    :func:`sort_planes_by_drift` order and wire-by-wire in
+    :func:`sort_wires_by_pitch` order.
+
+    For each unassigned wire:
+
+    * A new channel ID is allocated and assigned to the wire.
+    * If the wire has a cross-face partner (``connected_to`` is not ``None``)
+      and that partner has not yet been assigned, the **same** channel ID is
+      given to the partner.
+
+    Collection wires (``connected_to`` is ``None``) each receive a unique
+    channel ID.
+
+    Args:
+        anodes:       List of :class:`AnodeGeom` in detector order.
+        connectivity: Combined connectivity dict
+                      ``{wire_name: {"segment": int, "connected_to": str|None}}``
+                      as produced by :func:`find_vd_connected_pairs` (merged
+                      over all anodes).
+
+    Returns:
+        ``dict[str, int]`` mapping every wire name to its channel ID.
+    """
+    result: dict = {}
+    channel = 0
+
+    for anode in anodes:
+        # face1 (index 1) carries seg=0 for induction wires → process first so
+        # the primary assignment lands on the direct-electronics face.
+        for face in reversed(anode.faces):
+            for plane in sort_planes_by_drift(face):
+                for wire in sort_wires_by_pitch(plane):
+                    if wire.name in result:
+                        continue
+                    result[wire.name] = channel
+                    partner = connectivity.get(wire.name, {}).get("connected_to")
+                    if partner is not None and partner not in result:
+                        result[partner] = channel
+                    channel += 1
+
+    return result
+
+
 def match_role(name: str, patterns: dict) -> Optional[str]:
     """Return the first role whose regex pattern fully matches *name*, or None.
 
