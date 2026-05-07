@@ -1669,6 +1669,35 @@ def framels(output, framefile):
     dat = [f.summary for f in frmod.load(framefile)]
     open(output,"w").write(json.dumps(dat, indent=4) + "\n")
 
+@cli.command("gdml-to-wires")
+@click.option("-d", "--detector", required=True,
+              help="Detector name (e.g. 'protodunevd_v4') or path to a JSON config file.")
+@click.option("-o", "--output", default=None,
+              help="Output file (.json or .json.bz2). Default: input path with .json extension.")
+@click.argument("input_gdml")
+def cmd_gdml_to_wires(detector, output, input_gdml):
+    '''
+    Convert a GDML detector geometry file to Wire-Cell wires schema JSON.
+
+    The DETECTOR option names a built-in detector config (e.g. protodunevd_v4,
+    protodunevd_v5) or a path to a JSON config file with keys: role_patterns,
+    connectivity_mode, and nearness_tolerance.
+    '''
+    import pathlib
+    from wirecell.util.gdml import load_config, convert
+    from wirecell.util.wires import persist
+
+    cfg = load_config(detector)
+    store = convert(input_gdml, cfg)
+
+    if output is None:
+        p = pathlib.Path(input_gdml)
+        output = str(p.with_suffix(".json"))
+
+    persist.dump(output, persist.todict(store))
+    log.info(f"wrote {output}")
+
+
 def main():
     cli(obj=dict())
 

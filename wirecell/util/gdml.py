@@ -491,6 +491,67 @@ def build_store(anodes: list, channel_map: dict):
     )
 
 
+def convert(gdml_path, config: dict, root_vol: str = ""):
+    """Orchestrate the full GDML → wires-schema pipeline.
+
+    Args:
+        gdml_path: Path to the GDML file (``str`` or :class:`pathlib.Path`).
+        config:    Detector config dict as returned by :func:`load_config`.
+        root_vol:  Starting logical volume name.  Defaults to the world volume
+                   declared in the GDML ``<setup>`` section.
+
+    Returns:
+        A :class:`~wirecell.util.wires.schema.Store` for the full detector.
+
+    Raises:
+        ValueError: If no root volume can be determined.
+        NotImplementedError: If ``config["connectivity_mode"]`` is not ``"vd"``.
+    """
+    import xml.etree.ElementTree as ET
+
+    gdml_root = ET.parse(str(gdml_path)).getroot()
+    defines = parse_define(gdml_root)
+    solids = parse_solids(gdml_root)
+    vol_tree = parse_structure(gdml_root, defines, solids)
+
+    if not root_vol:
+        setup = gdml_root.find("setup")
+        if setup is not None:
+            world_el = setup.find("world")
+            if world_el is not None:
+                root_vol = world_el.get("ref", "")
+    if not root_vol:
+        raise ValueError(
+            "Could not determine root volume from GDML <setup>; "
+            "pass root_vol explicitly."
+        )
+
+    patterns = config["role_patterns"]
+    wires = extract_wires(vol_tree, defines, solids, root_vol, patterns)
+    faces = build_detector_faces(vol_tree, wires, patterns)
+    anodes = pair_faces_into_anodes(faces, config["connectivity_mode"])
+
+    tolerance = float(config["nearness_tolerance"])
+    mode = config["connectivity_mode"]
+
+    connectivity: dict = {}
+    if mode == "vd":
+        for anode in anodes:
+            connectivity.update(find_vd_connected_pairs(anode, tolerance))
+    else:
+        raise NotImplementedError(
+            f"connectivity_mode={mode!r} is not yet implemented."
+        )
+
+    channels = assign_vd_channels(anodes, connectivity)
+    channel_map = {
+        name: (channels[name], connectivity.get(name, {}).get("segment", 0))
+        for name in channels
+    }
+
+    return build_store(anodes, channel_map)
+
+
 def match_role(name: str, patterns: dict) -> Optional[str]:
     """Return the first role whose regex pattern fully matches *name*, or None.
 
