@@ -48,10 +48,12 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 
-def _gdml_float(s, default: float = 0.0) -> float:
+def _gdml_float(s, default: float = 0.0, ns: dict = None) -> float:
     """Parse a GDML numeric attribute string, evaluating simple arithmetic.
 
-    GDML files may use expressions like ``'0.5*0.02'`` in solid attributes.
+    GDML files may use expressions like ``'0.5*0.02'`` or named constants
+    (e.g. ``'EWProfileLength'``) in solid attributes.  Pass *ns* to supply
+    a mapping of name → float for GDML ``<constant>`` values.
     Falls back to *default* when *s* is ``None`` or empty.
     """
     if s is None or s == "":
@@ -60,7 +62,10 @@ def _gdml_float(s, default: float = 0.0) -> float:
         return float(s)
     except (ValueError, TypeError):
         import math as _math
-        return float(eval(str(s), {"__builtins__": {}}, vars(_math)))
+        ctx = dict(vars(_math))
+        if ns:
+            ctx.update(ns)
+        return float(eval(str(s), {"__builtins__": {}}, ctx))
 
 
 # ── Detector config ────────────────────────────────────────────────────────────
@@ -92,6 +97,21 @@ BUILTIN_CONFIGS: dict[str, dict] = {
         # v5 wire endpoints between anode faces are ~0.2 mm apart; 0.5 mm gives
         # comfortable margin while staying well below the ~4.75 mm wire pitch.
         "nearness_tolerance": 0.5,
+    },
+    "protodunehd_v8": {
+        "role_patterns": {
+            # U/V wires: numeric suffix (volTPCWireU0Inner) OR "Common" suffix
+            # (volTPCWireUCommonInner) for the wrapping seg=2 wires.
+            # Collection wires: volTPCWireVertInner/Outer.
+            "wire":     r"volTPCWire([UV]\w+|Vert)(Inner|Outer)",
+            "plane":    r"volTPCPlane[UVZ](Inner|Outer)",
+            "face":     r"volTPC(Inner|Outer)",
+            "detector": r"volCryostat",
+        },
+        "connectivity_mode": "hd",
+        # HD uses cluster-range matching; nearness_tolerance is a tiny
+        # floating-point buffer around the cluster edges (not a proximity radius).
+        "nearness_tolerance": 0.1,
     },
 }
 
@@ -429,6 +449,379 @@ def assign_vd_channels(anodes: list, connectivity: dict) -> dict:
     return result
 
 
+# ── HD connectivity ────────────────────────────────────────────────────────────
+
+def _find_z_boundaries(anode_geom, bin_size: float = 1.0, density_factor: float = 10.0) -> list:
+    """Find Z boundary regions where wire endpoints cluster far more densely than average.
+
+    Wire wrapping in HD geometry creates large spikes in the Z-endpoint
+    distribution at a handful of boundary locations.  This function detects
+    those spikes by histogramming all endpoint Z values and returning
+    ``(z_min, z_max)`` tuples — the actual min/max Z of endpoints in each
+    high-density cluster.
+
+    Returns:
+        Sorted list of ``(z_min, z_max)`` tuples (in mm).  Use these as
+        acceptance windows with a small extra buffer for floating-point margin.
+    """
+    z_vals = []
+    for face in anode_geom.faces:
+        for plane in face.planes:
+            for wire in plane.wires:
+                for pt in (wire.tail, wire.head):
+                    if pt is not None:
+                        z_vals.append(pt[2])
+    if not z_vals:
+        return []
+
+    z_arr = np.array(z_vals)
+    z_min, z_max = float(z_arr.min()), float(z_arr.max())
+    edges = np.arange(z_min - bin_size, z_max + 2 * bin_size, bin_size)
+    counts, edges = np.histogram(z_arr, bins=edges)
+
+    mean_count = float(counts.mean())
+    if mean_count < 1:
+        return []
+
+    hot = np.where(counts >= density_factor * mean_count)[0]
+    if len(hot) == 0:
+        return []
+
+    # Cluster adjacent hot bins and record the actual Z range of each cluster.
+    boundaries = []
+    i = 0
+    while i < len(hot):
+        j = i
+        while j + 1 < len(hot) and hot[j + 1] - hot[j] <= 2:
+            j += 1
+        cluster = hot[i:j + 1]
+        z_lo = edges[cluster[0]]
+        z_hi = edges[cluster[-1] + 1]
+        cluster_pts = z_arr[(z_arr >= z_lo) & (z_arr <= z_hi)]
+        if len(cluster_pts) > 0:
+            boundaries.append((float(cluster_pts.min()), float(cluster_pts.max())))
+        i = j + 1
+
+    return sorted(boundaries)
+
+
+def _hd_wire_segment(wire, z_boundaries: list, z_buf: float = 0.1) -> int:
+    """Return the segment value (0, 1, or 2) for an HD wire from endpoint geometry.
+
+    * **0** — head is NOT within any Z boundary region (primary wire).
+    * **1** — BOTH tail and head fall within Z boundary regions (jumper wire).
+    * **2** — head IS within a Z boundary region, tail is NOT.
+
+    Args:
+        z_boundaries: List of ``(z_min, z_max)`` tuples from
+                      :func:`_find_z_boundaries`.
+        z_buf:        Extra buffer in mm added to each boundary's z_min/z_max
+                      to absorb floating-point rounding (default 0.1 mm).
+    """
+    def _near(pt) -> bool:
+        if pt is None:
+            return False
+        return any((z_lo - z_buf) <= pt[2] <= (z_hi + z_buf)
+                   for z_lo, z_hi in z_boundaries)
+
+    head_near = _near(wire.head)
+    tail_near = _near(wire.tail)
+    if head_near and tail_near:
+        return 1
+    if head_near:
+        return 2
+    return 0
+
+
+def _find_hd_z_pairs(anode_geom, z_boundaries: list, z_buf: float = 0.1) -> list:
+    """Return (face0_wire_name, face1_wire_name) pairs connected at Z boundaries.
+
+    At each Z boundary region, wire endpoints from face0 and face1 whose Z
+    coordinate falls within ``[z_min - z_buf, z_max + z_buf]`` are sorted by Y
+    descending and matched by rank.  Collection planes are skipped.  Each wire
+    contributes at most one endpoint per boundary region.
+
+    Args:
+        z_boundaries: List of ``(z_min, z_max)`` tuples from
+                      :func:`_find_z_boundaries`.
+        z_buf:        Extra buffer in mm added around each boundary's z_min/z_max
+                      to absorb floating-point rounding (default 0.1 mm).
+
+    ``anode_geom.faces[0]`` is face0 (higher X), ``anode_geom.faces[1]`` is
+    face1 (lower X), matching the convention set by :func:`pair_faces_into_anodes`.
+    """
+    pairs: list = []
+    face0, face1 = anode_geom.faces[0], anode_geom.faces[1]
+
+    for (z_lo, z_hi) in z_boundaries:
+        face0_pts: list = []  # (y_value, wire_name)
+        face1_pts: list = []
+
+        for face_idx, face in enumerate((face0, face1)):
+            pts_list = face0_pts if face_idx == 0 else face1_pts
+            seen: set = set()
+            for plane in face.planes:
+                if _is_collection_plane(plane):
+                    continue
+                for wire in plane.wires:
+                    if wire.name in seen:
+                        continue
+                    for pt in (wire.tail, wire.head):
+                        if pt is not None and (z_lo - z_buf) <= pt[2] <= (z_hi + z_buf):
+                            pts_list.append((pt[1], wire.name))
+                            seen.add(wire.name)
+                            break  # at most one endpoint per wire per boundary
+
+        face0_pts.sort(key=lambda x: -x[0])  # descending Y
+        face1_pts.sort(key=lambda x: -x[0])  # descending Y
+
+        for (_, n0), (_, n1) in zip(face0_pts, face1_pts):
+            pairs.append((n0, n1))
+
+    return pairs
+
+
+def _build_connected_components(wire_names: list, pairs: list) -> dict:
+    """Build connected components from a list of (name_a, name_b) edge pairs.
+
+    Returns:
+        ``dict[str, frozenset]`` — maps each wire name to the frozenset of
+        all wire names in the same connected component (including itself).
+    """
+    parent = {name: name for name in wire_names}
+
+    def _find(x: str) -> str:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def _union(x: str, y: str) -> None:
+        px, py = _find(x), _find(y)
+        if px != py:
+            parent[px] = py
+
+    for n0, n1 in pairs:
+        if n0 in parent and n1 in parent:
+            _union(n0, n1)
+
+    groups: dict = {}
+    for name in wire_names:
+        root = _find(name)
+        groups.setdefault(root, set()).add(name)
+
+    result: dict = {}
+    for members in groups.values():
+        fs = frozenset(members)
+        for name in members:
+            result[name] = fs
+    return result
+
+
+def _assign_hd_segments_topological(
+    all_wire_names: list,
+    pairs: list,
+    wire_seg_geometric: dict,
+) -> dict:
+    """Return topologically-corrected segment values for HD wires.
+
+    The purely geometric rule in :func:`_hd_wire_segment` misclassifies wires
+    in 2-wire connected components: a "connector" wire whose head is at one Z
+    boundary and whose tail is interior gets geometric seg=2, but is only one
+    hop from the electronics-facing root wire and should be seg=1.  Standalone
+    wires whose head happens to land near a Z boundary are similarly
+    misclassified as seg=2 instead of seg=0.
+
+    This function corrects both cases by doing a BFS from the geometric-seg=0
+    root(s) within each connected component and assigning the BFS distance as
+    the segment value.
+
+    Rules:
+    * Component of size 1 → seg=0 (standalone; always directly on electronics).
+    * Root wire(s) (geometric seg=0) within larger components → seg=0.
+    * Neighbors of roots → seg=1.
+    * Neighbors of their neighbors → seg=2.
+
+    Args:
+        all_wire_names:    All wire names in the anode (including isolated ones).
+        pairs:             ``(name_a, name_b)`` edges from Z-boundary matching.
+        wire_seg_geometric: ``{wire_name: geometric_segment}`` from
+                            :func:`_hd_wire_segment`.
+
+    Returns:
+        ``dict[str, int]`` — corrected segment for every wire name.
+    """
+    # Build adjacency from pairs.
+    adjacency: dict = {name: set() for name in all_wire_names}
+    for n0, n1 in pairs:
+        if n0 in adjacency and n1 in adjacency:
+            adjacency[n0].add(n1)
+            adjacency[n1].add(n0)
+
+    component_of = _build_connected_components(all_wire_names, pairs)
+
+    # Deduplicate components (component_of maps every wire to its frozenset).
+    seen: set = set()
+    components: list = []
+    for fs in component_of.values():
+        if fs not in seen:
+            seen.add(fs)
+            components.append(fs)
+
+    result: dict = {}
+    for fs in components:
+        component = list(fs)
+
+        if len(component) == 1:
+            result[component[0]] = 0
+            continue
+
+        roots = [w for w in component if wire_seg_geometric.get(w, -1) == 0]
+        if not roots:
+            # Orphaned component: no geo_seg=0 root because the natural seg=0
+            # partner was left unmatched by Y-rank pairing (count mismatch at a
+            # Z boundary).  The geo_seg=2 wire (one boundary endpoint, one
+            # interior endpoint) is the electronics-facing primary; treat it as
+            # the BFS root (seg=0) and assign its geo_seg=1 neighbour seg=1.
+            alt_roots = [w for w in component if wire_seg_geometric.get(w, -1) == 2]
+            if alt_roots:
+                alt_dist: dict = {w: 0 for w in alt_roots}
+                alt_queue = list(alt_roots)
+                alt_head = 0
+                while alt_head < len(alt_queue):
+                    cur = alt_queue[alt_head]
+                    alt_head += 1
+                    for nb in adjacency[cur]:
+                        if nb not in alt_dist:
+                            alt_dist[nb] = alt_dist[cur] + 1
+                            alt_queue.append(nb)
+                for name in component:
+                    result[name] = alt_dist.get(name, wire_seg_geometric.get(name, 0))
+                continue
+            for name in component:
+                result[name] = wire_seg_geometric.get(name, 0)
+            continue
+
+        # BFS from all roots simultaneously.
+        dist: dict = {w: 0 for w in roots}
+        queue = list(roots)
+        head_idx = 0
+        while head_idx < len(queue):
+            current = queue[head_idx]
+            head_idx += 1
+            for neighbor in adjacency[current]:
+                if neighbor not in dist:
+                    dist[neighbor] = dist[current] + 1
+                    queue.append(neighbor)
+
+        for name in component:
+            result[name] = dist.get(name, wire_seg_geometric.get(name, 0))
+
+    return result
+
+
+def _orient_hd_wires(anodes: list) -> None:
+    """Set head/tail of every WireGeom in HD anodes to the physical convention.
+
+    HD convention: head = the endpoint with larger Y coordinate (toward
+    electronics readout at the top).  ``extract_wires`` uses a geometric
+    default (head = local +Z axis endpoint) which is arbitrary and breaks the
+    Z-boundary segment classification that ``build_hd_channel_map`` relies on.
+    This function fixes the orientation in-place before channel assignment.
+    """
+    for anode in anodes:
+        for face in anode.faces:
+            for plane in face.planes:
+                for wire in plane.wires:
+                    if wire.tail[1] > wire.head[1]:
+                        wire.head, wire.tail = wire.tail, wire.head
+
+
+def build_hd_channel_map(anodes: list, z_buf: float = 0.1) -> dict:
+    """Assign channel IDs and segment values to all wires in HD anodes.
+
+    Channel allocation strategy (must reproduce the reference file convention):
+
+    * Z boundary *regions* (z_min, z_max) are found from the endpoint distribution.
+    * Segment (0/1/2) is determined geometrically per wire using those regions.
+    * Connected components are built via Z-boundary rank matching.
+    * Channels are allocated per anode: face1 (lower-X, index 1) first then
+      face0 (higher-X, index 0), each traversed in
+      :func:`sort_planes_by_drift` × :func:`sort_wires_by_pitch` order.
+    * When a wire's component has not yet been fully assigned, the new channel
+      is propagated to all un-assigned component members.
+
+    Args:
+        anodes:  List of :class:`AnodeGeom`, with ``faces[0]`` = higher-X face
+                 and ``faces[1]`` = lower-X face (as set by
+                 :func:`pair_faces_into_anodes`).
+        z_buf:   Extra buffer in mm added around each boundary region when
+                 checking endpoint proximity (absorbs floating-point noise).
+
+    Returns:
+        ``dict[str, (int, int)]`` — ``{wire_name: (channel_id, segment)}``.
+    """
+    channel_map: dict = {}
+    channel = 0
+
+    for anode in anodes:
+        z_bounds = _find_z_boundaries(anode)
+
+        # Collect all wire names and compute geometric segments.
+        all_wire_names: list = []
+        wire_seg_geo: dict = {}
+        for face in anode.faces:
+            for plane in face.planes:
+                for wire in plane.wires:
+                    all_wire_names.append(wire.name)
+                    wire_seg_geo[wire.name] = _hd_wire_segment(wire, z_bounds, z_buf)
+
+        pairs = _find_hd_z_pairs(anode, z_bounds, z_buf)
+        # Topological correction: 2-wire-component connectors get seg=1 not seg=2.
+        wire_seg = _assign_hd_segments_topological(all_wire_names, pairs, wire_seg_geo)
+        component_of = _build_connected_components(all_wire_names, pairs)
+
+        assigned: set = set()
+        # Iterate plane-by-plane (U, V, W) and within each plane process
+        # face1 (lower-X, faces[1]) before face0 (higher-X, faces[0]).
+        #
+        # Pitch direction convention — the reference channel assignment uses:
+        #   U (plane_idx=0): face1 DESCENDING, face0 ASCENDING
+        #   V (plane_idx=1): face1 ASCENDING,  face0 DESCENDING
+        #   W (plane_idx≥2): both ASCENDING
+        # The alternating U/V pattern arises because the inner-TPC rotation
+        # (180° about X+Y) swaps the local U and V wire orientations so that
+        # inner-TPC V wires appear as outer-TPC U wires in the world frame.
+        #
+        # A new channel is allocated only when the seg=0 (primary) wire of a
+        # component is encountered; connectors (seg=1) and trailing ends
+        # (seg=2) are assigned at that same time.
+        face0 = anode.faces[0]  # higher-X (Inner TPC)
+        face1 = anode.faces[1]  # lower-X (Outer TPC)
+        planes0 = sort_planes_by_drift(face0)
+        planes1 = sort_planes_by_drift(face1)
+        for plane_idx, (plane1, plane0) in enumerate(zip(planes1, planes0)):
+            for inner_face_idx, (face, plane) in enumerate([(face1, plane1), (face0, plane0)]):
+                # Descending pitch for U-face1 and V-face0 (induction planes only).
+                descending = (plane_idx < 2) and (plane_idx % 2 == inner_face_idx % 2)
+                wires_ordered = sort_wires_by_pitch(plane)
+                if descending:
+                    wires_ordered = list(reversed(wires_ordered))
+                for wire in wires_ordered:
+                    if wire.name in assigned:
+                        continue
+                    if wire_seg[wire.name] != 0:
+                        continue
+                    component = component_of[wire.name]
+                    for partner in component:
+                        if partner not in assigned:
+                            channel_map[partner] = (channel, wire_seg[partner])
+                            assigned.add(partner)
+                    channel += 1
+
+    return channel_map
+
+
 def build_store(anodes: list, channel_map: dict):
     """Build a :class:`~wirecell.util.wires.schema.Store` from intermediate geometry.
 
@@ -532,7 +925,7 @@ def convert(gdml_path, config: dict, root_vol: str = ""):
 
     gdml_root = ET.parse(str(gdml_path)).getroot()
     defines = parse_define(gdml_root)
-    solids = parse_solids(gdml_root)
+    solids = parse_solids(gdml_root, defines)
     vol_tree = parse_structure(gdml_root, defines, solids)
 
     if not root_vol:
@@ -555,20 +948,22 @@ def convert(gdml_path, config: dict, root_vol: str = ""):
     tolerance = float(config["nearness_tolerance"])
     mode = config["connectivity_mode"]
 
-    connectivity: dict = {}
     if mode == "vd":
+        connectivity: dict = {}
         for anode in anodes:
             connectivity.update(find_vd_connected_pairs(anode, tolerance))
+        channels = assign_vd_channels(anodes, connectivity)
+        channel_map = {
+            name: (channels[name], connectivity.get(name, {}).get("segment", 0))
+            for name in channels
+        }
+    elif mode == "hd":
+        _orient_hd_wires(anodes)
+        channel_map = build_hd_channel_map(anodes, z_buf=tolerance)
     else:
         raise NotImplementedError(
             f"connectivity_mode={mode!r} is not yet implemented."
         )
-
-    channels = assign_vd_channels(anodes, connectivity)
-    channel_map = {
-        name: (channels[name], connectivity.get(name, {}).get("segment", 0))
-        for name in channels
-    }
 
     return build_store(anodes, channel_map)
 
@@ -635,7 +1030,19 @@ def parse_define(gdml_root) -> dict:
 
     define = gdml_root.find("define")
     if define is None:
-        return {"positions": positions, "rotations": rotations}
+        return {"positions": positions, "rotations": rotations, "constants": {}}
+
+    # First pass: collect <constant> values (may be referenced in positions/rotations)
+    constants: dict[str, float] = {}
+    for elem in define:
+        if elem.tag == "constant":
+            cname = elem.get("name")
+            val = elem.get("value")
+            if cname and val is not None:
+                try:
+                    constants[cname] = float(val)
+                except (ValueError, TypeError):
+                    pass
 
     for elem in define:
         name = elem.get("name")
@@ -644,22 +1051,22 @@ def parse_define(gdml_root) -> dict:
         if elem.tag == "position":
             unit = elem.get("unit", "mm")
             scale = _UNIT_TO_MM.get(unit, 1.0)
-            x = _gdml_float(elem.get("x")) * scale
-            y = _gdml_float(elem.get("y")) * scale
-            z = _gdml_float(elem.get("z")) * scale
+            x = _gdml_float(elem.get("x"), ns=constants) * scale
+            y = _gdml_float(elem.get("y"), ns=constants) * scale
+            z = _gdml_float(elem.get("z"), ns=constants) * scale
             positions[name] = np.array([x, y, z], dtype=float)
         elif elem.tag == "rotation":
             unit = elem.get("unit", "deg")
             scale = _UNIT_TO_RAD.get(unit, np.pi / 180.0)
-            rx = _gdml_float(elem.get("x")) * scale
-            ry = _gdml_float(elem.get("y")) * scale
-            rz = _gdml_float(elem.get("z")) * scale
+            rx = _gdml_float(elem.get("x"), ns=constants) * scale
+            ry = _gdml_float(elem.get("y"), ns=constants) * scale
+            rz = _gdml_float(elem.get("z"), ns=constants) * scale
             rotations[name] = np.array([rx, ry, rz], dtype=float)
 
-    return {"positions": positions, "rotations": rotations}
+    return {"positions": positions, "rotations": rotations, "constants": constants}
 
 
-def parse_solids(gdml_root) -> dict:
+def parse_solids(gdml_root, defines: dict = None) -> dict:
     """Parse the GDML <solids> section and return tube dimensions.
 
     Only ``<tube>`` elements are returned; box and other solid types are
@@ -667,6 +1074,9 @@ def parse_solids(gdml_root) -> dict:
 
     Args:
         gdml_root: The root Element of a parsed GDML document.
+        defines:   Optional output of :func:`parse_define`.  When provided its
+                   ``"constants"`` entry is used to resolve named values such as
+                   ``z="EWProfileLength"`` that appear in some GDML files.
 
     Returns:
         ``dict[str, dict]`` mapping each tube solid name to::
@@ -676,6 +1086,7 @@ def parse_solids(gdml_root) -> dict:
     """
     _UNIT_TO_MM = {"mm": 1.0, "cm": 10.0, "m": 1000.0}
 
+    constants = (defines or {}).get("constants", {})
     tubes: dict[str, dict] = {}
 
     solids = gdml_root.find("solids")
@@ -690,8 +1101,8 @@ def parse_solids(gdml_root) -> dict:
             continue
         unit = elem.get("lunit", "mm")
         scale = _UNIT_TO_MM.get(unit, 1.0)
-        rmax = _gdml_float(elem.get("rmax")) * scale
-        full_z = _gdml_float(elem.get("z")) * scale
+        rmax = _gdml_float(elem.get("rmax"), ns=constants) * scale
+        full_z = _gdml_float(elem.get("z"), ns=constants) * scale
         tubes[name] = {"rmax": rmax, "half_z": full_z / 2.0}
 
     return tubes
@@ -1114,7 +1525,17 @@ def pair_faces_into_anodes(faces: list, connectivity_mode: str) -> list:
                     # Odd-count group — store as-is; the error check below will catch it.
                     groups[(xz_key, pair_idx // 2)] = pair
     elif connectivity_mode == "hd":
-        groups = _group_by_yz_centroid(faces)
+        # HD closed-book: pair Inner + Outer TPC faces that share the same
+        # X-side and Z-position.  x_tol=200 mm collapses Inner/Outer (~100 mm
+        # apart) into one key while separating left/right sides (>>1 m apart).
+        # z_tol=100 mm collapses the ~0.5 mm Inner/Outer Z offset while keeping
+        # distinct anode rows (hundreds of mm apart) separate.
+        xz_raw = _group_by_xz_centroid(faces, x_tol=200.0, z_tol=100.0)
+        groups = {}
+        for key, group_faces in xz_raw.items():
+            # Sort descending X: face[0] = higher-X face (ident 0),
+            # face[1] = lower-X face (ident 1), matching reference convention.
+            groups[key] = sorted(group_faces, key=lambda f: _face_mean_pos(f)[0], reverse=True)
     else:
         raise ValueError(
             f"Unknown connectivity_mode {connectivity_mode!r}. "
@@ -1132,12 +1553,19 @@ def pair_faces_into_anodes(faces: list, connectivity_mode: str) -> list:
             anode = AnodeGeom(faces=list(group[i:i + 2]))
             anodes.append(anode)
 
-    # Sort anodes by their mean world position (X, Y, Z) so the output order
-    # is deterministic and matches the reference file ordering.
-    # Round to the nearest 100 mm before comparing to suppress floating-point
-    # noise: anode centroids that should be equal often differ by ~1e-11 mm
-    # due to rotation arithmetic, which would cause spurious Z-ordering.
-    anodes.sort(key=lambda a: tuple(round(float(x), -2) for x in _anode_mean_pos(a)))
+    # Sort anodes by their mean world position so the output order is
+    # deterministic and matches the reference file ordering.
+    # Round to the nearest 100 mm to suppress floating-point noise.
+    # VD: sort by (X, Y, Z) — drift columns first.
+    # HD: sort by (Z, X, Y) — beam-direction rows first, then drift side.
+    def _anode_sort_key(a):
+        pos = _anode_mean_pos(a)
+        x, y, z = (round(float(v), -2) for v in pos)
+        if connectivity_mode == "hd":
+            return (z, x, y)
+        return (x, y, z)
+
+    anodes.sort(key=_anode_sort_key)
     return anodes
 
 
