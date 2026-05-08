@@ -132,8 +132,8 @@ def test_v4_no_false_positives(v4_cfg):
 _V5_NAMES = [
     "volTPCWireU0_0",
     "volTPCWireV100_3",
-    "volTPCWireZ_0",
-    "volTPCWireZ_3",
+    "volTPCWireZ0",
+    "volTPCWireZ3",
     "volTPCPlaneU_0",
     "volTPCPlaneV_2",
     "volTPCPlaneZ_3",
@@ -152,8 +152,8 @@ def test_v5_wire_names_classified(v5_cfg):
     roles = classify_volumes(_V5_NAMES, v5_cfg["role_patterns"])
     assert "volTPCWireU0_0" in roles["wire"]
     assert "volTPCWireV100_3" in roles["wire"]
-    assert "volTPCWireZ_0" in roles["wire"]
-    assert "volTPCWireZ_3" in roles["wire"]
+    assert "volTPCWireZ0" in roles["wire"]
+    assert "volTPCWireZ3" in roles["wire"]
 
 
 def test_v5_plane_names_classified(v5_cfg):

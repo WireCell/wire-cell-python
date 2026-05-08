@@ -80,13 +80,18 @@ BUILTIN_CONFIGS: dict[str, dict] = {
     },
     "protodunevd_v5": {
         "role_patterns": {
-            "wire":     r"volTPCWire[UVZ]\d*_\d+",
+            # v5 U/V wire LVs have a mandatory _N suffix (volTPCWireU0_0)
+            # while Z wire LVs do not (volTPCWireZ0).  The alternation makes
+            # v4 U/V names (no suffix) fail to match.
+            "wire":     r"volTPCWire([UV]\d+_\d+|Z\d+)",
             "plane":    r"volTPCPlane[UVZ]_\d+",
             "face":     r"volTPC_\d+",
             "detector": r"volCryostat",
         },
         "connectivity_mode": "vd",
-        "nearness_tolerance": 0.1,
+        # v5 wire endpoints between anode faces are ~0.2 mm apart; 0.5 mm gives
+        # comfortable margin while staying well below the ~4.75 mm wire pitch.
+        "nearness_tolerance": 0.5,
     },
 }
 
