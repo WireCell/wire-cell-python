@@ -47,6 +47,22 @@ from typing import Optional, Union
 import numpy as np
 from scipy.spatial.transform import Rotation
 
+
+def _gdml_float(s, default: float = 0.0) -> float:
+    """Parse a GDML numeric attribute string, evaluating simple arithmetic.
+
+    GDML files may use expressions like ``'0.5*0.02'`` in solid attributes.
+    Falls back to *default* when *s* is ``None`` or empty.
+    """
+    if s is None or s == "":
+        return default
+    try:
+        return float(s)
+    except (ValueError, TypeError):
+        import math as _math
+        return float(eval(str(s), {"__builtins__": {}}, vars(_math)))
+
+
 # ── Detector config ────────────────────────────────────────────────────────────
 
 _REQUIRED_CONFIG_KEYS = frozenset({"role_patterns", "connectivity_mode", "nearness_tolerance"})
@@ -623,16 +639,16 @@ def parse_define(gdml_root) -> dict:
         if elem.tag == "position":
             unit = elem.get("unit", "mm")
             scale = _UNIT_TO_MM.get(unit, 1.0)
-            x = float(elem.get("x", 0.0)) * scale
-            y = float(elem.get("y", 0.0)) * scale
-            z = float(elem.get("z", 0.0)) * scale
+            x = _gdml_float(elem.get("x")) * scale
+            y = _gdml_float(elem.get("y")) * scale
+            z = _gdml_float(elem.get("z")) * scale
             positions[name] = np.array([x, y, z], dtype=float)
         elif elem.tag == "rotation":
             unit = elem.get("unit", "deg")
             scale = _UNIT_TO_RAD.get(unit, np.pi / 180.0)
-            rx = float(elem.get("x", 0.0)) * scale
-            ry = float(elem.get("y", 0.0)) * scale
-            rz = float(elem.get("z", 0.0)) * scale
+            rx = _gdml_float(elem.get("x")) * scale
+            ry = _gdml_float(elem.get("y")) * scale
+            rz = _gdml_float(elem.get("z")) * scale
             rotations[name] = np.array([rx, ry, rz], dtype=float)
 
     return {"positions": positions, "rotations": rotations}
@@ -669,8 +685,8 @@ def parse_solids(gdml_root) -> dict:
             continue
         unit = elem.get("lunit", "mm")
         scale = _UNIT_TO_MM.get(unit, 1.0)
-        rmax = float(elem.get("rmax", 0.0)) * scale
-        full_z = float(elem.get("z", 0.0)) * scale
+        rmax = _gdml_float(elem.get("rmax")) * scale
+        full_z = _gdml_float(elem.get("z")) * scale
         tubes[name] = {"rmax": rmax, "half_z": full_z / 2.0}
 
     return tubes
@@ -709,9 +725,9 @@ def parse_structure(gdml_root, defines: dict, solids: dict) -> dict:
         unit = elem.get("unit", "mm")
         scale = _UNIT_TO_MM.get(unit, 1.0)
         return np.array(
-            [float(elem.get("x", 0.0)) * scale,
-             float(elem.get("y", 0.0)) * scale,
-             float(elem.get("z", 0.0)) * scale],
+            [_gdml_float(elem.get("x")) * scale,
+             _gdml_float(elem.get("y")) * scale,
+             _gdml_float(elem.get("z")) * scale],
             dtype=float,
         )
 
@@ -719,9 +735,9 @@ def parse_structure(gdml_root, defines: dict, solids: dict) -> dict:
         unit = elem.get("unit", "deg")
         scale = _UNIT_TO_RAD.get(unit, np.pi / 180.0)
         return np.array(
-            [float(elem.get("x", 0.0)) * scale,
-             float(elem.get("y", 0.0)) * scale,
-             float(elem.get("z", 0.0)) * scale],
+            [_gdml_float(elem.get("x")) * scale,
+             _gdml_float(elem.get("y")) * scale,
+             _gdml_float(elem.get("z")) * scale],
             dtype=float,
         )
 
@@ -821,6 +837,14 @@ def extract_wires(
     """
     result = []
 
+    # Counter for anonymous face placements (physvol name == LV name).
+    _face_counter: dict = {}
+    # Counter for repeated wire LV placements within the same face.
+    # Key: (face_name, vol_name) → number of times this LV has been placed.
+    # When a single wire LV (e.g. volTPCWireZ0) is placed N times in one face,
+    # the second and subsequent placements get a numeric suffix to stay unique.
+    _wire_counter: dict = {}
+
     def _recurse(vol_name, pv_name, transform_chain, plane_name, face_name):
         entry = vol_tree.get(vol_name)
         if entry is None:
@@ -835,8 +859,19 @@ def extract_wires(
                 T = compose_transforms(*transform_chain)
                 tail = apply_transform(T, [0.0, 0.0, -dims["half_z"]])
                 head = apply_transform(T, [0.0, 0.0, +dims["half_z"]])
+                # Build a unique wire name.  Prepend the face placement name so
+                # the same wire LV in multiple TPC instances stays distinct.
+                # When the same wire LV is placed >1 times in the same face
+                # (e.g. a single volTPCWireZ0 placed 292 times in one Z plane),
+                # append a 1-based counter to the 2nd and later occurrences so
+                # that all wire names in the detector are unique.
+                base = f"{face_name}.{vol_name}" if face_name else vol_name
+                key = (face_name, vol_name)
+                n = _wire_counter.get(key, 0)
+                _wire_counter[key] = n + 1
+                wire_name = base if n == 0 else f"{base}_{n}"
                 result.append(WireGeom(
-                    name=vol_name,
+                    name=wire_name,
                     tail=tail,
                     head=head,
                     radius=dims["rmax"],
@@ -846,9 +881,15 @@ def extract_wires(
             return  # leaf — do not recurse into wire volumes
 
         if role == "face":
-            # Use the physvol placement name to distinguish multiple instances
-            # of the same face logical volume (e.g. Top vs Bot in VD open-book).
-            face_name = pv_name
+            if pv_name != vol_name:
+                # Explicit physvol name (e.g. "volTPC0_top") — use as-is.
+                face_name = pv_name
+            else:
+                # Anonymous physvol (same name as LV) — append a counter to
+                # make each placement unique (e.g. "volTPC0_0", "volTPC0_1").
+                n = _face_counter.get(vol_name, 0)
+                _face_counter[vol_name] = n + 1
+                face_name = f"{vol_name}_{n}"
         elif role == "plane":
             plane_name = vol_name
 
@@ -1028,10 +1069,13 @@ def pair_faces_into_anodes(faces: list, connectivity_mode: str) -> list:
                             :func:`build_detector_faces`.
         connectivity_mode:  ``"vd"`` or ``"hd"``.
 
-            * **VD** — *open-book*: pairs share the same TPC logical-volume
-              name (encoded in ``face.name`` as ``"<lv>_<tag>"``).  The LV
-              name is recovered by dropping the last ``_``-delimited token.
-              Faces from the same LV are paired together.
+            * **VD** — *open-book*: faces that share the same X and Z centroid
+              (within 100 mm tolerance) belong to the same anode column.  Within
+              each column, faces are sorted by Y centroid and paired adjacent
+              (faces 0+1, faces 2+3, …) so that the two nearest Y positions form
+              one anode.  This matches the ProtoDUNE-VD vertical-drift geometry
+              where two faces sit side-by-side in Y at the same (X, Z) location
+              with the 180° rotation about Y creating the open-book orientation.
             * **HD** — *closed-book*: pairs share the same Y-Z centroid.
               Faces are clustered by their rounded (Y, Z) mean position and
               paired within each cluster.
@@ -1048,7 +1092,22 @@ def pair_faces_into_anodes(faces: list, connectivity_mode: str) -> list:
         return []
 
     if connectivity_mode == "vd":
-        groups = _group_by_lv_name(faces)
+        # Group by (X, Z) column, then pair adjacent faces by ascending Y.
+        # Within each pair: face[0] = higher-Y face, face[1] = lower-Y face,
+        # matching the reference convention where face0 is the "inner" face
+        # (closer to the other anode in the Y direction).
+        xz_groups = _group_by_xz_centroid(faces)
+        groups: dict = {}
+        for xz_key, xz_faces in xz_groups.items():
+            sorted_faces = sorted(xz_faces, key=lambda f: _face_mean_pos(f)[1])
+            for pair_idx in range(0, len(sorted_faces), 2):
+                pair = sorted_faces[pair_idx:pair_idx + 2]
+                if len(pair) == 2:
+                    # Reverse so higher-Y face is first.
+                    groups[(xz_key, pair_idx // 2)] = [pair[1], pair[0]]
+                else:
+                    # Odd-count group — store as-is; the error check below will catch it.
+                    groups[(xz_key, pair_idx // 2)] = pair
     elif connectivity_mode == "hd":
         groups = _group_by_yz_centroid(faces)
     else:
@@ -1067,18 +1126,35 @@ def pair_faces_into_anodes(faces: list, connectivity_mode: str) -> list:
         for i in range(0, len(group), 2):
             anode = AnodeGeom(faces=list(group[i:i + 2]))
             anodes.append(anode)
+
+    # Sort anodes by their mean world position (X, Y, Z) so the output order
+    # is deterministic and matches the reference file ordering.
+    # Round to the nearest 100 mm before comparing to suppress floating-point
+    # noise: anode centroids that should be equal often differ by ~1e-11 mm
+    # due to rotation arithmetic, which would cause spurious Z-ordering.
+    anodes.sort(key=lambda a: tuple(round(float(x), -2) for x in _anode_mean_pos(a)))
     return anodes
 
 
-def _group_by_lv_name(faces: list) -> dict:
-    """Group faces by TPC logical-volume name (VD open-book pairing)."""
+def _anode_mean_pos(anode) -> np.ndarray:
+    """Return mean world-frame position of all wires in an anode."""
+    poses = [_face_mean_pos(f) for f in anode.faces]
+    return np.mean(poses, axis=0)
+
+
+def _group_by_xz_centroid(faces: list, x_tol: float = 100.0, z_tol: float = 100.0) -> dict:
+    """Group faces by rounded X-Z centroid (VD open-book column grouping).
+
+    VD open-book faces in the same anode column share the same X (drift side)
+    and Z (beam position) coordinates.  The Y coordinate distinguishes the two
+    faces within a pair (they are side-by-side in the drift-perpendicular Y
+    direction).
+    """
     groups: dict = {}
     for face in faces:
-        # face.name is the physvol placement name, e.g. "volTPC0_top".
-        # The LV name is everything before the last underscore-prefixed token.
-        parts = face.name.rsplit("_", 1)
-        lv_name = parts[0] if len(parts) == 2 else face.name
-        groups.setdefault(lv_name, []).append(face)
+        pos = _face_mean_pos(face)
+        key = (round(pos[0] / x_tol), round(pos[2] / z_tol))
+        groups.setdefault(key, []).append(face)
     return groups
 
 

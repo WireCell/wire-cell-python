@@ -107,17 +107,17 @@ def test_Z_wire_length(wires_from_world):
 # ── Specific endpoint values (Top placement volTPC0_top) ─────────────────────
 #
 # Transform chain for volTPCWireU0 in the Top TPC:
-#   T_top   : pos=[15.0, 0, 0],   rot=[0, 0, 0]         → R=I, t=[15,0,0]
+#   T_top   : pos=[0, 15.0, 0],   rot=[0, 0, 0]         → R=I, t=[0,15,0]
 #   T_planeU: pos=[-4.76, 0, 0],  rot=[0, 0, 0]         → R=I, t=[-4.76,0,0]
 #   T_wireU0: pos=[0, -9.52, 0],  rot=[30°, 0, 0]       → R=Rx(-30°), t=[0,-9.52,0]
 #
-# Wire center in world: (15-4.76+0, 0+0-9.52, 0) = (10.24, -9.52, 0)
+# Wire center in world: (0-4.76+0, 15+0-9.52, 0) = (-4.76, 5.48, 0)
 # Rx(-30°) @ [0, 0, ±50]:  y' = ∓50·sin(-30°) = ±25,  z' = ±50·cos(-30°) = ±25√3
-# head = (10.24, -9.52+25,  25√3)  ≈ (10.24, 15.48,  43.301)
-# tail = (10.24, -9.52-25, -25√3)  ≈ (10.24, -34.52, -43.301)
+# head = (-4.76, 5.48+25,  25√3)  ≈ (-4.76, 30.48,  43.301)
+# tail = (-4.76, 5.48-25, -25√3)  ≈ (-4.76, -19.52, -43.301)
 
 def _expected_wireU0_top():
-    cx, cy = 15.0 - 4.76, -9.52
+    cx, cy = 0.0 - 4.76, 15.0 - 9.52
     half_z = 50.0
     theta = math.radians(-30)  # active rotation for rWireU
     dy = -half_z * math.sin(theta)
@@ -128,16 +128,19 @@ def _expected_wireU0_top():
 
 
 def test_wireU0_top_head(wires_from_world):
-    # Find the U0 wire that belongs to the Top TPC (positive x world position)
-    u0_wires = [w for w in wires_from_world if w.name == "volTPCWireU0"]
-    top = max(u0_wires, key=lambda w: w.head[0])  # Top TPC is at higher x
+    # Find the U0 wire that belongs to the Top TPC (positive Y world position).
+    # Wire names now include face_name prefix (e.g. "volTPC0_top.volTPCWireU0").
+    u0_wires = [w for w in wires_from_world if w.name.endswith(".volTPCWireU0")
+                or w.name == "volTPCWireU0"]
+    top = max(u0_wires, key=lambda w: w.head[1])  # Top TPC is at higher y
     expected_head, _ = _expected_wireU0_top()
     np.testing.assert_allclose(top.head, expected_head, atol=1e-6)
 
 
 def test_wireU0_top_tail(wires_from_world):
-    u0_wires = [w for w in wires_from_world if w.name == "volTPCWireU0"]
-    top = max(u0_wires, key=lambda w: w.head[0])
+    u0_wires = [w for w in wires_from_world if w.name.endswith(".volTPCWireU0")
+                or w.name == "volTPCWireU0"]
+    top = max(u0_wires, key=lambda w: w.head[1])  # Top TPC is at higher y
     _, expected_tail = _expected_wireU0_top()
     np.testing.assert_allclose(top.tail, expected_tail, atol=1e-6)
 

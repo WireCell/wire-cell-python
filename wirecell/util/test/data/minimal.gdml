@@ -316,17 +316,18 @@
       <materialref ref="LAr"/>
       <solidref ref="World"/>
 
-      <!-- Top face: identity placement -->
+      <!-- Top face: identity placement at positive Y -->
       <physvol name="volTPC0_top">
         <volumeref ref="volTPC0"/>
-        <position name="posTPC0_top" unit="mm" x="15.0" y="0" z="0"/>
+        <position name="posTPC0_top" unit="mm" x="0" y="15.0" z="0"/>
         <rotationref ref="rIdentity"/>
       </physvol>
 
-      <!-- Bot face: 180-degree rotation about Y (open-book pair) -->
+      <!-- Bot face: 180-degree rotation about Y at negative Y (VD open-book pair).
+           Same X and Z as top face; faces are side-by-side in the Y direction. -->
       <physvol name="volTPC0_bot">
         <volumeref ref="volTPC0"/>
-        <position name="posTPC0_bot" unit="mm" x="-19.0" y="0" z="0"/>
+        <position name="posTPC0_bot" unit="mm" x="0" y="-15.0" z="0"/>
         <rotationref ref="rPlus180AboutY"/>
       </physvol>
     </volume>

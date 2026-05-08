@@ -70,9 +70,9 @@ def test_vd_anode_contains_both_placement_faces(faces):
     assert "volTPC0_bot" in face_names
 
 
-# ── VD pairing: open-book rule — same TPC LV, side-by-side in Y-Z ────────────
-# The two faces share the same drift-axis X position cluster, i.e., their
-# wire-plane stacks overlap in Y-Z but face in opposite X directions.
+# ── VD pairing: open-book rule — same X-Z column, side-by-side in Y ──────────
+# The two faces share the same X (drift side) and Z (beam position) but are at
+# different Y positions (the vertical drift direction separates them).
 
 def test_vd_paired_faces_have_same_tpc_lv(faces):
     # Both faces come from volTPC0 (same LV placed twice); face_name encodes
@@ -85,18 +85,18 @@ def test_vd_paired_faces_have_same_tpc_lv(faces):
     assert len(lv_names) == 1, f"Faces from different LVs paired: {face_names}"
 
 
-# ── VD pairing: opposite drift directions ────────────────────────────────────
-# Top face planes are at positive X; Bot face planes are at negative X.
-# In a paired anode the two face-mean X positions should be on opposite sides
-# of zero (or at minimum, substantially different from each other).
+# ── VD pairing: opposite Y positions ─────────────────────────────────────────
+# In the VD open-book geometry the two faces of an anode are at the same X
+# (drift side) but at different Y values (one at positive Y, one at negative Y).
+# Their wire-midpoint Y centroids should be on opposite sides of zero.
 
-def test_vd_paired_faces_have_opposite_drift_sides(faces):
+def test_vd_paired_faces_have_opposite_y_sides(faces):
     anodes = pair_faces_into_anodes(faces, "vd")
     f0, f1 = anodes[0].faces
-    x0 = np.mean([0.5*(w.head[0]+w.tail[0]) for p in f0.planes for w in p.wires])
-    x1 = np.mean([0.5*(w.head[0]+w.tail[0]) for p in f1.planes for w in p.wires])
-    # One should be positive, one negative
-    assert x0 * x1 < 0, f"Paired faces both on same side of cathode: x={x0:.2f}, {x1:.2f}"
+    y0 = np.mean([0.5*(w.head[1]+w.tail[1]) for p in f0.planes for w in p.wires])
+    y1 = np.mean([0.5*(w.head[1]+w.tail[1]) for p in f1.planes for w in p.wires])
+    # One should be at positive Y, one at negative Y
+    assert y0 * y1 < 0, f"Paired faces both on same Y side: y={y0:.2f}, {y1:.2f}"
 
 
 # ── VD pairing: odd number of faces raises ───────────────────────────────────

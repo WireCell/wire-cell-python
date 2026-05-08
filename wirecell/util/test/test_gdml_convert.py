@@ -89,9 +89,12 @@ def test_convert_channels_are_ints(store):
 
 
 def test_convert_unknown_mode_raises():
+    # "hd" connectivity is not implemented; the error may surface either at the
+    # pairing step (ValueError from face grouping) or at the connectivity step
+    # (NotImplementedError from assign_vd_channels / convert).
     cfg = load_config(str(_TEST_CONFIG))
     bad_cfg = dict(cfg, connectivity_mode="hd")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises((NotImplementedError, ValueError)):
         convert(_MINIMAL_GDML, bad_cfg)
 
 

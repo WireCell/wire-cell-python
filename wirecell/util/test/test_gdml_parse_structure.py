@@ -119,10 +119,10 @@ def test_wireU4_anonymous_inline_position(parsed):
 
 
 def test_worldTPC0_top_inline_position(parsed):
-    # volWorld top face: inline position x=15.0
+    # volWorld top face: inline position y=15.0 (same X as bot, different Y)
     pvs = parsed["volWorld"]["physvols"]
     pv = next(p for p in pvs if p["name"] == "volTPC0_top")
-    np.testing.assert_allclose(pv["pos"], [15.0, 0.0, 0.0], atol=1e-9)
+    np.testing.assert_allclose(pv["pos"], [0.0, 15.0, 0.0], atol=1e-9)
 
 
 # ── Rotation resolution via rotationref ──────────────────────────────────────
