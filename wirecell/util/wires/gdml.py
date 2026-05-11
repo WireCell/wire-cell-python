@@ -41,12 +41,13 @@ from __future__ import annotations
 import json
 import pathlib
 import re
-from dataclasses import dataclass, field
+
 from typing import Optional, Union
 
 import numpy as np
 from scipy.spatial.transform import Rotation
 
+from .geom import *
 
 def _gdml_float(s, default: float = 0.0, ns: dict = None) -> float:
     """Parse a GDML numeric attribute string, evaluating simple arithmetic.
@@ -159,45 +160,6 @@ def load_config(path_or_name: Union[str, pathlib.Path]) -> dict:
         )
 
     return cfg
-
-
-@dataclass
-class WireGeom:
-    """Intermediate representation of a single wire in world-frame coordinates."""
-    name: str
-    tail: Optional[np.ndarray]
-    head: Optional[np.ndarray]
-    radius: float
-    plane_name: str
-    face_name: str = ""
-    channel: Optional[int] = None
-    segment: Optional[int] = None
-
-
-@dataclass
-class PlaneGeom:
-    """Intermediate representation of a wire plane."""
-    name: str
-    wires: list[WireGeom] = field(default_factory=list)
-
-
-@dataclass
-class FaceGeom:
-    """Intermediate representation of one TPC face (collection of planes)."""
-    name: str
-    planes: list[PlaneGeom] = field(default_factory=list)
-
-
-@dataclass
-class AnodeGeom:
-    """Intermediate representation of an anode (one or two faces)."""
-    faces: list[FaceGeom] = field(default_factory=list)
-
-
-@dataclass
-class DetectorGeom:
-    """Intermediate representation of a full detector (collection of anodes)."""
-    anodes: list[AnodeGeom] = field(default_factory=list)
 
 
 def _endpoint_key(point: np.ndarray) -> tuple[int, int, int]:
@@ -922,8 +884,12 @@ def convert(gdml_path, config: dict, root_vol: str = ""):
         NotImplementedError: If ``config["connectivity_mode"]`` is not ``"vd"``.
     """
     import xml.etree.ElementTree as ET
-
-    gdml_root = ET.parse(str(gdml_path)).getroot()
+    from xml.etree.ElementTree import ParseError
+    try:
+        gdml_root = ET.parse(str(gdml_path)).getroot()
+    except ParseError:
+        print(f'error reading {gdml_path}')
+        raise
     defines = parse_define(gdml_root)
     solids = parse_solids(gdml_root, defines)
     vol_tree = parse_structure(gdml_root, defines, solids)

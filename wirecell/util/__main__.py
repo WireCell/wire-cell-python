@@ -1684,7 +1684,7 @@ def cmd_gdml_to_wires(detector, output, input_gdml):
     connectivity_mode, and nearness_tolerance.
     '''
     import pathlib
-    from wirecell.util.gdml import load_config, convert
+    from wirecell.util.wires.gdml import load_config, convert
     from wirecell.util.wires import persist
 
     cfg = load_config(detector)
