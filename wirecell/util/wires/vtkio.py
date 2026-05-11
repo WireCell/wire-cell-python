@@ -274,7 +274,7 @@ def write_vtm(out_path, multiblock) -> pathlib.Path:
     p = pathlib.Path(out_path)
     if p.suffix != ".vtm":
         p = p.with_suffix(".vtm")
-    writer = vtk.vtkXMLMultiBlockDataSetWriter()
+    writer = vtk.vtkXMLMultiBlockDataWriter()
     writer.SetFileName(str(p))
     writer.SetInputData(multiblock)
     writer.Write()
