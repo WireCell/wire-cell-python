@@ -1698,6 +1698,52 @@ def cmd_gdml_to_wires(detector, output, input_gdml):
     log.info(f"wrote {output}")
 
 
+@cli.command("wire-to-vtk")
+@click.option("-o", "--output", default=None,
+              help="Output VTK stem (no extension). Default: derived from input name.")
+@click.option("-b", "--blocking", default="anode",
+              type=click.Choice(["detector", "anode", "face", "plane"]),
+              help="VTK block granularity (default: anode).")
+@click.argument("wires_input")
+def cmd_wire_to_vtk(output, blocking, wires_input):
+    '''
+    Convert a WCT wires file or canonical detector name to VTK format.
+
+    WIRES_INPUT may be a path to a .json, .json.bz2, or .json.gz wires
+    file, or a canonical detector name resolved via the detector registry
+    (e.g. "pdhd", "pdsp").
+
+    With --blocking=detector a single flat .vtp is written.  All other
+    levels produce a .vtm multiblock with per-anode, per-face, or
+    per-plane VTP leaves.
+    '''
+    import pathlib
+    from wirecell.util.wires import persist as wpersist
+    from wirecell.util.wires.geom import togeom
+    from wirecell.util.wires.vtkio import save, Blocking
+
+    p = pathlib.Path(wires_input)
+    is_file = p.suffix in ('.json', '.bz2', '.gz') or p.exists()
+
+    if is_file:
+        store = wpersist.load(wires_input)
+        if output is None:
+            stem = p.name
+            for ext in ('.bz2', '.gz', '.json'):
+                if stem.endswith(ext):
+                    stem = stem[:-len(ext)]
+            output = str(p.parent / stem)
+    else:
+        wires_path = detectors.resolve(wires_input, "wires")
+        store = wpersist.load(str(wires_path))
+        if output is None:
+            output = wires_input
+
+    det_geom = togeom(store)
+    out = save(output, det_geom, Blocking(blocking))
+    log.info(f"wrote {out}")
+
+
 def main():
     cli(obj=dict())
 
