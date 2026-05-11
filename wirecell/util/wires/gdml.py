@@ -787,84 +787,25 @@ def build_hd_channel_map(anodes: list, z_buf: float = 0.1) -> dict:
 def build_store(anodes: list, channel_map: dict):
     """Build a :class:`~wirecell.util.wires.schema.Store` from intermediate geometry.
 
+    Applies *channel_map* to the :class:`WireGeom` objects in *anodes* and
+    delegates to :func:`~wirecell.util.wires.geom.tostore`.
+
     Args:
-        anodes:      List of :class:`AnodeGeom` in detector order, as returned
-                     by :func:`pair_faces_into_anodes`.
-        channel_map: Mapping ``{wire_name: (channel_id, segment)}`` combining the
-                     results of :func:`assign_vd_channels` (for channel IDs) and
-                     :func:`find_vd_connected_pairs` (for segment values).
+        anodes:      List of :class:`AnodeGeom` in detector order.
+        channel_map: ``{wire_name: (channel_id, segment)}`` as returned by
+                     :func:`assign_vd_channels` / :func:`build_hd_channel_map`.
 
     Returns:
-        A :class:`wirecell.util.wires.schema.Store` with one
-        :class:`~wirecell.util.wires.schema.Detector` containing all anodes,
-        faces, planes, wires, and points.
-
-    Hierarchy:
-        * Anode ``ident`` = global anode index (0-based).
-        * Face ``ident`` = face position within the anode (0 or 1).
-        * Plane ``ident`` = 0/1/2 for U/V/W (drift order).
-        * Wire ``ident`` = wire index in pitch-sorted order within its plane.
-        * Points are deduplicated at 0.001 mm precision (µm-level).
+        A :class:`~wirecell.util.wires.schema.Store`.
     """
-    from wirecell.util.wires import schema as wschema
-
-    pts: list = []
-    wires: list = []
-    planes: list = []
-    faces: list = []
-    s_anodes: list = []
-
-    _pt_key: dict = {}
-
-    def _point(xyz) -> int:
-        key = (round(float(xyz[0]), 3), round(float(xyz[1]), 3), round(float(xyz[2]), 3))
-        if key not in _pt_key:
-            _pt_key[key] = len(pts)
-            pts.append(wschema.Point(x=key[0], y=key[1], z=key[2]))
-        return _pt_key[key]
-
-    for anode_idx, anode in enumerate(anodes):
-        face_indices: list = []
-
-        for face_idx, face in enumerate(anode.faces):
-            plane_indices: list = []
-
-            for plane_ident, plane in enumerate(sort_planes_by_drift(face)):
-                wire_indices: list = []
-
-                for wire_ident, geom_wire in enumerate(sort_wires_by_pitch(plane)):
-                    channel_id, segment = channel_map.get(geom_wire.name, (0, 0))
-                    tail_idx = _point(geom_wire.tail)
-                    head_idx = _point(geom_wire.head)
-                    wire_store_idx = len(wires)
-                    wires.append(wschema.Wire(
-                        ident=wire_ident,
-                        channel=channel_id,
-                        segment=segment,
-                        tail=tail_idx,
-                        head=head_idx,
-                    ))
-                    wire_indices.append(wire_store_idx)
-
-                plane_store_idx = len(planes)
-                planes.append(wschema.Plane(ident=plane_ident, wires=wire_indices))
-                plane_indices.append(plane_store_idx)
-
-            face_store_idx = len(faces)
-            faces.append(wschema.Face(ident=face_idx, planes=plane_indices))
-            face_indices.append(face_store_idx)
-
-        s_anodes.append(wschema.Anode(ident=anode_idx, faces=face_indices))
-
-    detector = wschema.Detector(ident=0, anodes=list(range(len(s_anodes))))
-    return wschema.Store(
-        detectors=[detector],
-        anodes=s_anodes,
-        faces=faces,
-        planes=planes,
-        wires=wires,
-        points=pts,
-    )
+    for anode in anodes:
+        for face in anode.faces:
+            for plane in face.planes:
+                for wire in plane.wires:
+                    ch, seg = channel_map.get(wire.name, (0, 0))
+                    wire.channel = ch
+                    wire.segment = seg
+    return tostore(DetectorGeom(anodes=list(anodes)))
 
 
 def convert(gdml_path, config: dict, root_vol: str = ""):
@@ -1331,110 +1272,6 @@ def build_detector_faces(vol_tree: dict, wires_list: list, patterns: dict) -> li
             face.planes.append(PlaneGeom(name=plane_name, wires=list(wires)))
         faces.append(face)
     return faces
-
-
-def sort_wires_by_pitch(plane_geom) -> list:
-    """Return wires in a plane sorted by ascending pitch coordinate.
-
-    The pitch direction is determined geometrically as the principal axis of
-    wire-midpoint displacement perpendicular to the wire direction.
-
-    Args:
-        plane_geom: A :class:`PlaneGeom` whose wires all have valid
-                    ``tail`` and ``head`` endpoints.
-
-    Returns:
-        New list of :class:`WireGeom` objects (same objects, reordered).
-        An empty or single-wire plane is returned as-is.
-    """
-    wires = plane_geom.wires
-    if len(wires) <= 1:
-        return list(wires)
-
-    # Determine wire direction from the first valid wire
-    wire_dir = None
-    for w in wires:
-        d = w.head - w.tail
-        n = np.linalg.norm(d)
-        if n > 1e-9:
-            wire_dir = d / n
-            break
-    if wire_dir is None:
-        return list(wires)
-
-    midpoints = np.array([0.5 * (w.head + w.tail) for w in wires])
-    centroid = midpoints.mean(axis=0)
-    centered = midpoints - centroid
-
-    # Project out the wire-direction component to get the pitch displacement
-    perp = centered - np.outer(centered @ wire_dir, wire_dir)
-
-    # Principal axis of perp displacements = pitch direction (via SVD)
-    _, _, vt = np.linalg.svd(perp, full_matrices=False)
-    pitch_dir = vt[0]
-
-    # Fix sign: ensure the largest-magnitude component is positive so that
-    # the sort is consistent (ascending = toward more-positive dominant axis).
-    dominant = np.argmax(np.abs(pitch_dir))
-    if pitch_dir[dominant] < 0:
-        pitch_dir = -pitch_dir
-
-    projections = perp @ pitch_dir
-    return [w for _, w in sorted(zip(projections, wires))]
-
-
-def sort_planes_by_drift(face_geom) -> list:
-    """Return planes sorted in U→V→W (first-induction to collection) order.
-
-    The drift direction is inferred from the cross product of wire directions
-    belonging to two non-parallel planes.  The cross product points away from
-    the cathode (toward the collection plane).  Planes are sorted by
-    *increasing* projection onto this direction so that U (closest to cathode)
-    comes first.
-
-    Args:
-        face_geom: A :class:`FaceGeom` containing planes with wires.
-
-    Returns:
-        New list of :class:`PlaneGeom` objects (same objects, reordered).
-        A single-plane face is returned as-is.
-    """
-    planes = face_geom.planes
-    if len(planes) <= 1:
-        return list(planes)
-
-    def _wire_dir(plane):
-        for w in plane.wires:
-            d = w.head - w.tail
-            n = np.linalg.norm(d)
-            if n > 1e-9:
-                return d / n
-        return None
-
-    dirs = [_wire_dir(p) for p in planes]
-
-    # Find drift direction as cross product of first two non-parallel wire dirs
-    drift_dir = None
-    for i in range(len(dirs)):
-        for j in range(i + 1, len(dirs)):
-            if dirs[i] is not None and dirs[j] is not None:
-                cross = np.cross(dirs[i], dirs[j])
-                n = np.linalg.norm(cross)
-                if n > 1e-9:
-                    drift_dir = cross / n
-                    break
-        if drift_dir is not None:
-            break
-
-    if drift_dir is None:
-        return list(planes)
-
-    def _mean_pos(plane):
-        mids = [0.5 * (w.head + w.tail) for w in plane.wires]
-        return np.mean(mids, axis=0)
-
-    projections = [_mean_pos(p) @ drift_dir for p in planes]
-    return [p for _, p in sorted(zip(projections, planes))]
 
 
 def _face_mean_pos(face) -> np.ndarray:
