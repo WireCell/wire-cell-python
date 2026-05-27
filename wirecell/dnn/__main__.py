@@ -15,6 +15,13 @@ def make_model_from_config(app, config):
     model_args = ([] if model_config is None else [model_config])
     return app.Network(*model_args)
 
+def obj_with_config(obj, config, key,  additional_args=[]):
+    obj_config = config.get(key, None)
+    args = ([] if obj_config is None else [obj_config])
+    args = additional_args + args
+    print(args)
+    return obj(*args)
+
 @context("dnn")
 def cli(ctx):
     '''
@@ -95,8 +102,11 @@ def train(ctx, config, epochs, batch, device, cache, debug_torch,
     app = getattr(wirecell.dnn.apps, name)
 
     # net = app.Network()
-    net = make_model_from_config(app, config)
-    opt = app.Optimizer(net.parameters())
+    # net = make_model_from_config(app, config)
+    net = obj_with_config(app.Network, config, 'model')
+    # opt = app.Optimizer(net.parameters())
+    opt = obj_with_config(app.Optimizer, config, 'optimizer', [net.parameters()])
+    print(opt.state_dict())
     crit = app.Criterion()
     trainer = app.Trainer(net, opt, crit, device=device)
 
