@@ -637,7 +637,104 @@ def configured_spectra(type, name, data, coupling, output, cfgfile):
 
     zero_suppress = coupling == "ac"
     plot_many(got, output, zero_suppress)
-    
+
+
+@cli.command("track-response")
+@click.option("-d", "--detector",
+              type=click.Choice(["uboone", "sbnd", "pdhd", "pdvd-top", "pdvd-bottom"]),
+              required=True,
+              help="Detector name; selects defaults from track_response_defaults.jsonnet.")
+@click.option("--fr",         default=None, type=str,   help="Override FR json.bz2 file.")
+@click.option("--er",         default=None, type=str,   help="Override JsonElecResponse file (er_kind=json).")
+@click.option("--gain",       default=None, type=str,   help="Override FE gain, e.g. '14.0*mV/fC'.")
+@click.option("--shaping",    default=None, type=str,   help="Override shaping time, e.g. '2.2*us'.")
+@click.option("--postgain",   default=None, type=float, help="Override post-shaping gain factor.")
+@click.option("--adc-per-mv", default=None, type=float, help="Override ADC counts per mV.")
+@click.option("--adc-tick",   default=None, type=str,   help="Override DAQ tick, e.g. '500*ns'.")
+@click.option("--chndb-resp", default=None, type=str,   help="Path to chndb-resp.jsonnet for overlay.")
+@click.option("--output-window", default=None, type=str,
+              help="Working time window for FR⊗ER convolution, e.g. '160*us'. "
+                   "Pads FR/ER to avoid circular-convolution wraparound.")
+@click.option("--export-jsonnet", default=None, type=str,
+              help="Write chndb-resp-style jsonnet (u_resp/v_resp) to this path.")
+@click.option("-o", "--output-dir", default=".", show_default=True,
+              help="Directory for output PNG files.")
+@click.pass_context
+def track_response(ctx, detector, fr, er, gain, shaping, postgain, adc_per_mv,
+                   adc_tick, chndb_resp, output_window, export_jsonnet, output_dir):
+    """Compute and plot the FR⊗ER perpendicular-line track response per plane (U, V).
+
+    Loads per-detector defaults from track_response_defaults.jsonnet; individual
+    options override the defaults. Writes track_response_{detector}_{plane}.png
+    files to --output-dir.
+    """
+    import os
+    import numpy as np
+    from wirecell.sigproc.track_response import (
+        load_detector_config, make_track_response, make_plot, parse_chndb_resp,
+        export_chndb_resp, CHNDB_KEYS,
+    )
+    from wirecell.sigproc.response import persist
+    from wirecell.util.fileio import wirecell_path
+
+    cfg = load_detector_config(
+        detector,
+        fr=fr, er_file=er, gain=gain, shaping=shaping,
+        postgain=postgain, adc_per_mv=adc_per_mv, adc_tick=adc_tick,
+        chndb_resp=chndb_resp, output_window=output_window,
+    )
+
+    log.debug(f"Loading FR: {cfg['fr']}")
+    frd = persist.load(cfg['fr'], paths=wirecell_path())
+
+    chndb = None
+    if cfg.get('chndb_resp'):
+        chndb = parse_chndb_resp(cfg['chndb_resp'])
+
+    waves, tick = make_track_response(frd, cfg)
+
+    er_kind = cfg.get('er_kind', 'cold')
+    if er_kind == 'cold':
+        params_str = (
+            f"gain={cfg['gain'] / (units.mV / units.fC):.1f} mV/fC  "
+            f"shaping={cfg['shaping'] / units.us:.1f} µs  "
+            f"postgain={cfg['postgain']}  "
+            f"ADC/mV={cfg['adc_per_mv']}  "
+            f"tick={tick / units.ns:.0f} ns"
+        )
+    else:
+        params_str = (
+            f"ER={cfg.get('er_file','?')}  "
+            f"postgain={cfg['postgain']}  "
+            f"ADC/mV={cfg['adc_per_mv']}  "
+            f"tick={tick / units.ns:.0f} ns"
+        )
+
+    det_label = {
+        "uboone": "MicroBooNE",
+        "sbnd":   "SBND",
+        "pdhd":   "ProtoDUNE-HD",
+        "pdvd-bottom": "ProtoDUNE-VD bottom CRP",
+        "pdvd-top":    "ProtoDUNE-VD top CRP",
+    }.get(detector, detector)
+
+    if export_jsonnet:
+        export_chndb_resp(waves, cfg, export_jsonnet, detector=detector)
+        click.echo(f"  wrote {export_jsonnet}")
+
+    os.makedirs(output_dir, exist_ok=True)
+    for plane_label, wave_adc in sorted(waves.items()):
+        chndb_ref = chndb[CHNDB_KEYS[plane_label]] if chndb else None
+        pk_pos = wave_adc[np.argmax(wave_adc)]
+        pk_neg = wave_adc[np.argmin(wave_adc)]
+        log.info(f"  plane {plane_label}: peak={pk_pos:+.2f} ADC  trough={pk_neg:+.2f} ADC")
+        outpath = os.path.join(output_dir, f"track_response_{detector}_{plane_label}.png")
+        make_plot(wave_adc, chndb_ref,
+                  tick=tick, plane_label=plane_label,
+                  det_label=det_label, params_str=params_str,
+                  outpath=outpath)
+        click.echo(f"  wrote {outpath}")
+
 
 @cli.command("fwd")
 @click.option("--plots", type=str, default=None,
@@ -818,6 +915,164 @@ def fwd(plots, output, detector):
 # - [ ] signal spec + noise spec + FoRD
 # - [ ] plot (normalized) signal/noise spectra with shrinkage coefficients overlayed
                 
+
+@cli.command("gen-l1sp-kernels")
+@click.option("-d", "--detector", default=None, type=str,
+              help="Detector preset name in track_response_defaults.jsonnet "
+                   "(e.g. pdhd, pdvd-bottom, pdvd-top). Populates fr/er/gain/"
+                   "shaping/postgain/adc_per_mv/output_window from the shared "
+                   "defaults. Individual flags override the preset.")
+@click.option("-g", "--gain", default=None, type=str,
+              help="FE peak gain, e.g. '14*mV/fC'.")
+@click.option("-s", "--shaping", default=None, type=str,
+              help="FE shaping time, e.g. '2.2*us'.")
+@click.option("--postgain", default=None, type=float,
+              help="Post-FE gain factor.")
+@click.option("--adc-per-mv", default=None, type=float,
+              help="ADC counts per mV at the input of the digitizer.")
+@click.option("--coarse-time-offset", default=None, type=str,
+              help="L1SPFilterPD m_coarse_time_offset (default -8 µs).")
+@click.option("--fine-time-offset", default=None, type=str,
+              help="L1SPFilterPD m_fine_time_offset (default 0 µs).")
+@click.option("--induction-planes", default=None, type=str,
+              help="Comma-separated induction plane indices (default '0,1').")
+@click.option("--collection-plane", default=None, type=int,
+              help="Collection plane index used as positive-case unipolar "
+                   "basis (default 2 = W).")
+@click.option("--elec-type", default=None, type=str,
+              help="Analytical electronics model: cold or warm (default cold). "
+                   "Only consulted when er_kind=cold.")
+@click.option("--er-kind", default=None, type=click.Choice(["cold", "json"]),
+              help="Electronics-response source: 'cold' (analytical) or "
+                   "'json' (JsonElecResponse JSON.bz2 via --er-file).")
+@click.option("--er-file", "--er", "er_file", default=None, type=str,
+              help="JsonElecResponse JSON.bz2, used when --er-kind=json.")
+@click.option("--output-window", default=None, type=str,
+              help="Convolution time window, e.g. '160*us'. Pads FR + ER when "
+                   "longer than the FR file's native length so the bipolar "
+                   "induction tail does not wrap (PDVD: 160 µs).")
+@click.option("--fr", "fr_file", default=None, type=str,
+              help="Field-response tarball; required unless -d/--detector is "
+                   "given (in which case the preset's `fr` field is used).")
+@click.argument("output")
+def gen_l1sp_kernels(detector, gain, shaping, postgain, adc_per_mv,
+                     coarse_time_offset, fine_time_offset,
+                     induction_planes, collection_plane, elec_type,
+                     er_kind, er_file, output_window,
+                     fr_file, output):
+    '''
+    Generate the L1SPFilterPD response-kernel JSON+bz2 file.
+
+    Two invocation styles:
+
+    With -d/--detector (recommended for new builds; reads
+    wirecell/sigproc/track_response_defaults.jsonnet)::
+
+        wirecell-sigproc gen-l1sp-kernels -d pdvd-bottom  pdvd_bottom_l1sp_kernels.json.bz2
+        wirecell-sigproc gen-l1sp-kernels -d pdvd-top     pdvd_top_l1sp_kernels.json.bz2
+
+    Flat-flag form (legacy)::
+
+        wirecell-sigproc gen-l1sp-kernels \\
+            --fr dune-garfield-1d565.json.bz2 \\
+            --gain '14*mV/fC' --shaping '2.2*us' \\
+            --postgain 1.0 --adc-per-mv 11.703 \\
+            --coarse-time-offset '-8*us' \\
+            pdhd_l1sp_kernels.json.bz2
+
+    OUTPUT   : output path, must end in .json or .json.bz2.
+    '''
+    from wirecell.sigproc.l1sp import build_l1sp_kernels, save_l1sp_kernels
+
+    # Step 1: load detector preset (if any) and let CLI flags override.
+    if detector:
+        from wirecell.sigproc.track_response import load_detector_config
+        # load_detector_config converts 'gain', 'shaping', 'output_window'
+        # to WC internal units (numbers), and leaves the rest untouched.
+        cfg = load_detector_config(detector)
+    else:
+        cfg = {}
+
+    def _pick_str(cli_val, key, fallback):
+        '''CLI flag (str) wins; else preset (raw string or already-converted
+        scalar — both ok for unitify()); else fallback (str).'''
+        if cli_val is not None:
+            return cli_val
+        v = cfg.get(key)
+        return v if v is not None else fallback
+
+    def _pick_num(cli_val, key, fallback):
+        if cli_val is not None:
+            return cli_val
+        v = cfg.get(key)
+        return v if v is not None else fallback
+
+    # Resolve every parameter.  Fallbacks reproduce the legacy CLI defaults.
+    fr_file_resolved = fr_file or cfg.get('fr')
+    if not fr_file_resolved:
+        raise click.UsageError("FR file is required (positional argument or "
+                               "via -d/--detector preset)")
+
+    er_kind_resolved = er_kind if er_kind is not None else cfg.get('er_kind', 'cold')
+    er_file_resolved = er_file if er_file is not None else cfg.get('er_file')
+
+    def _resolve_unit(cli_val, cfg_key, fallback_str):
+        '''Return a WC-internal-units number.  CLI is a unit string;
+        cfg value is already-unitified by load_detector_config.'''
+        if cli_val is not None:
+            return unitify(cli_val)
+        if cfg.get(cfg_key) is not None:
+            return cfg[cfg_key]
+        return unitify(fallback_str)
+
+    # gain/shaping ignored when er_kind='json'; pass dummies on that path.
+    if er_kind_resolved == 'cold':
+        gain_v    = _resolve_unit(gain,    'gain',    '14.0*mV/fC')
+        shaping_v = _resolve_unit(shaping, 'shaping', '2.2*us')
+    else:
+        gain_v = 0.0
+        shaping_v = 0.0
+
+    postgain_v         = _pick_num(postgain,         'postgain',         1.2)
+    adc_per_mv_v       = _pick_num(adc_per_mv,       'adc_per_mv',       4096.0 / 2000.0)
+    coarse_v           = _resolve_unit(coarse_time_offset, 'coarse_time_offset', '-8.0*us') / units.us
+    fine_v             = _resolve_unit(fine_time_offset,   'fine_time_offset',   '0.0*us')  / units.us
+    elec_type_v        = _pick_str(elec_type,        'elec_type',        'cold')
+    induction_planes_v = _pick_str(induction_planes, 'induction_planes', '0,1')
+    collection_plane_v = _pick_num(collection_plane, 'collection_plane', 2)
+
+    # output_window: CLI string → unitify → µs.  Preset value (already in WC
+    # units via load_detector_config) → divide by units.us.
+    if output_window is not None:
+        output_window_us = unitify(output_window) / units.us
+    elif cfg.get('output_window') is not None:
+        output_window_us = float(cfg['output_window']) / units.us
+    else:
+        output_window_us = None
+
+    induction_idx = tuple(int(x) for x in induction_planes_v.split(",") if x.strip())
+
+    data = build_l1sp_kernels(
+        fr_file=fr_file_resolved,
+        gain=gain_v,
+        shaping=shaping_v,
+        postgain=postgain_v,
+        adc_per_mv=adc_per_mv_v,
+        coarse_time_offset_us=coarse_v,
+        fine_time_offset_us=fine_v,
+        elec_type=elec_type_v,
+        er_kind=er_kind_resolved,
+        er_file=er_file_resolved,
+        output_window_us=output_window_us,
+        induction_plane_indices=induction_idx,
+        collection_plane_index=collection_plane_v,
+    )
+    save_l1sp_kernels(data, output)
+    log.info(f"wrote {output}: {len(data['planes'])} induction plane(s), "
+             f"n_samples={data['meta']['n_samples']}, "
+             f"period={data['meta']['period_ns']} ns, "
+             f"er_kind={er_kind_resolved}")
+
 
 def main():
     cli(obj=dict())

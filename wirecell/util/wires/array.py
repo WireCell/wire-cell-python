@@ -19,8 +19,13 @@ def endpoints_from_schema(store, plane=0, face=0, anode=0, detector=0):
         return [[t.x,t.y,t.z],[h.x,h.y,h.z]]
 
 
-    sdet = store.detectors[detector]
-    sanode = store.anodes[sdet.anodes[anode]]
+    # Multi-detector wire file came later and some do not provide a "detectors"
+    # section.  For those old files, assume a sole detector.
+    if store.detectors:
+        sdet = store.detectors[detector]
+        sanode = store.anodes[sdet.anodes[anode]]
+    else:
+        sanode = store.anodes[anode]
     sface = store.faces[sanode.faces[face]]
     splane = store.planes[sface.planes[plane]]
     swires = [get_endpoints(w) for w in splane.wires]

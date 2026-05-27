@@ -10,6 +10,12 @@ import dataclasses
 from typing import List, Tuple
 from math import sqrt, pi
 
+## Uncomment to explicitly handle
+# import warnings
+# warnings.filterwarnings('error', category=RuntimeWarning)
+# warnings.filterwarnings('error', category=OptimizeWarning)
+
+
 try:
     from numpy.typing import ArrayLike
 except ImportError:
@@ -95,29 +101,37 @@ class BaselineNoise:
     The bin content and edges of the histgram that was fit
     '''
 
-def baseline_noise(array, bins=200, vrange=100):
-    '''Return a BaselineNoise derived from array a.
+def baseline_noise(array, bins=200, vrange=3):
+    '''
+    Return a BaselineNoise derived from array a.
 
     This attempts to fit a Gaussian model to a histogram of array values
-    spanning given number of bins of value range given by vrange.  The vrange
-    defines an extent about the MEDIAN VALUE.  If it is a tuple it gives this
-    extent explicitly or if scalar the extent is symmetric, ie median+/-vrange.
+    spanning given number of bins of value range given by vrange.
+
+    The vrange defines an extent about the MEDIAN VALUE that provides the domain
+    of the fit.  It's type is interpreted:
+
+    - tuple provides an explicit (min,max) value range
+    - floating point provides a relative median +/- vrange
+    - integer gives number of standard deviations on either side of the median to make the symmetric vrange
 
     This will raise exceptions:
 
     - ZeroDivisionError when the signal in the vrange is zero.
 
     - RuntimeError when the fit fails.
-
     '''
     from scipy.optimize import curve_fit
 
     nsig = len(array)
     lo, med, hi = numpy.quantile(array, [0.5-0.34,0.5,0.5+0.34])
 
-    if not isinstance(vrange, tuple):
+    if isinstance(vrange, int):
+        vrange = float(vrange*numpy.std(array))
+    if isinstance(vrange, float):
         vrange=(med-vrange, med+vrange)
-    vrange=(med+vrange[0], med+vrange[1])
+    else:
+        vrange=(med+vrange[0], med+vrange[1])
 
     hist = numpy.histogram(array, bins=bins, range=vrange)
     counts, edges = hist
@@ -127,6 +141,14 @@ def baseline_noise(array, bins=200, vrange=100):
     rms = sqrt(numpy.average((edges[:-1]-avg)**2, weights=counts))
 
     p0 = (A,mu,sig) = (C,avg,rms)
+
+    if rms == 0:
+        print(f'baseline_noise: pathology: {C} counts from {numpy.sum(array)} total.\n  Histogram: {counts}\nBins: {bins}\nValue range: {vrange}\nSamples: {array}')
+        return BaselineNoise(A=A, mu=mu, sigma=sig,
+                             N=nsig,
+                             C=C, avg=avg, rms=rms,
+                             med=med, lo=lo, hi=hi,
+                             cov=None, hist=hist)
 
     try:
         (A,mu,sig),cov = curve_fit(gauss, edges[:-1], counts, p0=p0)

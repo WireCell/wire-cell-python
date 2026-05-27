@@ -41,7 +41,11 @@ def plot(ctx, name, datafile, output):
 
 def ssss_args(func):
     @click.option("--channel-ranges", default="detect",
-                  help="comma-separated list of channel idents defining ranges or 'detect'")
+                  help="comma-separated list of indices bounding ranges of channels or the string 'detect'")
+    @click.option("--channel-offset", default=None,
+                  help="Define channel IDs as offset from indices")
+    @click.option("--anode-number", default=0,
+                  help="Determines a channel offset as this multiple of highest in channel-ranges")
     @click.option("--nsigma", default=3.0,
                   help="Relative threshold on signal in units of number of sigma of noise width")
     @click.option("--nbins", default=50,
@@ -63,8 +67,14 @@ def ssss_args(func):
 
         tshift = unitify(kwds.pop("tshift"))
 
-        spl = kwds["splat"] = ssss.load_frame(kwds["splat_filename"], trange=trange)
-        sig = kwds["signal"] = ssss.load_frame(kwds["signal_filename"], trange=trange, tshift=tshift)
+        spl = ssss.load_frame(kwds["splat_filename"], trange=trange)
+        sig = ssss.load_frame(kwds["signal_filename"], trange=trange, tshift=tshift)
+
+        # Pad both frames to the union of their channel ranges so they have
+        # identical shapes regardless of which channels were active in each.
+        spl, sig = ssss.align_channel_ranges(spl, sig)
+        kwds["splat"] = spl
+        kwds["signal"] = sig
 
         splat = spl.frame
         signal = sig.frame
@@ -81,16 +91,30 @@ def ssss_args(func):
 
         if channel_ranges == "detect":
             nchan = splat.shape[0]
-            if nchan == 2560:   # APA
+            if nchan == 2560:   # PDHD APA: U=0-799, V=800-1599, W=1600-2559
                 channel_ranges = "0,800,1600,2560"
             elif nchan == 8256:   # uboone
                 channel_ranges = "0,2400,4800,8256"
+            elif nchan == 2488:   # PDVD APA: U=0-475, gap, V=952-1427, gap, X=1904-2487
+                channel_ranges = "0,476,1428,2488"
             else:
                 raise ValueError(f'Unable to detect channel ranges given {nchan=}')
-        channel_ranges = list(map(int,channel_ranges.split(",")))
+
+        # intify
+        channel_ranges = list(map(int, channel_ranges.split(",")))
+
+        # determine channel ID offset from indices
+        channel_offset = kwds.pop("channel_offset")
+        anode_number = kwds.pop("anode_number")
+        if channel_offset is None:
+            channel_offset = anode_number * channel_ranges[-1]
+            
+        # form slices from neighbor pairs
         channel_ranges = [slice(*cr) for cr in zip(channel_ranges[:-1], channel_ranges[1:])]
 
         kwds["channel_ranges"] = channel_ranges
+        kwds["channel_offset"] = channel_offset
+        kwds["anode_number"] = anode_number
         return func(*args, **kwds)
     return wrapper
 
@@ -98,7 +122,7 @@ def ssss_args(func):
 @cli.command("plot-ssss")
 @click.option('--title', default='', help='extra title for plots')
 @ssss_args
-def plot_ssss(channel_ranges, nsigma, nbins, splat, signal, output, 
+def plot_ssss(channel_ranges, channel_offset, anode_number, nsigma, nbins, splat, signal, output, 
               title, **kwds):
     '''
     Perform the simple splat / sim+signal process comparison test and make plots.
@@ -109,7 +133,7 @@ def plot_ssss(channel_ranges, nsigma, nbins, splat, signal, output,
 
     with pages(output) as out:
 
-        ssss.plot_frames(splat, signal, channel_ranges, title)
+        ssss.plot_frames(splat, signal, channel_ranges, title, channel_offset)
         out.savefig()
 
         byplane = list()
@@ -119,6 +143,8 @@ def plot_ssss(channel_ranges, nsigma, nbins, splat, signal, output,
 
             spl = select_activity(splat.frame, ch, nsigma)
             sig = select_activity(signal.frame, ch, nsigma)
+
+            # print(f'{pln=} {spl.channels=} {sig.channels=}')
 
             # Find the bbox that bounds the biggest splat object.
             biggest = spl.plats.sort_by("sums")[-1]
@@ -152,7 +178,7 @@ def plot_ssss(channel_ranges, nsigma, nbins, splat, signal, output,
 @ssss_args
 @click.option("-p","--params",default=None,type=str,
               help="A depos.json parameter file associated with the splat and signal")
-def ssss_metrics(channel_ranges, nsigma, nbins, splat, signal, output, params, **kwds):
+def ssss_metrics(channel_ranges, channel_offset, anode_number, nsigma, nbins, splat, signal, output, params, **kwds):
     '''
     Write the simple splat / sim+signal process comparison metrics to file.
 
