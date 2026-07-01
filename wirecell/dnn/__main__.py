@@ -49,6 +49,9 @@ train_defaults = dict(epochs=1, batch=1, device='cpu', name='dnnroi', train_rati
               help="The compute device")
 @click.option("--cache/--no-cache", is_flag=True, default=False,
               help="Cache data in memory")
+@click.option("--amp/--no-amp", is_flag=True, default=True,
+              help="Use mixed-precision (autocast/fp16) training.  "
+              "Only takes effect on CUDA; a no-op on CPU.")
 @click.option("--debug-torch/--no-debug-torch", is_flag=True, default=False,
               help="Debug torch-level problems")
 @click.option("--checkpoint-save", default=None,
@@ -70,7 +73,7 @@ train_defaults = dict(epochs=1, batch=1, device='cpu', name='dnnroi', train_rati
 @anyconfig_file("wirecelldnn", section='train', defaults=train_defaults)
 @click.argument("files", nargs=-1)
 @click.pass_context
-def train(ctx, config, epochs, batch, device, cache, debug_torch,
+def train(ctx, config, epochs, batch, device, cache, amp, debug_torch,
           checkpoint_save, checkpoint_modulus,
           app, load, save, train_ratio, manual_seed, files):
     '''
@@ -91,9 +94,13 @@ def train(ctx, config, epochs, batch, device, cache, debug_torch,
     if not files:
         raise click.BadArgumentUsage("no training files given")
     files = unglob(listify(files))
-    log.info(f'training files: {files}')
+    log.debug(f'training files: {files}')
 
     if device == 'gpu': device = 'cuda'
+
+    if device == 'cuda':
+        # Input sizes are fixed per run, so let cuDNN autotune conv algorithms.
+        torch.backends.cudnn.benchmark = True
 
     if debug_torch:
         torch.autograd.set_detect_anomaly(True)
@@ -108,7 +115,7 @@ def train(ctx, config, epochs, batch, device, cache, debug_torch,
     opt = obj_with_config(app.Optimizer, config, 'optimizer', [net.parameters()])
     print(opt.state_dict())
     crit = app.Criterion()
-    trainer = app.Trainer(net, opt, crit, device=device)
+    trainer = app.Trainer(net, opt, crit, device=device, amp=amp)
 
     history = dict()
     if load:
