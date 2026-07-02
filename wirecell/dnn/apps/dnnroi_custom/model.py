@@ -15,5 +15,4 @@ class Network(nn.Module):
 
     def forward(self, x):
         x = self.unet(x)
-        return torch.sigmoid(x)
-
+        return x

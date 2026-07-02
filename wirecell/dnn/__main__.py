@@ -49,7 +49,7 @@ train_defaults = dict(epochs=1, batch=1, device='cpu', name='dnnroi', train_rati
               help="The compute device")
 @click.option("--cache/--no-cache", is_flag=True, default=False,
               help="Cache data in memory")
-@click.option("--amp/--no-amp", is_flag=True, default=True,
+@click.option("--amp/--no-amp", is_flag=True, default=False,
               help="Use mixed-precision (autocast/fp16) training.  "
               "Only takes effect on CUDA; a no-op on CPU.")
 @click.option("--debug-torch/--no-debug-torch", is_flag=True, default=False,
@@ -353,9 +353,11 @@ run_one_defaults = dict(device='cpu', name='dnnroi')
               help="File name to output after training (def=None - results not saved)")
 @click.option("-a", "--app", default=None, type=str,
               help="The application name")
+@click.option('--manual-sigmoid/--no-manual-sigmoid', default=False, is_flag=True,
+              help='Run output through sigmoid by hand')
 @anyconfig_file("wirecelldnn", section='run_one', defaults=run_one_defaults)
 @click.argument("files", type=str, nargs=2)
-def run_one(config, device, debug_torch, entry, load, output, app, files):
+def run_one(config, device, debug_torch, entry, load, output, app, manual_sigmoid, files):
     '''
     Run a reco & true pair through a saved model.
     '''
@@ -401,6 +403,10 @@ def run_one(config, device, debug_torch, entry, load, output, app, files):
         print(feat.shape)
         print(labels.shape)
         y = net(feat.to(device).unsqueeze(0)).squeeze(0)
+        if manual_sigmoid:
+          print('Applying sigmoid')
+          from torch import sigmoid
+          y = sigmoid(y)
 
     if output:
         torchsave({
