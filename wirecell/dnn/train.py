@@ -60,7 +60,14 @@ class Classifier:
         return loss
 
     def evaluate(self, data):
+        '''
+        Evaluate over the batches of data.  Return (mean_loss, per_batch_losses)
+        where mean_loss is the per-sample mean weighted by batch size (correct
+        for any batch size, including a partial final batch).
+        '''
         losses = list()
+        total_loss = 0.0
+        total_n = 0
         # Evaluate in eval mode so BatchNorm uses its running statistics and
         # stops updating its buffers from the validation data.  no_grad() alone
         # does NOT change module mode.  Restore the prior mode afterward.
@@ -69,21 +76,28 @@ class Classifier:
         try:
             with no_grad():
                 for features, labels in data:
-                    loss = self.loss(features, labels)
-                    loss = loss.item()
+                    loss = self.loss(features, labels).item()
+                    n = features.shape[0]
                     losses.append(loss)
+                    total_loss += loss * n
+                    total_n += n
         finally:
             self.net.train(was_training)
-        return losses
+        mean_loss = total_loss / total_n if total_n else 0.0
+        return mean_loss, losses
 
 
     def epoch(self, data, retain_graph=False):
         '''
-        Train over the batches of the data, return list of losses at each batch.
+        Train over the batches of the data.  Return (mean_loss, per_batch_losses)
+        where mean_loss is the per-sample mean weighted by batch size (correct
+        for any batch size, including a partial final batch).
         '''
         self.net.train()
 
         epoch_losses = list()
+        total_loss = 0.0
+        total_n = 0
         for features, labels in data:
 
             loss = self.loss(features, labels)
@@ -93,8 +107,12 @@ class Classifier:
             self._scaler.step(self.optimizer)
             self._scaler.update()
 
+            n = features.shape[0]
             loss = loss.item()
             epoch_losses.append(loss)
+            total_loss += loss * n
+            total_n += n
 
-        return epoch_losses
+        mean_loss = total_loss / total_n if total_n else 0.0
+        return mean_loss, epoch_losses
 

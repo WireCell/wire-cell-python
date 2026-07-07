@@ -45,6 +45,10 @@ train_defaults = dict(epochs=1, batch=1, device='cpu', name='dnnroi', train_rati
               "This is a relative count if the training starts with a -l/--load'ed state.")
 @click.option("-b", "--batch", default=None, type=int,
               help="Batch size")
+@click.option("--eval-batch", default=None, type=int,
+              help="Batch size for evaluation (default: same as --batch).  "
+              "Eval runs in eval() mode so BatchNorm uses running stats; this "
+              "only affects eval speed, not the metric.")
 @click.option("-d", "--device", default=None, type=str,
               help="The compute device")
 @click.option("--cache/--no-cache", is_flag=True, default=False,
@@ -73,7 +77,7 @@ train_defaults = dict(epochs=1, batch=1, device='cpu', name='dnnroi', train_rati
 @anyconfig_file("wirecelldnn", section='train', defaults=train_defaults)
 @click.argument("files", nargs=-1)
 @click.pass_context
-def train(ctx, config, epochs, batch, device, cache, amp, debug_torch,
+def train(ctx, config, epochs, batch, eval_batch, device, cache, amp, debug_torch,
           checkpoint_save, checkpoint_modulus,
           app, load, save, train_ratio, manual_seed, files):
     '''
@@ -130,7 +134,7 @@ def train(ctx, config, epochs, batch, device, cache, amp, debug_torch,
     ds_dt = time.time() - ds_dt
     log.debug(f'Create dataset in {ds_dt:.3e} s')
 
-    tbatch,ebatch = batch,1
+    tbatch,ebatch = batch, (eval_batch if eval_batch else batch)
 
     dses = dnn.data.train_eval_split(ds, train_ratio)
     dles = [DataLoader(one, batch_size=bb, shuffle=True, pin_memory=True) for one,bb in zip(dses, [tbatch,ebatch])]
@@ -174,15 +178,16 @@ def train(ctx, config, epochs, batch, device, cache, amp, debug_torch,
         dt=0
         if ntrain:
             dt = time.time()
-            train_losses = trainer.epoch(dles[0])
-            train_loss = sum(train_losses)/ntrain
+            train_loss, train_losses = trainer.epoch(dles[0])
             dt = time.time() - dt
 
         eval_loss = 0
         eval_losses = []
+        edt = 0
         if neval:
-            eval_losses = trainer.evaluate(dles[1])
-            eval_loss = sum(eval_losses) / neval
+            edt = time.time()
+            eval_loss, eval_losses = trainer.evaluate(dles[1])
+            edt = time.time() - edt
 
         this_epoch = dict(
             run=this_run_number,
@@ -193,7 +198,7 @@ def train(ctx, config, epochs, batch, device, cache, amp, debug_torch,
             eval_loss=eval_loss)
         epoch_history[this_epoch_number] = this_epoch
 
-        log.info(f'run: {this_run_number} epoch: {this_epoch_number} loss: {train_loss:.4e} [b={tbatch},n={ntrain}] eval: {eval_loss:.4e} [b={ebatch},n={neval}] {dt=:.3e} s')
+        log.info(f'run: {this_run_number} epoch: {this_epoch_number} loss: {train_loss:.4e} [b={tbatch},n={ntrain}] eval: {eval_loss:.4e} [b={ebatch},n={neval}] {dt=:.3e} s {edt=:.3e} s')
 
         if checkpoint_save:
             if this_epoch_number % checkpoint_modulus == 0:
