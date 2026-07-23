@@ -23,6 +23,8 @@ import torch
 from torch import optim, no_grad
 import torch.nn as nn
 
+from wirecell.dnn import dist
+
 def dump(name, data):
     # print(f'{name:20s}: {data.shape} {data.dtype} {data.device}')
     return
@@ -31,7 +33,16 @@ class Classifier:
     def __init__(self, net, optimizer, criterion = nn.BCELoss(), device='cpu', amp=False):
         net.to(device)
         self._device = device
-        self.net = net              # model
+        # Under DDP each process wraps its replica in DistributedDataParallel so
+        # gradients are all-reduced across GPUs every backward pass.  The raw
+        # `net` reference held by the caller is left untouched (it is used there
+        # for checkpoint load/save, keeping state-dict keys free of a `module.`
+        # prefix).  Not distributed -> self.net is just the plain module.
+        if dist.is_dist():
+            from torch.nn.parallel import DistributedDataParallel
+            self.net = DistributedDataParallel(net, device_ids=[dist.get_local_rank()])
+        else:
+            self.net = net          # model
         self.optimizer = optimizer
         self.criterion = criterion
         # Mixed precision (autocast + GradScaler) is only meaningful on CUDA.
@@ -59,6 +70,19 @@ class Classifier:
         loss = self.criterion(prediction.float(), labels)
         return loss
 
+    def _global_mean(self, total_loss, total_n):
+        '''
+        Return the per-sample mean loss.  Under DDP the (sum-of-loss, count)
+        pair is all-reduced across ranks first so every process reports the
+        same global metric instead of its local shard's mean.
+        '''
+        if dist.is_dist():
+            stats = torch.tensor([total_loss, total_n], dtype=torch.float64,
+                                  device=self._device)
+            dist.all_reduce_sum(stats)
+            total_loss, total_n = stats[0].item(), stats[1].item()
+        return total_loss / total_n if total_n else 0.0
+
     def evaluate(self, data):
         '''
         Evaluate over the batches of data.  Return (mean_loss, per_batch_losses)
@@ -83,7 +107,7 @@ class Classifier:
                     total_n += n
         finally:
             self.net.train(was_training)
-        mean_loss = total_loss / total_n if total_n else 0.0
+        mean_loss = self._global_mean(total_loss, total_n)
         return mean_loss, losses
 
 
@@ -113,6 +137,6 @@ class Classifier:
             total_loss += loss * n
             total_n += n
 
-        mean_loss = total_loss / total_n if total_n else 0.0
+        mean_loss = self._global_mean(total_loss, total_n)
         return mean_loss, epoch_losses
 

@@ -44,7 +44,8 @@ train_defaults = dict(epochs=1, batch=1, device='cpu', name='dnnroi', train_rati
               help="Number of epochs over which to train.  "
               "This is a relative count if the training starts with a -l/--load'ed state.")
 @click.option("-b", "--batch", default=None, type=int,
-              help="Batch size")
+              help="Batch size.  Under DDP (torchrun) this is the per-GPU batch "
+              "size, so the effective global batch is batch * nproc_per_node.")
 @click.option("--eval-batch", default=None, type=int,
               help="Batch size for evaluation (default: same as --batch).  "
               "Eval runs in eval() mode so BatchNorm uses running stats; this "
@@ -88,124 +89,160 @@ def train(ctx, config, epochs, batch, eval_batch, device, cache, amp, debug_torc
     if manual_seed is not None:
         torch.manual_seed(manual_seed)
     from torch.utils.data import DataLoader
+    from torch.utils.data.distributed import DistributedSampler
     import wirecell.dnn.apps
 
-    if not files:               # args not processed by anyconfig_files
-        try:
-            files = config['train']['files']
-        except KeyError:
-            files = None
-    if not files:
-        raise click.BadArgumentUsage("no training files given")
-    files = unglob(listify(files))
-    log.debug(f'training files: {files}')
+    # Initialize DDP if launched under torchrun (a no-op otherwise).  Everything
+    # below runs per-rank; teardown happens in the finally.
+    dnn.dist.setup()
+    try:
+        if not files:               # args not processed by anyconfig_files
+            try:
+                files = config['train']['files']
+            except KeyError:
+                files = None
+        if not files:
+            raise click.BadArgumentUsage("no training files given")
+        files = unglob(listify(files))
+        log.debug(f'training files: {files}')
 
-    if device == 'gpu': device = 'cuda'
+        # Under DDP each rank binds its own GPU, overriding the --device string.
+        if dnn.dist.is_dist():
+            device = f'cuda:{dnn.dist.get_local_rank()}'
+        elif device == 'gpu':
+            device = 'cuda'
 
-    if device == 'cuda':
-        # Input sizes are fixed per run, so let cuDNN autotune conv algorithms.
-        torch.backends.cudnn.benchmark = True
+        if str(device).startswith('cuda'):
+            # Input sizes are fixed per run, so let cuDNN autotune conv algorithms.
+            torch.backends.cudnn.benchmark = True
 
-    if debug_torch:
-        torch.autograd.set_detect_anomaly(True)
+        if debug_torch:
+            torch.autograd.set_detect_anomaly(True)
 
-    name = app
-    app = getattr(wirecell.dnn.apps, name)
+        name = app
+        app = getattr(wirecell.dnn.apps, name)
 
-    # net = app.Network()
-    # net = make_model_from_config(app, config)
-    net = obj_with_config(app.Network, config, 'model')
-    # opt = app.Optimizer(net.parameters())
-    opt = obj_with_config(app.Optimizer, config, 'optimizer', [net.parameters()])
-    print(opt.state_dict())
-    crit = app.Criterion()
-    trainer = app.Trainer(net, opt, crit, device=device, amp=amp)
+        # net = app.Network()
+        # net = make_model_from_config(app, config)
+        net = obj_with_config(app.Network, config, 'model')
+        # opt = app.Optimizer(net.parameters())
+        opt = obj_with_config(app.Optimizer, config, 'optimizer', [net.parameters()])
+        if dnn.dist.is_main():
+            print(opt.state_dict())
+        crit = app.Criterion()
+        trainer = app.Trainer(net, opt, crit, device=device, amp=amp)
 
-    history = dict()
-    if load:
-        if not Path(load).exists():
-            raise click.FileError(load, 'warning: DNN module load file does not exist')
-        history = dnn.io.load_checkpoint(load, net, opt)
+        history = dict()
+        if load:
+            if not Path(load).exists():
+                raise click.FileError(load, 'warning: DNN module load file does not exist')
+            history = dnn.io.load_checkpoint(load, net, opt)
 
-    ds_dt = time.time()
-    ds = app.Dataset(files, cache=cache, config=config.get("dataset", None))
-    if len(ds) == 0:
-        raise click.BadArgumentUsage(f'no samples from {len(files)} files')
-    ds_dt = time.time() - ds_dt
-    log.debug(f'Create dataset in {ds_dt:.3e} s')
+        ds_dt = time.time()
+        ds = app.Dataset(files, cache=cache, config=config.get("dataset", None))
+        if len(ds) == 0:
+            raise click.BadArgumentUsage(f'no samples from {len(files)} files')
+        ds_dt = time.time() - ds_dt
+        log.debug(f'Create dataset in {ds_dt:.3e} s')
 
-    tbatch,ebatch = batch, (eval_batch if eval_batch else batch)
+        tbatch,ebatch = batch, (eval_batch if eval_batch else batch)
 
-    dses = dnn.data.train_eval_split(ds, train_ratio)
-    dles = [DataLoader(one, batch_size=bb, shuffle=True, pin_memory=True) for one,bb in zip(dses, [tbatch,ebatch])]
+        # A seeded generator makes the train/eval split identical on every rank
+        # so the DistributedSampler shards a consistent partition.
+        split_gen = None
+        if dnn.dist.is_dist():
+            split_seed = manual_seed if manual_seed is not None else 0
+            split_gen = torch.Generator().manual_seed(split_seed)
+        dses = dnn.data.train_eval_split(ds, train_ratio, generator=split_gen)
 
-    ntrain = len(dses[0])
-    neval = len(dses[1])
+        # Under DDP shard each split with a DistributedSampler (mutually exclusive
+        # with shuffle=); otherwise use plain shuffling as before.
+        samplers = [None, None]
+        if dnn.dist.is_dist():
+            samplers = [DistributedSampler(dses[0], shuffle=True),
+                        DistributedSampler(dses[1], shuffle=False)]
+        dles = [DataLoader(one, batch_size=bb, shuffle=(sampler is None),
+                           sampler=sampler, pin_memory=True)
+                for one, bb, sampler in zip(dses, [tbatch, ebatch], samplers)]
 
-    # History
-    run_history = history.get("runs", dict())
-    this_run_number = 0
-    if run_history:
-        this_run_number = max(run_history.keys()) + 1
-    this_run = dict(
-        run = this_run_number,
-        data_files = files,
-        ntrain = ntrain,
-        neval = neval,
-        nepochs = epochs,
-        batch = batch,
-        device = device,
-        cache = cache,
-        name = name,
-        load = load,
-    )
-    run_history[this_run_number] = this_run
+        ntrain = len(dses[0])
+        neval = len(dses[1])
 
-    epoch_history = history.get("epochs", dict())
-    first_epoch_number = 0
-    if epoch_history:
-        first_epoch_number = max(epoch_history.keys()) + 1
+        # History
+        run_history = history.get("runs", dict())
+        this_run_number = 0
+        if run_history:
+            this_run_number = max(run_history.keys()) + 1
+        this_run = dict(
+            run = this_run_number,
+            data_files = files,
+            ntrain = ntrain,
+            neval = neval,
+            nepochs = epochs,
+            batch = batch,
+            device = device,
+            cache = cache,
+            name = name,
+            load = load,
+        )
+        run_history[this_run_number] = this_run
 
-    def saveit(path):
-        if not path:
-            return
-        dnn.io.save_checkpoint(path, net, opt, runs=run_history, epochs=epoch_history)
+        epoch_history = history.get("epochs", dict())
+        first_epoch_number = 0
+        if epoch_history:
+            first_epoch_number = max(epoch_history.keys()) + 1
 
-    for this_epoch_number in range(first_epoch_number, first_epoch_number + epochs):
+        def saveit(path):
+            if not path:
+                return
+            # Only rank 0 writes checkpoints under DDP (replicas are in sync, and
+            # net here is the raw module so state-dict keys have no 'module.' prefix).
+            if not dnn.dist.is_main():
+                return
+            dnn.io.save_checkpoint(path, net, opt, runs=run_history, epochs=epoch_history)
 
-        train_loss = 0
-        train_losses = []
-        dt=0
-        if ntrain:
-            dt = time.time()
-            train_loss, train_losses = trainer.epoch(dles[0])
-            dt = time.time() - dt
+        for this_epoch_number in range(first_epoch_number, first_epoch_number + epochs):
 
-        eval_loss = 0
-        eval_losses = []
-        edt = 0
-        if neval:
-            edt = time.time()
-            eval_loss, eval_losses = trainer.evaluate(dles[1])
-            edt = time.time() - edt
+            # Reshuffle the sharded training data differently each epoch.
+            if samplers[0] is not None:
+                samplers[0].set_epoch(this_epoch_number)
 
-        this_epoch = dict(
-            run=this_run_number,
-            epoch=this_epoch_number,
-            train_losses=train_losses,
-            train_loss=train_loss,
-            eval_losses=eval_losses,
-            eval_loss=eval_loss)
-        epoch_history[this_epoch_number] = this_epoch
+            train_loss = 0
+            train_losses = []
+            dt=0
+            if ntrain:
+                dt = time.time()
+                train_loss, train_losses = trainer.epoch(dles[0])
+                dt = time.time() - dt
 
-        log.info(f'run: {this_run_number} epoch: {this_epoch_number} loss: {train_loss:.4e} [b={tbatch},n={ntrain}] eval: {eval_loss:.4e} [b={ebatch},n={neval}] {dt=:.3e} s {edt=:.3e} s')
+            eval_loss = 0
+            eval_losses = []
+            edt = 0
+            if neval:
+                edt = time.time()
+                eval_loss, eval_losses = trainer.evaluate(dles[1])
+                edt = time.time() - edt
 
-        if checkpoint_save:
-            if this_epoch_number % checkpoint_modulus == 0:
-                parms = dict(this_run, **this_epoch)
-                cpath = checkpoint_save.format(**parms)
-                saveit(cpath)
-    saveit(save)
+            this_epoch = dict(
+                run=this_run_number,
+                epoch=this_epoch_number,
+                train_losses=train_losses,
+                train_loss=train_loss,
+                eval_losses=eval_losses,
+                eval_loss=eval_loss)
+            epoch_history[this_epoch_number] = this_epoch
+
+            if dnn.dist.is_main():
+                log.info(f'run: {this_run_number} epoch: {this_epoch_number} loss: {train_loss:.4e} [b={tbatch},n={ntrain}] eval: {eval_loss:.4e} [b={ebatch},n={neval}] {dt=:.3e} s {edt=:.3e} s')
+
+            if checkpoint_save:
+                if this_epoch_number % checkpoint_modulus == 0:
+                    parms = dict(this_run, **this_epoch)
+                    cpath = checkpoint_save.format(**parms)
+                    saveit(cpath)
+        saveit(save)
+    finally:
+        dnn.dist.cleanup()
 
 
 @cli.command('dump')
