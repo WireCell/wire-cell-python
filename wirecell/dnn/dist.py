@@ -41,9 +41,10 @@ def setup():
     import torch
     import torch.distributed as dist
 
+    torch.cuda.set_device(get_local_rank())
     if not dist.is_initialized():
         dist.init_process_group(backend="nccl")
-    torch.cuda.set_device(get_local_rank())
+    
     _is_dist = True
     return True
 
