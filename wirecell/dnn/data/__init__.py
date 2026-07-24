@@ -1,5 +1,5 @@
 
-def train_eval_split(ds, train_ratio, **dlkwds):
+def train_eval_split(ds, train_ratio, generator=None, **dlkwds):
     '''
     Return pair (train,eval) of datasets formed by a random split of dataset
 
@@ -8,6 +8,10 @@ def train_eval_split(ds, train_ratio, **dlkwds):
     The train ratio is clamped to be in [0.0, 1.0].
 
     Note, train dataset will be empty if ratio is 0.0, etc eval for 1.0.
+
+    Pass a seeded torch.Generator as ``generator`` to make the split
+    deterministic.  This is required under DDP so every rank produces the
+    identical partition before a DistributedSampler shards it.
 
     '''
     # delay loading in the monster
@@ -19,7 +23,7 @@ def train_eval_split(ds, train_ratio, **dlkwds):
     nds = len(ds)
     ntrain = int(nds*train_ratio)
     neval = nds - ntrain
-    return random_split(ds, [ntrain, neval])
+    return random_split(ds, [ntrain, neval], generator=generator)
 
     # train_dl = DataLoader(train_ds, **dlkwds)
     # eval_dl = DataLoader(train_ds, **dlkwds)
