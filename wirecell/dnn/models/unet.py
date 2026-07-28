@@ -201,12 +201,16 @@ class UNet(nn.Module):
 
             self._upleg.append((m_node, dc_node))  # bottom up order
 
+        self.out_features = nch  # channels of the pre-segmap feature map
+
         segmap = nn.Conv2d(nch, n_classes, 1)
         self._add_node("segmap", segmap)
-        
-        
-    def forward(self, x):
 
+
+    def forward_features(self, x):
+        '''
+        The forward pass up to but not including the final segmap 1x1 conv.
+        '''
         overs = list()
         for skip, (dc,ds) in enumerate(self._downleg):
             x = dc(x)
@@ -217,6 +221,8 @@ class UNet(nn.Module):
         for over, (m,d) in zip(overs, self._upleg):
             x = m(over, x)
             x = d(x)
-            
-        x = self.segmap(x)
+
         return x
+
+    def forward(self, x):
+        return self.segmap(self.forward_features(x))
