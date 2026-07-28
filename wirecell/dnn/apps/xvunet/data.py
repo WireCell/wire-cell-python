@@ -61,8 +61,8 @@ def _sample_keys(single):
     '''
     keys = list()
     for layers in single._index:
-        fp, fkey = layers[0]
-        fid, sid, lid = single.domain.match(fp.filename, fkey)
+        fname, fkey = layers[0]
+        fid, sid, lid = single.domain.match(fname, fkey)
         keys.append((fid, sid))
     return keys
 

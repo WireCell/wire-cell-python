@@ -13,7 +13,7 @@ indirectly by dnn.data.
 
 import re
 import h5py
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 import torch
 from torch.utils.data import Dataset
 
@@ -113,10 +113,25 @@ class Single(Dataset):
     A dataset yielding a single array (not in a tuple).
     '''
 
+    # Number of HDF5 files kept open at once; see _file() for why we do not
+    # simply keep every file open.  Reading one sample touches one file per
+    # Single, so this must be at least 2 for a Multi of (rec, tru).
+    #
+    # Do not raise this expecting a better hit rate.  Training shuffles, so
+    # access is effectively random over all files and any pool smaller than the
+    # file count misses nearly every time regardless of size.  Reopening is
+    # cheap next to reading a sample (measured flat epoch time from 4 to 64),
+    # while a larger pool both re-pins the HDF5 caches and churns open/close
+    # enough to badly fragment the allocator (at 64: +235 MiB live but +10 GiB
+    # RSS).  Only the cache=True preload below walks in index order, and it
+    # closes its handles when done.
+    max_open = 4
+
     def __init__(self, domain, paths=(), dtype=torch.float32):
         self.domain = domain
-        self._index = list()  # idx->[(fp,fkey), ...]
+        self._index = list()  # idx->[(fname,fkey), ...]
         self._cache = dict()  # idx->arr1
+        self._open = OrderedDict()  # fname->h5py.File, LRU of at most max_open
         self._dtype = dtype
         if paths:
             self.append(paths)
@@ -125,29 +140,75 @@ class Single(Dataset):
             log.debug(f'hdf.Single preloading {n} in {domain.name}')
             for idx in range(n):
                 self[idx]
+            # Every sample is now in self._cache so nothing more will be read
+            # from file.  Drop the handles to release their HDF5 caches.
+            self._close()
         log.debug(f'hdf.Single {domain.name}')
-        
+
+    def _close(self):
+        '''
+        Close any open files.  They are reopened on demand by _file().
+        '''
+        for fp in self._open.values():
+            fp.close()
+        self._open.clear()
+
+    def _file(self, fname):
+        '''
+        Return an open h5py.File for fname, from a small LRU pool.
+
+        Holding every file open for the life of the dataset would pin HDF5's
+        per-file caches, which grow by roughly 100 KiB for each dataset ever
+        read.  Over a large training set that reaches several GiB of resident
+        memory (and costs one file descriptor per file).  Closing a file on
+        eviction releases both.
+        '''
+        fp = self._open.get(fname, None)
+        if fp is not None:
+            self._open.move_to_end(fname)
+            return fp
+
+        fp = self._open[fname] = h5py.File(fname, 'r')
+        while len(self._open) > self.max_open:
+            _, old = self._open.popitem(last=False)
+            old.close()
+        return fp
+
+    def __getstate__(self):
+        '''
+        Open HDF5 handles neither pickle nor survive a fork, so omit them.  The
+        receiving process reopens on demand.  This is what lets the dataset be
+        used with DataLoader worker processes.
+        '''
+        state = dict(self.__dict__)
+        state['_open'] = OrderedDict()
+        return state
+
+
     def append(self, paths):
         '''
         Scan files to build index to individual layer arrays.
         '''
 
-        byids = defaultdict(dict)  # (fid,sid) -> (lid) -> (fp,fkey)
+        byids = defaultdict(dict)  # (fid,sid) -> (lid) -> (fname,fkey)
         for fname in paths:
-            fp = h5py.File(fname)
-            log.debug(f'scanning {fp.filename}')
-            for fkey in allkeys(fp):
-                val = fp.get(fkey)
-                if not isinstance(val, h5py.Dataset):
-                    continue
+            # Close after scanning and index only the file *name*.  Retaining
+            # the handle here is what used to pin every file open for the whole
+            # run; _file() reopens on demand.
+            with h5py.File(fname, 'r') as fp:
+                log.debug(f'scanning {fp.filename}')
+                for fkey in allkeys(fp):
+                    val = fp.get(fkey)
+                    if not isinstance(val, h5py.Dataset):
+                        continue
 
-                got = self.domain.match(fname, fkey)
-                if not got:
-                    # print(f'{fname}:{fkey} not in {self.domain.name}')
-                    continue
-                fid, sid, lid = got
-                kid = (fid,sid)
-                byids[kid][lid] = (fp, fkey)
+                    got = self.domain.match(fname, fkey)
+                    if not got:
+                        # print(f'{fname}:{fkey} not in {self.domain.name}')
+                        continue
+                    fid, sid, lid = got
+                    kid = (fid,sid)
+                    byids[kid][lid] = (fname, fkey)
 
         for kid in sorted(byids):
             entry = byids[kid]
@@ -166,20 +227,20 @@ class Single(Dataset):
 
         tens = list()
         keys = list()
-        for fp, key in layers:
-            # log.debug(f'{fp} {key}')
+        for fname, key in layers:
+            # log.debug(f'{fname} {key}')
             # this takes about 75% of the time
-            d = fp.get(key)
+            d = self._file(fname).get(key)
             keys.append(key)
             # takes about 5%
             ten = torch.tensor(d[:], requires_grad = False).to(dtype=self._dtype)
             tens.append(ten)
-        # this about 15% 
+        # this about 15%
         ten = torch.stack(tens, axis=2)  # (ntick, nchan, nlayer)
         ten = torch.transpose(ten, 0, 2)   # (nlayer, nchan, ntick)
 
         ten = self.domain.transform(ten)
-        log.debug(f'hdf loaded [{idx}]: {ten.shape} {keys} in {fp.filename}')
+        log.debug(f'hdf loaded [{idx}]: {ten.shape} {keys} in {fname}')
 
         # Delay requiring gradients as stack() does not and arbitrary
         # transform() may not have gradients.  Not doing this may also be
