@@ -245,6 +245,183 @@ def train(ctx, config, epochs, batch, eval_batch, device, cache, amp, debug_torc
         dnn.dist.cleanup()
 
 
+def _parse_shape(val):
+    '''
+    Parse an input shape from a config value or CLI string.
+
+    Accepts a real sequence, "[1, 3, 800, 1500]" or "1,3,800,1500".
+    '''
+    if val is None:
+        return None
+    if isinstance(val, (list, tuple)):
+        return tuple(int(v) for v in val) or None
+    text = str(val).strip()
+    if not text:
+        return None
+    try:
+        import ast
+        got = ast.literal_eval(text)    # not eval(): this comes from a file
+        if isinstance(got, (list, tuple)):
+            return tuple(int(v) for v in got)
+        return (int(got),)
+    except (ValueError, SyntaxError):
+        pass
+    try:
+        return tuple(int(v) for v in text.replace(',', ' ').split()) or None
+    except ValueError:
+        raise click.BadParameter(f'cannot read a shape from {val!r}, '
+                                 'want e.g. "1,3,800,1500"')
+
+
+def _parse_bool(val, default=False):
+    '''
+    Interpret a config-file boolean.
+
+    Needed because anyconfig hands back the raw string and bool("false") is True.
+    '''
+    if val is None:
+        return default
+    if isinstance(val, bool):
+        return val
+    return str(val).strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+@cli.command('export-ts')
+@click.option("-a", "--app", default=None, type=str,
+              help="The application name (def: [export] app, else [train] app)")
+@click.option("-l", "--load", default=None,
+              help="File providing model weights: a training checkpoint or a bare "
+              "state dict (def=None - export freshly initialized weights)")
+@click.option("-o", "--output", default=None,
+              help="Output TorchScript file (def: [export] output, else <app>.ts)")
+@click.option("-d", "--device", default=None, type=str,
+              help="Device to build and convert on (def=cpu).  Converting on CUDA "
+              "bakes the device into the graph, so the result then needs a GPU.")
+@click.option("-m", "--method", default=None,
+              type=click.Choice(['script', 'trace']),
+              help="Conversion method (def=script).  'script' needs no example input "
+              "and stays shape-generic; 'trace' records one execution and is the "
+              "fallback for a model that will not compile (e.g. xvunet).")
+@click.option("--shape", default=None, type=str,
+              help="Input shape, e.g. '1,3,800,1500'.  Required for --method trace, "
+              "otherwise used to verify the export.  Def: [export] shape.")
+@click.option("--sigmoid/--no-sigmoid", default=None,
+              help="Append a sigmoid to the model output.  Needed for apps whose "
+              "forward returns raw logits, e.g. dnnroi_custom.")
+@anyconfig_file("wirecelldnn", section='export', defaults={})
+@click.pass_context
+def export_ts(ctx, app, load, output, device, method, shape, sigmoid, config):
+    '''
+    Export a model to a TorchScript (.ts) file.
+
+    The model is constructed from the config exactly as "train" constructs it, so
+    the [model] section supplies its arguments.  Weights are loaded from -l/--load
+    if given, then the model is switched to eval() and converted.
+
+    Settings come from an [export] section, with [train] as a fallback for "app".
+    Anything given on the command line wins:
+
+    \b
+        [export]
+        app = dnnroi_custom
+        shape = [1, 3, 800, 1500]
+        method = script
+        sigmoid = true
+        output = dnnroi_custom.ts
+    '''
+    import wirecell.dnn.apps
+
+    # anyconfig_file hands back None, not {}, when there is no config file at all
+    # (so `export-ts -a <app>` with no -c must still work).
+    config = config or dict()
+    xcfg = config.get('export', None) or dict()
+    tcfg = config.get('train', None) or dict()
+
+    # The decorator is given defaults={} because anyconfig_file dereferences
+    # `defaults` unconditionally once its section exists (util/cli.py:329), so
+    # section= without defaults= raises AttributeError.  An empty dict also keeps
+    # its type coercion out of the way: values arrive as the raw config strings
+    # and are converted below.  It skips the fill-in entirely when the section is
+    # absent, so the fallbacks and defaults are resolved here either way.
+    name = app or xcfg.get('app', None) or tcfg.get('app', None)
+    if not name:
+        raise click.BadArgumentUsage(
+            'no app given; use -a/--app or set "app" in [export] or [train]')
+    method = method or xcfg.get('method', None) or 'script'
+    device = device or xcfg.get('device', None) or 'cpu'
+    load = load or xcfg.get('load', None)
+    output = output or xcfg.get('output', None) or f'{name}.ts'
+    shape = _parse_shape(shape if shape is not None else xcfg.get('shape', None))
+    # Only a --sigmoid/--no-sigmoid flag arrives as a real bool; a value taken
+    # from [export] arrives as the raw string, and bool("false") is True.
+    if not isinstance(sigmoid, bool):
+        sigmoid = _parse_bool(sigmoid if sigmoid is not None
+                              else xcfg.get('sigmoid', None), False)
+
+    if method == 'trace' and shape is None:
+        raise click.BadArgumentUsage(
+            '--method trace needs an input shape; give --shape or set '
+            '"shape" in [export]')
+
+    app = getattr(wirecell.dnn.apps, name)
+    net = obj_with_config(app.Network, config, 'model')
+
+    if load:
+        if not Path(load).exists():
+            raise click.FileError(load, 'model weights file does not exist')
+        dnn.io.load_model_state(load, net)
+        log.info(f'loaded weights from {load}')
+    else:
+        log.warning('no -l/--load given: exporting freshly initialized weights')
+
+    nparam = sum(p.numel() for p in net.parameters())
+    log.info(f'exporting {name} ({nparam/1e6:.2f} M parameters) via {method} '
+             f'on {device}, sigmoid={sigmoid}')
+
+    try:
+        info = dnn.io.save_torchscript(net, output, shape=shape, method=method,
+                                       device=device, sigmoid=sigmoid)
+    except Exception as err:
+        if method == 'script':
+            # TorchScript errors can embed whole tensor reprs; keep the head.
+            detail = ' '.join(str(err).split())
+            if len(detail) > 300:
+                detail = detail[:300] + ' ...'
+            raise click.ClickException(
+                f'scripting {name} failed: {detail}\n\n'
+                'Scripting statically compiles the whole model, so it rejects '
+                'things that only work in Python: indexing an nn.ModuleList with '
+                'a runtime value, passing a function as an argument, or an '
+                'attribute that changes type.  Note this is a compile-time '
+                'limit, so eval() mode does not avoid it.\n'
+                'Retry with "--method trace --shape ...", which records one '
+                'execution instead and therefore sidesteps all of the above.'
+            ) from err
+        raise
+
+    log.info(f'wrote {info["path"]}')
+    if 'max_abs_diff' in info:
+        log.info(f'  verified against the eager model: '
+                 f'max|exported-eager| = {info["max_abs_diff"]:.3e}')
+        log.info(f'  output {info["out_shape"]} range '
+                 f'{info["out_min"]:.4f} .. {info["out_max"]:.4f}')
+        # A range outside [0,1] with no sigmoid almost always means this app
+        # returns logits, so the export is not what the consumer expects.
+        if not info['sigmoid'] and (info['out_min'] < 0.0 or info['out_max'] > 1.0):
+            log.warning('  output leaves [0,1] and sigmoid is off, so this model '
+                        'appears to return logits.  If the consumer expects a '
+                        'probability, re-export with --sigmoid.')
+        if info['max_abs_diff'] > 0.0:
+            log.warning('  exported model does not reproduce the eager model '
+                        f'exactly (max|diff| = {info["max_abs_diff"]:.3e})')
+    else:
+        log.info('  no shape given, so the export was not verified; pass --shape '
+                 'to check it against the eager model')
+    if method == 'trace':
+        log.info('  traced models fix the spatial dimensions they were exported '
+                 'at (the batch dimension stays free)')
+
+
 @cli.command('dump')
 @click.argument("checkpoint")
 @click.pass_context

@@ -39,9 +39,14 @@ off by default, are supported:
 '''
 
 
+from typing import List, Tuple
+
 import torch
 import torch.nn as nn
 from torch.nn.functional import pad as nnpad
+
+import logging
+log = logging.getLogger("wirecell.dnn")
 
 
 def dconv(in_channels, out_channels, kernel_size = 3, padding = 0,
@@ -90,42 +95,69 @@ class umerge(nn.Module):
         '''
         super().__init__()
         self.padding = padding
-        self.pads = None
-        self.slices = None
         if bilinear:
-            self.upsamp = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+            self.upsamp = nn.Upsample(scale_factor=2., mode='bilinear', align_corners=True)
         else:
             self.upsamp = nn.ConvTranspose2d(nchannels, nchannels//2, 2, stride=2)
 
-    def forward(self, over, up):
+    def forward(self, over: torch.Tensor, up: torch.Tensor) -> torch.Tensor:
         up = self.upsamp(up)
 
+        # These amounts were once computed on the first forward and cached on
+        # self.  That silently reused the first input's geometry for every later
+        # input of a different size, and it made the module untraceable (the
+        # cache-filling branch runs only once, so the graph differed between
+        # trace and its check re-run).  Recomputing costs two subtractions.
         if self.padding:
             # when not cropping we must pad special to match when target is odd size
-            if self.pads is None:
-                pad = list()
-                for dim in [-1, -2]:
-                    diff = over.shape[dim] - up.shape[dim]
-                    half = diff // 2
-                    pad += [half, diff-half]
-                self.pads = tuple(pad)
-            up = nnpad(up, self.pads)
+            dw = over.size(3) - up.size(3)
+            dh = over.size(2) - up.size(2)
+            # nnpad takes the last dim first, matching the old [-1, -2] order.
+            pads: List[int] = [dw // 2, dw - dw // 2, dh // 2, dh - dh // 2]
+            up = nnpad(up, pads)
         else:
-            if self.slices is None:
-                slices = [slice(None),] * len(up.shape)  # select all by default
-                for dim in [-2,-1]:
-                    hi = over.shape[dim]
-                    lo = up.shape[dim]
-                    if lo == hi:
-                        continue
-                    beg = (hi - lo) // 2
-                    end = beg + lo
-                    slices[dim] = slice(beg,end)
-                self.slices = tuple(slices)
-            over = over[self.slices]
+            # centre-crop "over" down to "up"'s spatial size
+            h = up.size(2)
+            w = up.size(3)
+            over = over.narrow(2, (over.size(2) - h) // 2, h) \
+                       .narrow(3, (over.size(3) - w) // 2, w)
 
         cat = torch.cat((over, up), dim=1)
         return cat
+
+
+class _DownBlock(nn.Module):
+    '''
+    One rung of the downward leg: the dconv whose output feeds a skip, plus the
+    dsamp feeding the rung below.
+
+    This exists so the legs can live in nn.ModuleLists.  TorchScript can iterate
+    a ModuleList (it unrolls it at compile time) but cannot iterate a plain
+    Python list of modules, nor zip() two ModuleLists together -- so pairing the
+    dconv with its dsamp has to happen inside a module rather than in the loop.
+    '''
+    def __init__(self, dc, ds):
+        super().__init__()
+        self.dconv = dc
+        self.dsamp = ds
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        over = self.dconv(x)
+        return over, self.dsamp(over)
+
+
+class _UpBlock(nn.Module):
+    '''
+    One rung of the upward leg: the umerge joining the skip with the rung below,
+    followed by that rung's dconv.  See _DownBlock for why this is a module.
+    '''
+    def __init__(self, m, dc):
+        super().__init__()
+        self.umerge = m
+        self.dconv = dc
+
+    def forward(self, over: torch.Tensor, up: torch.Tensor) -> torch.Tensor:
+        return self.dconv(self.umerge(over, up))
 
 
 def make_dconv(ich, factor, padding=False, batch_norm=False):
@@ -169,60 +201,136 @@ class UNet(nn.Module):
         super().__init__()
                 
         nch = n_channels
+        self.nskips = nskips
 
-        self._downleg = list()       # nodes in downward U leg
+        # The legs are nn.ModuleLists rather than the flat down_dconv_<i> /
+        # up_umerge_<i> attributes they used to be, so that forward_features can
+        # iterate them under TorchScript.  Construction order is unchanged, which
+        # keeps the *positional* parameter order identical -- an optimizer state
+        # dict from before this change references parameters by position, so
+        # reordering here would silently misplace momentum buffers on resume.
+        # State-dict *key* names do change; see _remap_legacy_keys().
+        down_blocks = list()
         skip_nchannels = list()      # for making skips
         for iskip in range(nskips):  # go down the U making dconv and dsamp
 
             dc_node, nch = make_dconv(nch, factor=2, padding=padding, batch_norm=batch_norm)
-            self._add_node(f'down_dconv_{iskip}', dc_node)
             skip_nchannels.append(nch)
 
             ds_node, nch = make_dsamp(nch)
-            self._add_node(f'down_dsamp_{iskip}', ds_node)
 
-            self._downleg.append((dc_node, ds_node))
+            down_blocks.append(_DownBlock(dc_node, ds_node))
+        self._add_node("down_blocks", nn.ModuleList(down_blocks))
 
         factor = 1 if padding else 2
         bottom, nch = make_dconv(nch, factor=factor, padding=padding, batch_norm=batch_norm)
         self._add_node("bottom", bottom)
 
-        # self.skips = list()
-        self._upleg = list()
-        for iskip in range(nskips-1, -1, -1):
+        up_blocks = list()
+        for iskip in range(nskips-1, -1, -1):   # bottom up order
 
             nch = skip_nchannels[iskip]
             m_node, nch = make_umerge(nch, bilinear=bilinear, padding=padding)
-            self._add_node(f'up_umerge_{iskip}', m_node)
 
             factor = 0.25 if padding else 0.5
             dc_node, nch = make_dconv(nch, factor=factor, padding=padding, batch_norm=batch_norm)
-            self._add_node(f'up_dconv_{iskip}', dc_node)
 
-            self._upleg.append((m_node, dc_node))  # bottom up order
+            up_blocks.append(_UpBlock(m_node, dc_node))
+        self._add_node("up_blocks", nn.ModuleList(up_blocks))
 
         self.out_features = nch  # channels of the pre-segmap feature map
 
         segmap = nn.Conv2d(nch, n_classes, 1)
         self._add_node("segmap", segmap)
 
+        # Accept checkpoints written before the ModuleList restructuring.
+        self._register_load_state_dict_pre_hook(self._remap_legacy_keys)
 
-    def forward_features(self, x):
+
+    def _remap_legacy_keys(self, state_dict, prefix, local_metadata, strict,
+                           missing_keys, unexpected_keys, error_msgs):
+        '''
+        Rewrite, in place, state-dict keys written before the legs became
+        nn.ModuleLists, so older checkpoints keep loading.
+
+            down_dconv_<i>.*  ->  down_blocks.<i>.dconv.*
+            down_dsamp_<i>.*  ->  down_blocks.<i>.dsamp.*
+            up_umerge_<i>.*   ->  up_blocks.<nskips-1-i>.umerge.*
+            up_dconv_<i>.*    ->  up_blocks.<nskips-1-i>.dconv.*
+
+        bottom.* and segmap.* are unchanged.  The up leg is renumbered because it
+        was built bottom-up: old index <i> counts from the top of the U, the new
+        ModuleList position counts from the bottom.
+
+        This is deliberately chatty: quietly renaming the keys of somebody's
+        trained weights is exactly the kind of thing that should be visible.
+        '''
+        legs = (('down_dconv_', 'down_blocks.{}.dconv', False),
+                ('down_dsamp_', 'down_blocks.{}.dsamp', False),
+                ('up_umerge_',  'up_blocks.{}.umerge',  True),
+                ('up_dconv_',   'up_blocks.{}.dconv',   True))
+
+        renames = dict()
+        nunder = 0
+        for key in list(state_dict.keys()):
+            if not key.startswith(prefix):
+                continue
+            nunder += 1
+            tail = key[len(prefix):]
+            head, _, rest = tail.partition('.')
+            for old, newfmt, flip in legs:
+                if not head.startswith(old):
+                    continue
+                try:
+                    idx = int(head[len(old):])
+                except ValueError:
+                    break
+                if flip:
+                    idx = self.nskips - 1 - idx
+                newhead = newfmt.format(idx)
+                renames[key] = prefix + newhead + ('.' + rest if rest else '')
+                break
+
+        if not renames:
+            return                  # already the current layout
+
+        label = 'UNet[%s]' % (prefix.rstrip('.') or 'root')
+        log.info(f'{label}: legacy checkpoint layout detected, '
+                 f'remapping {len(renames)} of {nunder} keys')
+        groups = dict()
+        for old, new in renames.items():
+            ohead = old[len(prefix):].split('.')[0]
+            nhead = '.'.join(new[len(prefix):].split('.')[:3])
+            groups[(ohead, nhead)] = groups.get((ohead, nhead), 0) + 1
+        for (ohead, nhead), cnt in sorted(groups.items()):
+            log.info(f'{label}:   {ohead}.* -> {nhead}.*  ({cnt} keys)')
+        if len(renames) < nunder:
+            log.info(f'{label}:   {nunder - len(renames)} keys unchanged '
+                     '(bottom.*, segmap.*)')
+
+        for old, new in renames.items():
+            state_dict[new] = state_dict.pop(old)
+
+    @torch.jit.export
+    def forward_features(self, x: torch.Tensor) -> torch.Tensor:
         '''
         The forward pass up to but not including the final segmap 1x1 conv.
         '''
-        overs = list()
-        for skip, (dc,ds) in enumerate(self._downleg):
-            x = dc(x)
-            overs.append(x)
-            x = ds(x)
-        overs.reverse()
+        overs: List[torch.Tensor] = list()
+        for dblk in self.down_blocks:
+            over, x = dblk(x)
+            overs.append(over)
+
         x = self.bottom(x)
-        for over, (m,d) in zip(overs, self._upleg):
-            x = m(over, x)
-            x = d(x)
+
+        # up_blocks runs bottom-up, so it pairs with overs walked backwards.  A
+        # reversed()/zip() over the ModuleList is not scriptable, hence the index.
+        iover = len(overs) - 1
+        for ublk in self.up_blocks:
+            x = ublk(overs[iover], x)
+            iover -= 1
 
         return x
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.segmap(self.forward_features(x))
