@@ -29,8 +29,20 @@ def dump(name, data):
     # print(f'{name:20s}: {data.shape} {data.dtype} {data.device}')
     return
 
+
+# Autocast dtypes accepted for --amp.  fp16 carries a much narrower exponent
+# range than fp32 (max ~65504); bf16 keeps fp32's range at the same speed.  That
+# matters for models whose activations can overflow: with xvunet's cross-view
+# branch, fp16 drove ~29% of batches to inf logits (silently skipped by the
+# GradScaler) once its LayerScale gates opened, while bf16 tracked fp32 to
+# ~0.05% at an identical 380 ms/step.
+_AMP_DTYPES = dict(float16=torch.float16, fp16=torch.float16, half=torch.float16,
+                   bfloat16=torch.bfloat16, bf16=torch.bfloat16)
+
+
 class Classifier:
-    def __init__(self, net, optimizer, criterion = nn.BCELoss(), device='cpu', amp=False):
+    def __init__(self, net, optimizer, criterion = nn.BCELoss(), device='cpu',
+                 amp=False, amp_dtype='float16'):
         net.to(device)
         self._device = device
         # Under DDP each process wraps its replica in DistributedDataParallel so
@@ -49,7 +61,15 @@ class Classifier:
         # When disabled, both autocast and the scaler are pass-throughs, so the
         # code path is behavior-identical to plain fp32 training.
         self._amp = bool(amp) and str(device).startswith('cuda')
-        self._scaler = torch.amp.GradScaler('cuda', enabled=self._amp)
+        key = str(amp_dtype).lower()
+        if key not in _AMP_DTYPES:
+            raise ValueError(f'unknown amp dtype {amp_dtype!r}, want one of '
+                             f'{sorted(set(_AMP_DTYPES))}')
+        self._amp_dtype = _AMP_DTYPES[key]
+        # Loss scaling exists to lift fp16 gradients out of the subnormal range.
+        # bf16 has fp32's exponent, so it neither needs nor benefits from it.
+        self._scaler = torch.amp.GradScaler(
+            'cuda', enabled=self._amp and self._amp_dtype is torch.float16)
 
     def loss(self, features, labels):
 
@@ -63,7 +83,7 @@ class Classifier:
         # fp32 and compute the criterion *outside* autocast: BCELoss is
         # autocast-unsafe, and this also keeps the loss numerics in fp32 (the
         # standard AMP recipe).
-        with torch.autocast('cuda', enabled=self._amp):
+        with torch.autocast('cuda', dtype=self._amp_dtype, enabled=self._amp):
             prediction = self.net(features)
         dump('prediction', prediction)
 

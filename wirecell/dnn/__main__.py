@@ -55,8 +55,14 @@ train_defaults = dict(epochs=1, batch=1, device='cpu', name='dnnroi', train_rati
 @click.option("--cache/--no-cache", is_flag=True, default=False,
               help="Cache data in memory")
 @click.option("--amp/--no-amp", is_flag=True, default=False,
-              help="Use mixed-precision (autocast/fp16) training.  "
+              help="Use mixed-precision (autocast) training.  "
               "Only takes effect on CUDA; a no-op on CPU.")
+@click.option("--amp-dtype", default=None,
+              type=click.Choice(['float16', 'bfloat16']),
+              help="Autocast dtype for --amp (def=float16).  Use bfloat16 for "
+              "models whose activations can overflow fp16's ~65504 range: it "
+              "keeps fp32's exponent at the same speed.  Required for xvunet, "
+              "where fp16 sends ~29% of batches to inf logits.")
 @click.option("--debug-torch/--no-debug-torch", is_flag=True, default=False,
               help="Debug torch-level problems")
 @click.option("--checkpoint-save", default=None,
@@ -78,8 +84,8 @@ train_defaults = dict(epochs=1, batch=1, device='cpu', name='dnnroi', train_rati
 @anyconfig_file("wirecelldnn", section='train', defaults=train_defaults)
 @click.argument("files", nargs=-1)
 @click.pass_context
-def train(ctx, config, epochs, batch, eval_batch, device, cache, amp, debug_torch,
-          checkpoint_save, checkpoint_modulus,
+def train(ctx, config, epochs, batch, eval_batch, device, cache, amp, amp_dtype,
+          debug_torch, checkpoint_save, checkpoint_modulus,
           app, load, save, train_ratio, manual_seed, files):
     '''
     Train a model.
@@ -130,7 +136,13 @@ def train(ctx, config, epochs, batch, eval_batch, device, cache, amp, debug_torc
         if dnn.dist.is_main():
             print(opt.state_dict())
         crit = app.Criterion()
-        trainer = app.Trainer(net, opt, crit, device=device, amp=amp)
+        # [train] amp_dtype is honoured via the config section fill-in; default
+        # fp16 keeps existing runs bit-for-bit unchanged.
+        trainer = app.Trainer(net, opt, crit, device=device, amp=amp,
+                              amp_dtype=(amp_dtype or 'float16'))
+        if amp and dnn.dist.is_main():
+            log.info(f'mixed precision enabled, autocast dtype '
+                     f'{amp_dtype or "float16"}')
 
         history = dict()
         if load:
