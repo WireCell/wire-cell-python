@@ -13,6 +13,7 @@ from wirecell import dnn
 def make_model_from_config(app, config):
     model_config = config.get('model', None)
     model_args = ([] if model_config is None else [model_config])
+    log.info(model_args)
     return app.Network(*model_args)
 
 def obj_with_config(obj, config, key,  additional_args=[]):
@@ -587,7 +588,7 @@ run_one_defaults = dict(device='cpu', name='dnnroi')
 @click.option('--manual-sigmoid/--no-manual-sigmoid', default=False, is_flag=True,
               help='Run output through sigmoid by hand')
 @anyconfig_file("wirecelldnn", section='run_one', defaults=run_one_defaults)
-@click.argument("files", type=str, nargs=2)
+@click.argument("files", type=str, nargs=-1)
 def run_one(config, device, debug_torch, entry, load, output, app, manual_sigmoid, files):
     '''
     Run a reco & true pair through a saved model.
