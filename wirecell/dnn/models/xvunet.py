@@ -72,6 +72,35 @@ import logging
 log = logging.getLogger("wirecell.dnn")
 
 
+#: Attention scopes, selectable at runtime for ablation.  A query token may see
+#: keys from:
+#:
+#:   legacy  every token, i.e. the behaviour before modes existed.  Kept so a
+#:           checkpoint trained under it stays reproducible; it is the only
+#:           mode that lets the two W faces attend to each other.
+#:   all     its own segment, or any segment of a different view.
+#:   intra   its own segment only.
+#:   inter   segments of a different view only.
+#:   none    nothing; the attention branch is skipped entirely, though the
+#:           block's FFN branch still runs.
+#:
+#: 'intra' and 'inter' partition 'all' exactly: every ordered token pair is
+#: either same-segment or different-view, apart from the same-view-different-
+#: segment pairs that 'all' excludes and 'legacy' allows.
+ATTN_MODES = ('legacy', 'all', 'intra', 'inter', 'none')
+
+
+def _gather(t, spans):
+    '''
+    Token-axis slice of t (B, T, N, d) over [(lo, hi), ...].  Out of place, so
+    it stays safe under activation checkpointing; a single span avoids the copy.
+    '''
+    if len(spans) == 1:
+        lo, hi = spans[0]
+        return t[:, :, lo:hi, :]
+    return torch.cat([t[:, :, lo:hi, :] for lo, hi in spans], dim=2)
+
+
 class BandedAttentionBlock(nn.Module):
     '''
     Pre-LN transformer block with time-banded self-attention.
@@ -108,6 +137,13 @@ class BandedAttentionBlock(nn.Module):
         self.gamma2 = nn.Parameter(torch.zeros(d_model))
 
         self._mask_cache = dict()  # (T, N) -> (T, (2*band+1)*N) bool, True = attend
+
+        # Attention scope.  Plain attributes, not buffers or parameters, so
+        # switching mode never touches state_dict and one trained checkpoint
+        # can be evaluated under every mode.  segments is filled in by
+        # XViewUNet; a block built standalone stays in 'legacy'.
+        self.segments = None       # [(lo, hi, view), ...] in token order
+        self.attn_mode = 'legacy'
 
     def _band_mask(self, T, N, device):
         '''
@@ -164,32 +200,95 @@ class BandedAttentionBlock(nn.Module):
         one batched attention call, at the cost of materialising that many
         copies of k and v.
         '''
-        B, T, N, d = x.shape
+        if self.attn_mode == 'none':
+            # Attention branch off, FFN branch still on, so an ablation against
+            # another mode isolates attention rather than also removing the
+            # block's extra capacity.
+            return x + self.gamma2 * self.ffn(self.norm2(x))
+
+        y = self.norm1(x)
+
+        '''Create the queries, keys, values used with scaled dot product attn.'''
+        q, k, v = self.qkv(y).chunk(3, dim=-1)
+
+        if self.attn_mode == 'legacy':
+            o = self._attend(q, k, v)
+        else:
+            if not self.segments:
+                raise RuntimeError(
+                    f'attn_mode={self.attn_mode!r} needs segment layout; this '
+                    'block was built standalone rather than by XViewUNet')
+            outs = list()
+            for seg in self.segments:
+                lo, hi, _ = seg
+                qs = q[:, :, lo:hi, :]
+                spans = self._key_spans(seg)
+                outs.append(self._attend(qs, _gather(k, spans), _gather(v, spans))
+                            if spans else torch.zeros_like(qs))
+            o = torch.cat(outs, dim=2)
+
+        x = x + self.gamma1 * self.proj(o)
+        x = x + self.gamma2 * self.ffn(self.norm2(x))
+        return x
+
+    def _key_spans(self, seg):
+        '''
+        Token spans this query segment may attend to, merged so adjacent spans
+        become one slice.  Under 'all' most segments end up with a single
+        contiguous span, so the restriction usually costs no extra concatenation.
+        '''
+        lo, hi, view = seg
+        keep = list()
+        for (a, b, w) in self.segments:
+            own = (a, b) == (lo, hi)
+            if self.attn_mode == 'intra':
+                ok = own
+            elif self.attn_mode == 'inter':
+                ok = w != view
+            else:                                   # 'all'
+                ok = own or w != view
+            if ok:
+                keep.append((a, b))
+        merged = list()
+        for a, b in sorted(keep):
+            if merged and merged[-1][1] == a:
+                merged[-1] = (merged[-1][0], b)
+            else:
+                merged.append((a, b))
+        return merged
+
+    def _attend(self, q, k, v):
+        '''
+        Banded attention of q (B, T, Nq, d) against k/v (B, T, Nk, d).
+
+        Nq and Nk need not match.  The modes restrict what a query may see by
+        handing in a smaller key set rather than by masking a full grid: a
+        per-query mask would need (B*T, 1, Nq, M), which at production size is
+        ~10^9 entries, whereas a restricted key set keeps the mask at
+        (B*T, 1, 1, M) and costs strictly fewer logits than 'legacy'.
+        '''
+        B, T, Nq, d = q.shape
+        Nk = k.shape[2]
         h = self.n_heads
         dh = d // h
 
-        y = self.norm1(x)
-        q, k, v = self.qkv(y).chunk(3, dim=-1)
-
-        # keys/values from ticks t-band .. t+band: roll(k, -s)[t] == k[t+s]
+        '''
+        Replicate keys/values from ticks t-band .. t+band: roll(k, -s)[t] == k[t+s]
+        '''
         shifts = range(-self.band, self.band + 1)
         kb = torch.cat([torch.roll(k, -s, dims=1) for s in shifts], dim=2)
         vb = torch.cat([torch.roll(v, -s, dims=1) for s in shifts], dim=2)
         M = kb.shape[2]
 
-        q = q.reshape(B*T, N, h, dh).transpose(1, 2)     # (B*T, h, N, dh)
+        q = q.reshape(B*T, Nq, h, dh).transpose(1, 2)    # (B*T, h, Nq, dh)
         kb = kb.reshape(B*T, M, h, dh).transpose(1, 2)   # (B*T, h, M, dh)
         vb = vb.reshape(B*T, M, h, dh).transpose(1, 2)
 
-        mask = self._band_mask(T, N, x.device)           # (T, M)
+        mask = self._band_mask(T, Nk, q.device)          # (T, M)
         mask = mask.repeat(B, 1).view(B*T, 1, 1, M)
 
         o = F.scaled_dot_product_attention(q, kb, vb, attn_mask=mask)
-        o = o.transpose(1, 2).reshape(B, T, N, d)
-
-        x = x + self.gamma1 * self.proj(o)
-        x = x + self.gamma2 * self.ffn(self.norm2(x))
-        return x
+        return o.transpose(1, 2).reshape(B, T, Nq, d)
 
 
 class XViewUNet(nn.Module):
@@ -249,6 +348,12 @@ class XViewUNet(nn.Module):
         self.heads = nn.ModuleList()
         self.gammas = nn.ParameterList()
 
+
+        '''
+        Create the UNets + the layers to embed UNet output into tokens and also
+        the learned gates (gammas) which "turn on" the effects from the attention
+        mechanism
+        '''
         self.ntok_per_seg = list()   # flat, in (view, segment) order
         nseg_total = 0
         for vs, chunk in zip(view_splits, chunks):
@@ -271,15 +376,44 @@ class XViewUNet(nn.Module):
             nseg_total += len(vs)
 
         ntok = sum(self.ntok_per_seg)
+
+        '''
+        Crate learned embeddings from the token positions (a function of view + channel)
+        and also the 'segment' which is a redundant function of view and channel
+        '''
         self.pos_embed = nn.Parameter(torch.empty(1, d_model, ntok, 1).normal_(std=0.02))
         self.seg_embeds = nn.ParameterList(
             nn.Parameter(torch.empty(1, d_model, 1, 1).normal_(std=0.02))
             for _ in range(nseg_total))
 
+        '''
+        Attention blocks
+        '''
         self.blocks = nn.ModuleList(
             BandedAttentionBlock(d_model, n_heads, band=band, ffn_mult=ffn_mult)
             for _ in range(n_layers))
 
+        # Token spans per segment, tagged with the owning view, in the same
+        # flat (view, segment) order tokens are concatenated.  The blocks need
+        # this to restrict attention by segment or view.
+        self.token_segments = list()
+        at = iseg = 0
+        for iv, vs in enumerate(view_splits):
+            for _ in vs:
+                n = self.ntok_per_seg[iseg]
+                self.token_segments.append((at, at + n, iv))
+                at += n
+                iseg += 1
+        for blk in self.blocks:
+            blk.segments = self.token_segments
+        # Default to 'all': two faces of one view are separate drift regions
+        # and must not attend to each other.  'legacy' allows that and exists
+        # only to reproduce models trained before modes were added.
+        self.set_attention_mode('all')
+
+        '''
+        Loading different portions -- could do with some protection against double loading?
+        '''
         if unet_checkpoints:
             if len(unet_checkpoints) != self.nviews:
                 raise ValueError(f'need {self.nviews} unet_checkpoints, '
@@ -322,6 +456,26 @@ class XViewUNet(nn.Module):
         self.load_state_dict(sd, strict=True)
         log.info(f'xvunet: loaded full model weights from {path}')
 
+    def set_attention_mode(self, mode):
+        '''
+        Set the attention scope on every block; see ATTN_MODES.
+
+        Nothing here changes parameter shapes, so a single trained checkpoint
+        can be evaluated under each mode in turn.  Note the default is
+        'legacy', which alone lets the two faces of a view attend to each
+        other -- 'all' forbids that, so the two differ on a multi-segment view
+        and a model trained under one is not the same function under the other.
+        '''
+        if mode not in ATTN_MODES:
+            raise ValueError(f'unknown attn_mode {mode!r}, want one of '
+                             f'{list(ATTN_MODES)}')
+        if mode != 'legacy' and not self.token_segments:
+            raise RuntimeError('no segment layout to restrict attention with')
+        for blk in self.blocks:
+            blk.attn_mode = mode
+        log.info(f'xvunet: attention mode {mode}')
+        return self
+
     def train(self, mode=True):
         '''
         As nn.Module.train() but frozen trunks stay in eval mode so their
@@ -355,6 +509,7 @@ class XViewUNet(nn.Module):
         '''
         views = torch.split(x, self.view_totals, dim=2)
 
+        '''Run through 'trunks' i.e. UNets and create tokens'''
         feats = list()      # per (view, segment) full-res trunk features
         tokens = list()     # per (view, segment) token maps (B, d, ntok, T)
         iseg = 0
@@ -367,6 +522,7 @@ class XViewUNet(nn.Module):
                 tokens.append(tok)
                 iseg += 1
 
+        '''Run through attention'''
         tok = torch.cat(tokens, dim=2) + self.pos_embed      # (B, d, N, T)
         tok = tok.permute(0, 3, 2, 1)                        # (B, T, N, d)
         for blk in self.blocks:

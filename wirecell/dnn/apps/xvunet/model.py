@@ -67,5 +67,16 @@ class Network(nn.Module):
         log.info(f'xvunet network: {kwds}')
         self.xvunet = XViewUNet(**kwds)
 
+        # Attention scope is runtime state, not a constructor argument, so a
+        # checkpoint stays loadable under any mode.  Default 'all' forbids
+        # attention between two faces of one view; set attn_mode=legacy to
+        # reproduce a model trained before modes were added.
+        self.set_attention_mode(cfg.get('attn_mode', 'all'))
+
+    def set_attention_mode(self, mode):
+        '''Select the attention scope; see xvunet.ATTN_MODES.'''
+        self.xvunet.set_attention_mode(mode)
+        return self
+
     def forward(self, x):
         return self.xvunet(x)

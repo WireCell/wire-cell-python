@@ -9,7 +9,8 @@ import pytest
 import torch
 
 from wirecell.dnn.models.unet import UNet
-from wirecell.dnn.models.xvunet import XViewUNet, BandedAttentionBlock
+from wirecell.dnn.models.xvunet import (XViewUNet, BandedAttentionBlock,
+                                        ATTN_MODES)
 from wirecell.dnn.apps.xvunet.model import Network
 
 
@@ -68,6 +69,13 @@ def test_banded_locality():
     '''
     A perturbation at tick t0 may only influence output ticks within
     +/- band per attention layer, and edge ticks must not wrap around.
+
+    The perturbation must be non-uniform across the feature axis: norm1 is a
+    LayerNorm, so adding a constant to every feature of a token shifts only its
+    mean and is removed exactly.  With a uniform perturbation the neighbouring
+    ticks move by ~1e-7 of float rounding rather than by attention, and this
+    test then passes even with the attention gate shut.  The tolerance and the
+    lower-bound assertion below exist for the same reason.
     '''
     torch.manual_seed(0)
     band = 1
@@ -77,16 +85,119 @@ def test_banded_locality():
 
     Tt, N = 12, 6
     x = torch.rand(1, Tt, N, 16)
+    pert = torch.randn(N, 16) * 3.0
 
     for t0 in (0, 6, Tt - 1):
         x2 = x.clone()
-        x2[:, t0] += 1.0
+        x2[:, t0] += pert
         with torch.no_grad():
             d = (block(x2) - block(x)).abs().amax(dim=(0, 2, 3))  # per tick
-        affected = set(torch.nonzero(d).flatten().tolist())
+        affected = set(torch.nonzero(d > 1e-4).flatten().tolist())
         allowed = set(range(max(0, t0 - band), min(Tt, t0 + band + 1)))
         assert affected <= allowed
-        assert t0 in affected
+        # every in-band neighbour must actually be reached, or attention being
+        # silently disabled would still satisfy the containment above
+        assert affected == allowed
+
+
+def _open_gates(model, gate=0.5):
+    '''Open every gate so attention-path differences reach the output.'''
+    with torch.no_grad():
+        for g in model.gammas:
+            g.fill_(0.7)
+        for blk in model.blocks:
+            blk.gamma1.fill_(gate)
+            blk.gamma2.fill_(gate)
+    return model
+
+
+def test_attn_mode_reachability():
+    '''
+    Each mode admits exactly the token pairs its rule allows.  Perturbing one
+    token of the first W face, the queries whose output moves must be:
+
+      legacy  every other token
+      all     own segment plus every segment of another view (never the
+              sibling W face)
+      intra   own segment only
+      inter   segments of another view only
+      none    nothing
+    '''
+    torch.manual_seed(0)
+    d, Tt = 8, 6
+    segs = [(0, 4, 0), (4, 8, 1), (8, 12, 2), (12, 16, 2)]   # U, V, W0, W1
+    N = 16
+    block = BandedAttentionBlock(d_model=d, n_heads=2, band=1).eval()
+    block.segments = segs
+    with torch.no_grad():
+        block.gamma1.fill_(1.0)
+        block.gamma2.zero_()          # isolate the attention branch
+
+    x = torch.rand(1, Tt, N, d)
+    pert = torch.randn(Tt, d) * 3.0   # non-uniform, see test_banded_locality
+    p = 8                             # first token of W face 0
+
+    def reached(mode):
+        block.attn_mode = mode
+        with torch.no_grad():
+            y0 = block(x)
+            x2 = x.clone()
+            x2[0, :, p, :] += pert
+            y1 = block(x2)
+        diff = (y1 - y0).abs().amax(dim=3)[0].amax(dim=0)
+        return {i for i in range(N) if diff[i] > 1e-5 and i != p}
+
+    assert reached('legacy') == set(range(N)) - {p}
+    assert reached('all') == set(range(12)) - {p}
+    assert reached('intra') == set(range(8, 12)) - {p}
+    assert reached('inter') == set(range(8))
+    assert reached('none') == set()
+
+
+def test_all_equals_legacy_without_multisegment_view():
+    '''
+    'all' differs from 'legacy' only by same-view-different-segment pairs, so
+    with one segment per view the two must agree bit for bit.
+    '''
+    torch.manual_seed(0)
+    model = _open_gates(
+        XViewUNet(view_splits=[[32], [32], [32]], chunks=[8, 8, 8],
+                  d_model=16, n_heads=2).eval())
+    x = torch.rand(1, 1, 96, 32)
+    with torch.no_grad():
+        legacy = model.set_attention_mode('legacy')(x)
+        every = model.set_attention_mode('all')(x)
+    assert torch.equal(legacy, every)
+
+
+def test_all_differs_from_legacy_on_two_faced_view():
+    '''The two W faces may see each other under 'legacy' but not under 'all'.'''
+    torch.manual_seed(0)
+    model = _open_gates(small_model().eval())
+    x = torch.rand(1, 1, TOTAL, T)
+    with torch.no_grad():
+        legacy = model.set_attention_mode('legacy')(x)
+        every = model.set_attention_mode('all')(x)
+    assert not torch.allclose(legacy, every)
+
+
+def test_attn_mode_leaves_state_dict_alone():
+    '''
+    Switching mode must not touch parameters, so one trained checkpoint can be
+    evaluated under every mode.
+    '''
+    model = small_model()
+    before = {k: v.clone() for k, v in model.state_dict().items()}
+    for mode in ATTN_MODES:
+        model.set_attention_mode(mode)
+    after = model.state_dict()
+    assert set(before) == set(after)
+    assert all(torch.equal(before[k], after[k]) for k in before)
+
+
+def test_attn_mode_unknown():
+    with pytest.raises(ValueError):
+        small_model().set_attention_mode('sideways')
 
 
 def test_warm_start_trunks(tmp_path):
