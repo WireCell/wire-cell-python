@@ -69,12 +69,21 @@ def Optimizer(params, config=None):
     betas = (float(config.get('beta1', 0.9)), float(config.get('beta2', 0.999)))
     eps = float(config.get('eps', 1e-8))
     cls = optim.AdamW if name == 'adamw' else optim.Adam
-    # An explicit learning_rate carried over from an SGD config will be far too
-    # large here, and that is easy to miss, so say so.
-    if 'learning_rate' in config and lr > 2e-3:
-        log.warning(f'xvunet optimizer: {name} with learning_rate={lr} is very '
-                    'large for an Adam-family optimizer (typical 1e-4..1e-3); '
-                    'is this a rate that was tuned for SGD?')
+    # A rate written for the old SGD-only Optimizer is ~5x too hot here, and the
+    # switch to an adamw default makes that easy to miss.  But a deliberately
+    # batch-scaled rate is legitimately large too -- the sqrt rule puts global
+    # batch 16 at 4e-3 and 32 at 5.7e-3 -- and this function cannot see the batch
+    # size, so no threshold alone can separate the two.  Flag only the genuinely
+    # ambiguous case: a large rate in a config that never named an optimizer, so
+    # the adamw default was applied to it silently.
+    if 'learning_rate' in config and 'name' not in config and lr > 2e-3:
+        log.warning(
+            f'xvunet optimizer: defaulted to {name}, but this config sets '
+            f'learning_rate={lr} without naming an optimizer.  That is large for '
+            'an Adam-family optimizer at small batch (typical 1e-4..1e-3), though '
+            'expected if scaled up for a large global batch.  If it was tuned for '
+            f'SGD, lower it or set "name = sgd"; set "name = {name}" to confirm '
+            'it is deliberate and silence this.')
     log.info(f'xvunet optimizer: {cls.__name__} lr={lr} betas={betas} '
              f'eps={eps} weight_decay={weight_decay}')
     return cls(params, lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
