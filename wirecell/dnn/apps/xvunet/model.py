@@ -24,12 +24,25 @@ def _wash(config, key, default=None):
 
 
 def _boolish(val):
+    '''
+    Interpret an INI value as a bool; "1"/"true"/"yes"/"on" are true.
+    '''
     if isinstance(val, str):
         return val.strip().lower() in ('1', 'true', 'yes', 'on')
     return bool(val)
 
 
 class Network(nn.Module):
+    '''
+    The app-API model: an XViewUNet built from an INI-string config.
+
+    Keys and defaults mirror XViewUNet's signature.  Values arrive as strings,
+    so list/tuple/dict literals go through _wash and booleans through _boolish.
+
+    The model is held as self.xvunet, so a checkpoint saved from this wrapper
+    carries an "xvunet." key prefix -- which is what
+    XViewUNet.load_full_checkpoint strips when resuming from one.
+    '''
 
     def __init__(self, model_config=None):
         super().__init__()

@@ -15,6 +15,50 @@ style) so a freshly constructed (or trunk-warm-started) model produces exactly
 the per-view UNet outputs.  Training can therefore start from pretrained
 per-view UNet checkpoints (see unet_checkpoints) with trunks frozen
 (freeze_unets) and only later be fine-tuned end to end (init_checkpoint).
+
+Two training settings are load-bearing, both consequences of that zero-init
+gating:
+
+- Autocast in bfloat16, not float16.  Once the gates open, the cross-view
+  branch overflows in fp16 and emits inf logits for a large fraction of
+  batches (~29% as measured).  GradScaler then skips those steps, so the
+  visible symptom is a whole epoch of nan loss while the weights stay finite
+  and those optimizer steps are silently discarded.
+- Use an Adam-family optimizer, not SGD.  While gamma is zero the gradient
+  reaching the branch weights is exactly zero and gamma's own gradient is
+  tiny, so an SGD step -- being gradient-proportional -- never opens the gates
+  and the loss sits at exactly the frozen-trunk baseline.  Adam normalises per
+  parameter and escapes.  Note the lr that suits SGD here is far too large for
+  Adam.
+
+Because the gates start closed, a fresh model is bit-exact equal to its trunks
+run per view and segment, so the frozen-trunk baseline is the number to beat.
+Compute it before training rather than reading it off epoch 0, since the
+optimizer perturbs the model from the first step.
+
+This model cannot be TorchScript-*scripted*, though the other apps can be: the
+runtime-int indexing of nn.ModuleList, the callable-plus-args signature of
+_ckpt and the tuple-keyed _mask_cache are all compile-time blockers, so eval()
+mode does not avoid them.  Export by tracing instead ("wcpy dnn export-ts -m
+trace"), which is bit-exact.
+
+References for the zero-init residual gating:
+
+- ReZero: Bachlechner et al., "ReZero is All You Need: Fast Convergence at
+  Large Depth", arXiv:2003.04887 (2020).  One zero-init scalar per residual
+  branch, to train deep stacks without warmup.
+- LayerScale: Touvron et al., "Going deeper with Image Transformers"
+  (CaiT), arXiv:2103.17239 (2021).  Per-channel diagonal vector, initialized
+  to a small constant rather than to exactly zero.
+- SkipInit: De & Smith, "Batch Normalization Biases Residual Blocks Towards
+  the Identity Function", arXiv:2002.10444 (2020).
+
+Those papers reach for the technique to stabilize depth.  The gammas here take
+LayerScale's per-channel shape but ReZero's exactly-zero value, for a different
+end: exact zero makes the branch vanish identically, which is what buys the
+bit-exact trunk equivalence above.  It is also precisely what stalls SGD --
+LayerScale's small-but-nonzero init would avoid that, at the cost of the
+bit-exactness.
 '''
 
 import torch
@@ -66,6 +110,28 @@ class BandedAttentionBlock(nn.Module):
         self._mask_cache = dict()  # (T, N) -> (T, (2*band+1)*N) bool, True = attend
 
     def _band_mask(self, T, N, device):
+        '''
+        Boolean (T, (2*band+1)*N) mask, True where a query at tick t may attend
+        to a key column.  The key axis is the band offsets concatenated in
+        s = -band..+band order, N columns each, matching how forward() builds
+        its rolled key/value copies.
+
+        Validity is a function of time alone: it is computed per offset from
+        whether t+s lands inside [0, T), then broadcast unchanged across all N
+        tokens.  So the N token columns of a given offset are always all-True
+        or all-False together -- nothing here distinguishes one channel chunk,
+        segment or view from another.  That is the intended design: within the
+        band, attention over the token axis is dense, every view's channel
+        chunks seeing every other's.  Any per-channel or per-view restriction
+        (a geometry or wire-line bias, say) would have to be added separately.
+
+        The only entries masked off are therefore the wraparound ones: the
+        rolls in forward() are circular, so near t=0 and t=T-1 some rolled
+        columns hold keys from the opposite end of the image, which are not
+        real neighbours in time.
+
+        Cached per (T, N) since the mask depends only on shape.
+        '''
         key = (T, N)
         mask = self._mask_cache.get(key)
         if mask is None or mask.device != device:
@@ -79,7 +145,25 @@ class BandedAttentionBlock(nn.Module):
         return mask
 
     def forward(self, x):
-        # x: (B, T, N, d)
+        '''
+        Tokens (B, T, N, d) in, same shape out.
+
+        B is the batch, T the number of time ticks (carried at full image
+        resolution, one attention position per tick).  N is the total token
+        count at a single tick: the trunk features of every (view, segment)
+        have been chunked along the electronics-channel axis, giving
+        segment_width // chunk tokens per segment, and all of those are
+        concatenated across all views and segments into one flat axis.  So a
+        token is "one channel chunk of one segment of one view", and the N
+        axis mixes views deliberately -- that is what makes the attention
+        cross-view.  d is d_model, the per-token embedding width.
+
+        The band is covered without a loop over ticks: rolling the keys and
+        values by -s puts tick t+s at position t, so concatenating the 2*band+1
+        rolls along the token axis gives every query its whole neighbourhood in
+        one batched attention call, at the cost of materialising that many
+        copies of k and v.
+        '''
         B, T, N, d = x.shape
         h = self.n_heads
         dh = d // h
@@ -250,12 +334,25 @@ class XViewUNet(nn.Module):
         return self
 
     def _ckpt(self, enabled, fn, *args):
+        '''
+        Run fn(*args), under activation checkpointing when enabled.  Skipped
+        unless training with grad, where alone the recompute pays for itself.
+        '''
         if enabled and self.training and torch.is_grad_enabled():
             return checkpoint(fn, *args, use_reentrant=False)
         return fn(*args)
 
     def forward(self, x):
-        # x: (B, n_input_channels, sum(view_totals), T)
+        '''
+        (B, n_input_channels, sum(view_totals), T) in, n_classes logits out at
+        the same channel and tick resolution.
+
+        Three passes over the (view, segment) pairs: trunks produce full-res
+        features and their chunked tokens, the tokens attend across views, then
+        each segment's attended tokens are expanded back to full resolution and
+        fused with its features.  The final logits are the plain per-view UNet
+        output plus a gamma-gated correction, so gamma=0 reproduces the trunks.
+        '''
         views = torch.split(x, self.view_totals, dim=2)
 
         feats = list()      # per (view, segment) full-res trunk features

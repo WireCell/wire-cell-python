@@ -1,7 +1,7 @@
 ---
-generated: 2026-04-29
-source-hash: 901023f6498682ae
-children-hash: 71434ab650cf2d54
+generated: 2026-08-07
+source-hash: 1944666fed8147cc
+children-hash: a71c8aa55f34a05e
 ---
 
 # wirecell/dnn/
@@ -17,9 +17,9 @@ PyTorch-based deep neural network training framework for Wire-Cell signal proces
 | `io` | Checkpoint save/load utilities wrapping `torch.save`/`torch.load` | `save_checkpoint`, `load_checkpoint`, `load_checkpoint_raw` |
 | `train` | Generic supervised training loop (`Classifier`) with epoch/evaluate methods | `Classifier` |
 | `tracker` | Filesystem-based experiment tracker mimicking the mlflow API; falls back if mlflow absent | `fsflow`, `flow` |
-| `apps` | Per-application DNN pipelines (dnnroi, uvitrio, …) | see child index |
+| `apps` | Per-application DNN pipelines (dnnroi, uvitrio, xvunet, …) | see child index |
 | `data` | HDF5-backed PyTorch datasets and train/eval splitting | see child index |
-| `models` | U-Net and ViT-UNet neural network model definitions | see child index |
+| `models` | U-Net, ViT-UNet and cross-view attention model definitions | see child index |
 | `test` | Integration tests and utility scripts | see child index |
 
 ## CLI Commands

@@ -53,6 +53,11 @@ class Rec:
         return x[:, self._params.elech.crop, self._params.ticks.crop]
 
     def rebin(self, x):
+        '''
+        Average down by the per-dimension rebin factors, by splitting each
+        axis into (n_out, factor) and taking the mean over the factor axes.
+        The factors must divide the cropped shape exactly.
+        '''
         ne, nt = self._params.elech.rebin, self._params.ticks.rebin,
         sh = (x.shape[0],                    # 0
               x.shape[1] // ne,              # 1
