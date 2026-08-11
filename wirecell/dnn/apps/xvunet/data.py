@@ -71,6 +71,18 @@ def _sample_keys(single):
 class Dataset(TorchDataset):
     '''
     zip over views and over (rec, tru), concatenating views channel-wise.
+
+    __getitem__ returns a (rec, tru) pair, each shaped (1, sum-of-view-
+    channels, nticks): the per-view images laid end to end along the
+    electronics-channel axis in view order.  That is the layout XViewUNet's
+    view_splits then cuts back apart, so the two must agree -- the default
+    elech_binnings widths here (800, 800, 960) match the default view_splits
+    totals ([800], [800], [480, 480]).
+
+    Each view is indexed independently, so the views only line up if every
+    view's files carry the same IDs in the same order.  _check_alignment
+    enforces that at construction rather than letting mispaired views train
+    quietly.
     '''
 
     default_rec_file_res = tuple(

@@ -24,12 +24,25 @@ def _wash(config, key, default=None):
 
 
 def _boolish(val):
+    '''
+    Interpret an INI value as a bool; "1"/"true"/"yes"/"on" are true.
+    '''
     if isinstance(val, str):
         return val.strip().lower() in ('1', 'true', 'yes', 'on')
     return bool(val)
 
 
 class Network(nn.Module):
+    '''
+    The app-API model: an XViewUNet built from an INI-string config.
+
+    Keys and defaults mirror XViewUNet's signature.  Values arrive as strings,
+    so list/tuple/dict literals go through _wash and booleans through _boolish.
+
+    The model is held as self.xvunet, so a checkpoint saved from this wrapper
+    carries an "xvunet." key prefix -- which is what
+    XViewUNet.load_full_checkpoint strips when resuming from one.
+    '''
 
     def __init__(self, model_config=None):
         super().__init__()
@@ -53,6 +66,17 @@ class Network(nn.Module):
         )
         log.info(f'xvunet network: {kwds}')
         self.xvunet = XViewUNet(**kwds)
+
+        # Attention scope is runtime state, not a constructor argument, so a
+        # checkpoint stays loadable under any mode.  Default 'all' forbids
+        # attention between two faces of one view; set attn_mode=legacy to
+        # reproduce a model trained before modes were added.
+        self.set_attention_mode(cfg.get('attn_mode', 'all'))
+
+    def set_attention_mode(self, mode):
+        '''Select the attention scope; see xvunet.ATTN_MODES.'''
+        self.xvunet.set_attention_mode(mode)
+        return self
 
     def forward(self, x):
         return self.xvunet(x)
