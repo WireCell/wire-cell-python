@@ -587,9 +587,11 @@ run_one_defaults = dict(device='cpu', name='dnnroi')
               help="The application name")
 @click.option('--manual-sigmoid/--no-manual-sigmoid', default=False, is_flag=True,
               help='Run output through sigmoid by hand')
+@click.option('--rec-only', default=False, is_flag=True,
+              help='Only run rec')
 @anyconfig_file("wirecelldnn", section='run_one', defaults=run_one_defaults)
 @click.argument("files", type=str, nargs=-1)
-def run_one(config, device, debug_torch, entry, load, output, app, manual_sigmoid, files):
+def run_one(config, device, debug_torch, entry, load, output, app, manual_sigmoid, rec_only, files):
     '''
     Run a reco & true pair through a saved model.
     '''
@@ -628,12 +630,12 @@ def run_one(config, device, debug_torch, entry, load, output, app, manual_sigmoi
             net.load_state_dict(h['model_state_dict'])
             print('Loaded model state dict')
 
-        ds = app.Dataset(files, config=config.get("run_one_dataset", None))
+        ds = app.Dataset(files, config=config.get("run_one_dataset", None), rec_only=rec_only)
         if len(ds) == 0:
             raise click.BadArgumentUsage(f'no samples from {len(files)} files')
         feat, labels = ds.__getitem__(entry)
-        print(feat.shape)
-        print(labels.shape)
+        # print(feat.shape)
+        # print(labels.shape)
         y = net(feat.to(device).unsqueeze(0)).squeeze(0)
         if manual_sigmoid:
           print('Applying sigmoid')
@@ -641,11 +643,12 @@ def run_one(config, device, debug_torch, entry, load, output, app, manual_sigmoi
           y = sigmoid(y)
 
     if output:
-        torchsave({
+        outdict = {
             'feat':feat,
-            'labels':labels,
             'y':y
-        }, output)
+        }
+        if not rec_only: outdict['labels'] = labels
+        torchsave(outdict, output)
 
 run_one_defaults = dict(device='cpu', name='dnnroi')
 @cli.command('viztrain')

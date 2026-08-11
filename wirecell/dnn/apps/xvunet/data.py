@@ -62,6 +62,7 @@ def _sample_keys(single):
     keys = list()
     for layers in single._index:
         fname, fkey = layers[0]
+        log.debug(f'Attempting to match with {fname}, {fkey}')
         fid, sid, lid = single.domain.match(fname, fkey)
         keys.append((fid, sid))
     return keys
@@ -79,9 +80,9 @@ class Dataset(TorchDataset):
     default_elech_binnings = ((0, 800, 1), (0, 800, 1), (0, 960, 1))
     default_tick_binning = (0, 1500, 1)
 
-    def __init__(self, paths, threshold=0.5, cache=False, config=None):
+    def __init__(self, paths, threshold=0.5, cache=False, config=None, rec_only=False):
         config = config or dict()
-
+        self.rec_only = rec_only
         def wash(key, default=None):
             val = config.get(key, default)
             if isinstance(val, str) and val.lstrip().startswith(('[', '(', '{')):
@@ -135,21 +136,26 @@ class Dataset(TorchDataset):
         ref = _sample_keys(singles[0])
         if not ref:
             raise ValueError('xvunet dataset is empty: check files and regexes')
-        for single in singles[1:]:
-            got = _sample_keys(single)
-            if got != ref:
-                name = single.domain.name
-                fr = single.domain.match.file_re.pattern
-                raise ValueError(
-                    f'misaligned samples in {name} ({fr}): '
-                    f'{len(got)} samples vs {len(ref)} expected; '
-                    f'first difference: '
-                    f'{next((a, b) for a, b in zip(got, ref) if a != b) if got else None}')
+        
+        if not self.rec_only:
+            for single in singles[1:]:
+                got = _sample_keys(single)
+                if got != ref:
+                    name = single.domain.name
+                    fr = single.domain.match.file_re.pattern
+                    raise ValueError(
+                        f'misaligned samples in {name} ({fr}): '
+                        f'{len(got)} samples vs {len(ref)} expected; '
+                        f'first difference: '
+                        f'{next((a, b) for a, b in zip(got, ref) if a != b) if got else None}')
 
     def __len__(self):
         return len(self._recs[0])
 
     def __getitem__(self, idx):
         rec = torch.cat([one[idx] for one in self._recs], dim=1)
-        tru = torch.cat([one[idx] for one in self._trus], dim=1)
+        tru = (
+            None if self.rec_only
+            else torch.cat([one[idx] for one in self._trus], dim=1)
+        )
         return rec, tru
