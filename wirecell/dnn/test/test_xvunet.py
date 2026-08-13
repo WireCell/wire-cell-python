@@ -266,7 +266,7 @@ def test_network_wrapper_and_init_checkpoint(tmp_path):
     '''
     cfg = dict(view_splits='[[80],[80],[48,48]]', chunks='[8,8,8]',
                d_model='32', n_heads='4', n_layers='1', band='1')
-    net1 = Network(cfg)
+    net1 = Network(**cfg)
     # make it distinguishable from a fresh init
     with torch.no_grad():
         for g in net1.xvunet.gammas:
@@ -275,7 +275,7 @@ def test_network_wrapper_and_init_checkpoint(tmp_path):
     path = tmp_path / 'stage1.pt'
     torch.save({'model_state_dict': net1.state_dict()}, path)
 
-    net2 = Network(dict(cfg, init_checkpoint=str(path)))
+    net2 = Network(**dict(cfg, init_checkpoint=str(path)))
     sd1, sd2 = net1.state_dict(), net2.state_dict()
     assert sd1.keys() == sd2.keys()
     for k in sd1:

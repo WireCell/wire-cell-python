@@ -2,13 +2,16 @@ import torch
 import torch.nn as nn
 from wirecell.dnn.models.unet import UNet
 
+import logging
+log = logging.getLogger("wirecell.dnn")
+
 class Network(nn.Module):
 
-    def __init__(self, model_config):
+    def __init__(self, **cfg):
         super().__init__()
 
-        self.regres_only = int(model_config.get('regres_only', 0))
-        print('Regres only?', self.regres_only)
+        self.regres_only = int(cfg.get('regres_only', 0))
+        log.info(f'dnnroi_regres network: regres_only={self.regres_only}')
 
         self.unet = UNet(n_channels=1, n_classes=(1 if self.regres_only else 2),
                          batch_norm=True, bilinear=True, padding=True)

@@ -4,7 +4,9 @@ from wirecell.dnn.models import ViTUNetCrossView
 
 class Network(nn.Module):
     
-    def __init__(self):
+    def __init__(self, **cfg):
+        # This app takes no model config; **cfg is accepted so obj_with_config
+        # can call every app's Network the same way.
         super().__init__()
         input_shape=(1, 2560, 600)
         self.model = ViTUNetCrossView(

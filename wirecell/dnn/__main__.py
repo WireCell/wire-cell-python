@@ -10,16 +10,17 @@ from wirecell.util.paths import unglob, listify
 
 from wirecell import dnn
 
-def make_model_from_config(app, config):
-    model_config = config.get('model', None)
-    model_args = ([] if model_config is None else [model_config])
-    log.info(model_args)
-    return app.Network(*model_args)
-
 def obj_with_config(obj, config, key,  additional_args=[]):
+    '''
+    Build obj from the named config section, returning (instance, args).
+
+    The section is passed as keyword arguments, so every app's Network takes
+    **cfg even when it ignores it.  args is returned so callers can record the
+    resolved configuration alongside a checkpoint.
+    '''
     obj_config = config.get(key, None)
     args = ({} if obj_config is None else obj_config)
-    print(args)
+    log.debug(f'{key} config: {args}')
     return obj(*additional_args, **args), args
 
 @context("dnn")
@@ -131,7 +132,6 @@ def train(ctx, config, epochs, batch, eval_batch, device, cache, amp, amp_dtype,
         app = getattr(wirecell.dnn.apps, name)
 
         # net = app.Network()
-        # net = make_model_from_config(app, config)
         net, model_args = obj_with_config(app.Network, config, 'model')
         # opt = app.Optimizer(net.parameters())
         opt, _ = obj_with_config(app.Optimizer, config, 'optimizer', [net.parameters()])
@@ -621,10 +621,8 @@ def run_one(config, device, debug_torch, entry, load, output, app, manual_sigmoi
     app = getattr(wirecell.dnn.apps, name)
 
     with no_grad():
-        # model_config = config.get('model', None)
-        # model_args = ([] if model_config is None else [model_config])
-        # net = app.Network(*model_args).to(device)
-        net = make_model_from_config(app, config).to(device)
+        net, _ = obj_with_config(app.Network, config, 'model')
+        net = net.to(device)
         net.eval()
         
         if load:
