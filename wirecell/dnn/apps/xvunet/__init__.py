@@ -27,7 +27,7 @@ _OPT_DEFAULTS = dict(
 )
 
 
-def Optimizer(params, config=None):
+def Optimizer(params, **config):
     '''
     Build the optimizer named by [optimizer] name, defaulting to adamw.
 

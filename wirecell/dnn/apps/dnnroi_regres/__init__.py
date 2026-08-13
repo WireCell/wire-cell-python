@@ -11,7 +11,7 @@ from torch.nn.functional import binary_cross_entropy, mse_loss
 # def Optimizer(params):
 #     return optim.SGD(params, lr=0.1, momentum=0.9, weight_decay=0.0005)
 
-def Optimizer(params, config):
+def Optimizer(params, **config):
     lr = float(config.get('learning_rate', 0.1))
     p = float(config.get('momentum', 0.9))
     weight_decay = float(config.get('weight_decay', 0.0005))

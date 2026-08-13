@@ -200,7 +200,7 @@ def train(ctx, config, epochs, batch, eval_batch, device, cache, amp, amp_dtype,
             torch_seed = manual_seed,
             ddp_split_seed = ddp_split_seed,
             was_ddp = dnn.dist.is_dist(),
-            *model_args,
+            **model_args,
         )
         run_history[this_run_number] = this_run
 
