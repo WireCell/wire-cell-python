@@ -44,9 +44,9 @@ class Network(nn.Module):
     XViewUNet.load_full_checkpoint strips when resuming from one.
     '''
 
-    def __init__(self, model_config=None):
+    def __init__(self, **cfg):
         super().__init__()
-        cfg = model_config or dict()
+        # cfg = model_config or dict()
 
         kwds = dict(
             view_splits=_wash(cfg, 'view_splits', [[800], [800], [480, 480]]),
