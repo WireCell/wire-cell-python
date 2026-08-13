@@ -18,10 +18,9 @@ def make_model_from_config(app, config):
 
 def obj_with_config(obj, config, key,  additional_args=[]):
     obj_config = config.get(key, None)
-    args = ([] if obj_config is None else [obj_config])
-    args = additional_args + args
+    args = ({} if obj_config is None else obj_config)
     print(args)
-    return obj(*args)
+    return obj(*additional_args, **args)
 
 @context("dnn")
 def cli(ctx):
