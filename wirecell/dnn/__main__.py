@@ -82,12 +82,14 @@ train_defaults = dict(epochs=1, batch=1, device='cpu', name='dnnroi', train_rati
               help="Fraction of samples to use for training (default=1.0, no evaluation loss calculated)")
 @click.option("--manual-seed", default=None, type=int,
               help="Set this to use a manual torch seeding (default=None -> use default torch seeding)")
+@click.option("--ddp-split-seed", default=0, type=int,
+              help="Set this to use a manual seeding for the train/eval split -- only applicable under ddp")
 @anyconfig_file("wirecelldnn", section='train', defaults=train_defaults)
 @click.argument("files", nargs=-1)
 @click.pass_context
 def train(ctx, config, epochs, batch, eval_batch, device, cache, amp, amp_dtype,
           debug_torch, checkpoint_save, checkpoint_modulus,
-          app, load, save, train_ratio, manual_seed, files):
+          app, load, save, train_ratio, manual_seed, ddp_split_seed, files):
     '''
     Train a model.
     '''
@@ -164,8 +166,7 @@ def train(ctx, config, epochs, batch, eval_batch, device, cache, amp, amp_dtype,
         # so the DistributedSampler shards a consistent partition.
         split_gen = None
         if dnn.dist.is_dist():
-            split_seed = manual_seed if manual_seed is not None else 0
-            split_gen = torch.Generator().manual_seed(split_seed)
+            split_gen = torch.Generator().manual_seed(ddp_split_seed)
         dses = dnn.data.train_eval_split(ds, train_ratio, generator=split_gen)
 
         # Under DDP shard each split with a DistributedSampler (mutually exclusive

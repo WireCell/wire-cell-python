@@ -63,6 +63,7 @@ class Network(nn.Module):
             init_checkpoint=cfg.get('init_checkpoint'),
             use_checkpoint=_boolish(cfg.get('use_checkpoint', True)),
             checkpoint_trunks=_boolish(cfg.get('checkpoint_trunks', False)),
+            attn_mode=cfg.get('attn_mode', 'all'),
         )
         log.info(f'xvunet network: {kwds}')
         self.xvunet = XViewUNet(**kwds)

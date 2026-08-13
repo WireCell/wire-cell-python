@@ -315,7 +315,8 @@ class XViewUNet(nn.Module):
                  n_input_channels=1, n_classes=1,
                  unet_checkpoints=None, freeze_unets=False,
                  init_checkpoint=None,
-                 use_checkpoint=True, checkpoint_trunks=False):
+                 use_checkpoint=True, checkpoint_trunks=False,
+                 attn_mode='all'):
         super().__init__()
 
         # Activation checkpointing (recompute in backward) to fit full-plane
@@ -409,7 +410,7 @@ class XViewUNet(nn.Module):
         # Default to 'all': two faces of one view are separate drift regions
         # and must not attend to each other.  'legacy' allows that and exists
         # only to reproduce models trained before modes were added.
-        self.set_attention_mode('all')
+        self.set_attention_mode(attn_mode)
 
         '''
         Loading different portions -- could do with some protection against double loading?
