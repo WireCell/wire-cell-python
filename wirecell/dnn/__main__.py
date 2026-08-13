@@ -21,7 +21,7 @@ def obj_with_config(obj, config, key,  additional_args=[]):
     args = ([] if obj_config is None else [obj_config])
     args = additional_args + args
     print(args)
-    return obj(*args)
+    return obj(*args), args
 
 @context("dnn")
 def cli(ctx):
@@ -133,9 +133,9 @@ def train(ctx, config, epochs, batch, eval_batch, device, cache, amp, amp_dtype,
 
         # net = app.Network()
         # net = make_model_from_config(app, config)
-        net = obj_with_config(app.Network, config, 'model')
+        net, model_args = obj_with_config(app.Network, config, 'model')
         # opt = app.Optimizer(net.parameters())
-        opt = obj_with_config(app.Optimizer, config, 'optimizer', [net.parameters()])
+        opt, _ = obj_with_config(app.Optimizer, config, 'optimizer', [net.parameters()])
         if dnn.dist.is_main():
             print(opt.state_dict())
         crit = app.Criterion()
@@ -201,6 +201,7 @@ def train(ctx, config, epochs, batch, eval_batch, device, cache, amp, amp_dtype,
             torch_seed = manual_seed,
             ddp_split_seed = ddp_split_seed,
             was_ddp = dnn.dist.is_dist(),
+            *model_args,
         )
         run_history[this_run_number] = this_run
 
@@ -381,7 +382,7 @@ def export_ts(ctx, app, load, output, device, method, shape, sigmoid, config):
             '"shape" in [export]')
 
     app = getattr(wirecell.dnn.apps, name)
-    net = obj_with_config(app.Network, config, 'model')
+    net, _ = obj_with_config(app.Network, config, 'model')
 
     if load:
         if not Path(load).exists():
