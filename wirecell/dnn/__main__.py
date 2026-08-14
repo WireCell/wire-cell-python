@@ -169,11 +169,12 @@ def train(ctx, config, epochs, batch, eval_batch, device, cache, amp, amp_dtype,
         model_args = resolve_model_config(app.Network, config.get('model') or {}, ck)
         log.debug(f'model config: {model_args}')
         net = app.Network(**model_args)
-        # opt = app.Optimizer(net.parameters())
+        
         opt, _ = obj_with_config(app.Optimizer, config, 'optimizer', [net.parameters()])
         if dnn.dist.is_main():
             print(opt.state_dict())
         crit = app.Criterion()
+
         # [train] amp_dtype is honoured via the config section fill-in; default
         # fp16 keeps existing runs bit-for-bit unchanged.
         trainer = app.Trainer(net, opt, crit, device=device, amp=amp,
