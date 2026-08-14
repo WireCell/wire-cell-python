@@ -31,6 +31,19 @@ gating:
   parameter and escapes.  Note the lr that suits SGD here is far too large for
   Adam.
 
+The gating also makes this model get *riskier* as it trains, which is the
+opposite of the usual assumption.  While gamma is near zero the gradient
+reaching the branch weights is proportional to it, so early training is
+intrinsically stable; as the gates open that gradient grows, and a rate that
+was safe at gamma=0 can diverge at gamma=0.3.  Observed at lr=4e-3: gammas
+opened smoothly for six epochs (to ~0.29, 0.27, -0.37) and then collapsed in
+one epoch (to ~0.05, -0.09, -0.12, one of them through zero), reverting the
+output toward the plain trunk baseline and undoing the gain.  The loss recovers
+only partially afterwards and in a different configuration, so a restart from
+before the collapse beats waiting.  Keep the rate at or below the 1e-3 the
+optimizer's own guard implies, and watch the gamma magnitudes rather than the
+loss alone -- the loss moves a beat later than the gates do.
+
 Because the gates start closed, a fresh model is bit-exact equal to its trunks
 run per view and segment, so the frozen-trunk baseline is the number to beat.
 Compute it before training rather than reading it off epoch 0, since the
