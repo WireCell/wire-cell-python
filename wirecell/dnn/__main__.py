@@ -636,14 +636,18 @@ run_one_defaults = dict(device='cpu', name='dnnroi')
               help='Run output through sigmoid by hand')
 @click.option('--rec-only', default=False, is_flag=True,
               help='Only run rec')
+@click.option('--profile', default=None, type=str,
+              help='Run profiling. Provide filename to store results. Default = None --> off')
 @anyconfig_file("wirecelldnn", section='run_one', defaults=run_one_defaults)
 @click.argument("files", type=str, nargs=-1)
-def run_one(config, device, debug_torch, entry, load, output, app, manual_sigmoid, rec_only, files):
+def run_one(config, device, debug_torch, entry, load, output, app, manual_sigmoid, rec_only, profile, files):
     '''
     Run a reco & true pair through a saved model.
     '''
     # delay importing this monster
-    from torch import save as torchsave, no_grad
+    from torch import save as torchsave, no_grad, sigmoid, cuda
+    from torch.profiler import profile as do_profile, ProfilerActivity, record_function
+    
     # import torch
     from torch.utils.data import DataLoader
     import wirecell.dnn.apps
@@ -690,11 +694,30 @@ def run_one(config, device, debug_torch, entry, load, output, app, manual_sigmoi
         feat, labels = ds.__getitem__(entry)
         # print(feat.shape)
         # print(labels.shape)
-        y = net(feat.to(device).unsqueeze(0)).squeeze(0)
-        if manual_sigmoid:
-          print('Applying sigmoid')
-          from torch import sigmoid
-          y = sigmoid(y)
+        x = feat.to(device).unsqueeze(0)
+        # y = net(feat.to(device).unsqueeze(0)).squeeze(0)
+
+        #Set up profiling
+        activities = [ProfilerActivity.CPU]
+        sort_by = "cpu_time_total"
+        if cuda.is_available() and ('cuda' == device):
+            activities += [ProfilerActivity.CUDA]
+            sort_by = 'cuda_time_total'
+
+        def call_net(net, x):
+            y = net(x).squeeze(0)
+            if manual_sigmoid:
+                y = sigmoid(y)
+            return y
+            
+        if profile:
+            with do_profile(activities=[ProfilerActivity.CPU]) as prof:
+                with record_function("model_inference"):
+                    y = call_net(net, x)
+            print(prof.key_averages().table(sort_by=sort_by, row_limit=10))
+            prof.export_chrome_trace(profile)
+        else:
+            y = call_net(net, x)
 
     if output:
         outdict = {
@@ -704,7 +727,7 @@ def run_one(config, device, debug_torch, entry, load, output, app, manual_sigmoi
         if not rec_only: outdict['labels'] = labels
         torchsave(outdict, output)
 
-run_one_defaults = dict(device='cpu', name='dnnroi')
+# run_one_defaults = dict(device='cpu', name='dnnroi')
 @cli.command('viztrain')
 
 @click.option("-o", "--output", default=None,
