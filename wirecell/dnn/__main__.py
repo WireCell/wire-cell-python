@@ -186,6 +186,11 @@ def train(ctx, config, epochs, batch, eval_batch, device, cache, amp, amp_dtype,
         history = dict()
         if ck is not None:
             history = dnn.io.load_checkpoint_from(ck, net, opt)
+            # Both load_state_dict()s copy, so the file's own tensors are dead
+            # weight from here on.  Drop them: ck is a local that would otherwise
+            # live for the whole run, holding a second copy of every parameter
+            # and optimizer moment -- per rank, under DDP.
+            ck = None
 
         ds_dt = time.time()
         ds = app.Dataset(files, cache=cache, config=config.get("dataset", None))
@@ -677,6 +682,7 @@ def run_one(config, device, debug_torch, entry, load, output, app, manual_sigmoi
         if ck is not None:
             dnn.io.load_model_state_from(ck, net, path=load)
             log.info(f'loaded model state from {load}')
+            ck = None           # see train(): load_state_dict copied already
 
         ds = app.Dataset(files, config=config.get("run_one_dataset", None), rec_only=rec_only)
         if len(ds) == 0:

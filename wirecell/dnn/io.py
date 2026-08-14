@@ -25,8 +25,20 @@ def save_checkpoint(path, model, optimizer, **kwds):
 
 
 def load_checkpoint_raw(path):
-    return torch.load(path, weights_only=True)
-    
+    '''
+    Read a checkpoint file to CPU memory.
+
+    map_location matters: torch.save records the device each tensor was on, so a
+    checkpoint written from cuda:0 restores onto cuda:0 no matter who reads it.
+    Under DDP that means every rank piling a full copy onto GPU 0 rather than its
+    own, which shows up as an out-of-memory that looks like a code regression.
+    Both load_state_dict()s copy onto the destination's own device anyway, so
+    staging through CPU costs nothing.  (load_trunk_checkpoint and
+    load_full_checkpoint in models/xvunet.py already do this.)
+    '''
+    return torch.load(path, weights_only=True, map_location='cpu')
+
+
 
 def load_checkpoint_from(cp, model, optimizer):
     '''
