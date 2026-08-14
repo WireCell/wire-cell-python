@@ -439,6 +439,25 @@ def test_checkpoint_model_args_unknown():
     assert dnnio.checkpoint_model_args(bare, Network.STRUCTURAL_KEYS) is None
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason='needs a GPU')
+def test_load_checkpoint_raw_stages_through_cpu(tmp_path):
+    '''
+    torch.save records each tensor's device, so a checkpoint written on cuda:0
+    restores onto cuda:0 for whoever reads it.  Under DDP that puts a full copy
+    on GPU 0 per rank instead of on each rank's own GPU.  Reading to CPU costs
+    nothing, since load_state_dict copies to the destination's device anyway.
+    '''
+    path = tmp_path / 'cuda.pt'
+    model = torch.nn.Linear(3, 2).cuda()
+    opt = torch.optim.SGD(model.parameters(), lr=0.1)
+    dnnio.save_checkpoint(path, model, opt)
+    assert torch.load(path, weights_only=True)['model_state_dict'][
+        'weight'].device.type == 'cuda'          # what is actually in the file
+
+    ck = dnnio.load_checkpoint_raw(path)
+    assert all(v.device.type == 'cpu' for v in ck['model_state_dict'].values())
+
+
 def test_load_checkpoint_from_reuses_a_read(tmp_path):
     '''
     Resuming needs the checkpoint before the model is built and again to restore
