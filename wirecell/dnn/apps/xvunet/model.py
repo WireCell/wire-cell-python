@@ -55,11 +55,26 @@ class Network(nn.Module):
     #: is invalid.  freeze_unets is here because it decides which parameters the
     #: optimizer is even built over (52 tensors frozen vs 274 unfrozen on a small
     #: model), so a mismatch otherwise surfaces far away as an opaque param-group
-    #: error.  attn_mode, use_checkpoint and checkpoint_trunks are deliberately
-    #: absent: they change neither parameter shapes nor the parameter set.
+    #: error.  use_checkpoint and checkpoint_trunks are deliberately absent: they
+    #: are a memory strategy and change neither shapes nor the parameter set.
+    #: attn_mode is not here either -- see ADVISORY_KEYS.
     STRUCTURAL_KEYS = ('view_splits', 'chunks', 'd_model', 'n_heads', 'n_layers',
                        'band', 'ffn_mult', 'n_input_channels', 'n_classes',
                        'freeze_unets')
+
+    #: cfg keys that change what the model computes without changing its shape,
+    #: so a mismatch loads cleanly and would otherwise pass unremarked.  Warn
+    #: rather than fail: nothing is mechanically broken, and evaluating one
+    #: checkpoint under each mode in turn is the point of the ablation.
+    ADVISORY_KEYS = ('attn_mode',)
+
+    #: defaults for the advisory keys.  These are not in _kwds(): attn_mode is
+    #: runtime state the wrapper sets after construction, not a shape argument.
+    ADVISORY_DEFAULTS = dict(attn_mode='all')
+
+    #: what is worth recovering from a run record written before model_args was
+    #: nested, where the model config sat flat among the run metadata.
+    RECORDED_KEYS = STRUCTURAL_KEYS + ADVISORY_KEYS
 
     @classmethod
     def _kwds(cls, cfg):
@@ -99,6 +114,9 @@ class Network(nn.Module):
         - STRUCTURAL_KEYS are checked against what the checkpoint recorded,
           failing here with a message naming the offending key rather than later
           as an opaque optimizer param-group error.
+        - ADVISORY_KEYS are checked too but only warned about: they change what
+          the model computes, not its shape, so the resume is valid mechanically
+          and the user is the one who has to judge whether it was meant.
 
         checkpoint_args is the model config the checkpoint recorded, or None if
         it recorded none -- an old checkpoint, in which case the resume proceeds
@@ -131,20 +149,32 @@ class Network(nn.Module):
 
         want, got = cls._kwds(checkpoint_args), cls._kwds(cfg)
         bad = [k for k in cls.STRUCTURAL_KEYS if want[k] != got[k]]
-        if not bad:
-            return cfg
+        if bad:
+            detail = '; '.join(f'{k}: checkpoint={want[k]!r} config={got[k]!r}'
+                               for k in bad)
+            msg = ('xvunet: cannot resume from this checkpoint, it disagrees '
+                   f'with the config on {detail}')
+            if 'freeze_unets' in bad:
+                msg += ('.  freeze_unets decides which parameters the optimizer '
+                        'is built over, so its state cannot carry across the '
+                        'change.  To move between stages use init_checkpoint, '
+                        'which takes the weights with a fresh optimizer; '
+                        '-l/--load is for resuming within one regime')
+            raise ValueError(msg)
 
-        detail = '; '.join(f'{k}: checkpoint={want[k]!r} config={got[k]!r}'
-                           for k in bad)
-        msg = ('xvunet: cannot resume from this checkpoint, it disagrees with '
-               f'the config on {detail}')
-        if 'freeze_unets' in bad:
-            msg += ('.  freeze_unets decides which parameters the optimizer is '
-                    'built over, so its state cannot carry across the change.  '
-                    'To move between stages use init_checkpoint, which takes '
-                    'the weights with a fresh optimizer; -l/--load is for '
-                    'resuming within one regime')
-        raise ValueError(msg)
+        for key in cls.ADVISORY_KEYS:
+            dflt = cls.ADVISORY_DEFAULTS.get(key)
+            was, now = (checkpoint_args.get(key, dflt), cfg.get(key, dflt))
+            if str(was) == str(now):
+                continue
+            log.warning(
+                f'xvunet: resuming a checkpoint trained with {key}={was!r} but '
+                f'the config says {now!r}.  Parameter shapes are unchanged so '
+                'this loads, but you are continuing to train a different '
+                'function with optimizer moments accumulated under the old '
+                f'one.  Set {key}={was} to continue as trained.')
+
+        return cfg
 
     def __init__(self, **cfg):
         super().__init__()

@@ -342,14 +342,53 @@ def test_resolve_rejects_shape_change():
         Network.resolve_config(cfg, checkpoint_args=CFG)
 
 
-def test_resolve_ignores_non_structural_keys():
+def test_resolve_ignores_non_structural_keys(caplog):
     '''
-    Attention mode and activation checkpointing change neither parameter shapes
-    nor the parameter set, so one checkpoint stays resumable under any of them.
+    Activation checkpointing is a memory strategy: it changes neither parameter
+    shapes nor what the model computes, so it passes without comment.
     '''
-    cfg = dict(CFG_INI, attn_mode='legacy', use_checkpoint='false',
-               checkpoint_trunks='true')
-    assert Network.resolve_config(cfg, checkpoint_args=CFG) == cfg
+    cfg = dict(CFG_INI, use_checkpoint='false', checkpoint_trunks='true')
+    with caplog.at_level(logging.WARNING, logger='wirecell.dnn'):
+        assert Network.resolve_config(cfg, checkpoint_args=CFG) == cfg
+    assert not caplog.text
+
+
+def test_resolve_warns_on_attn_mode_change(caplog):
+    '''
+    A mode change loads cleanly -- no shape depends on it -- so it must not
+    fail, or evaluating one checkpoint under each mode becomes impossible.  But
+    continuing to train under a new mode carries optimizer moments accumulated
+    under the old one, so it cannot pass silently either.
+    '''
+    ck = dict(CFG, attn_mode='intra')
+    cfg = dict(CFG_INI, attn_mode='all')
+    with caplog.at_level(logging.WARNING, logger='wirecell.dnn'):
+        assert Network.resolve_config(cfg, checkpoint_args=ck) == cfg
+    assert "attn_mode='intra'" in caplog.text and "'all'" in caplog.text
+
+    # unchanged mode says nothing
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger='wirecell.dnn'):
+        Network.resolve_config(dict(CFG_INI, attn_mode='intra'),
+                               checkpoint_args=ck)
+    assert not caplog.text
+
+
+def test_resolve_attn_mode_defaults(caplog):
+    '''
+    A checkpoint that recorded no mode was trained at the default, so a config
+    naming a different one is still a change worth reporting.
+    '''
+    with caplog.at_level(logging.WARNING, logger='wirecell.dnn'):
+        Network.resolve_config(dict(CFG_INI, attn_mode='intra'),
+                               checkpoint_args=CFG)
+    assert 'attn_mode' in caplog.text
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger='wirecell.dnn'):
+        Network.resolve_config(dict(CFG_INI, attn_mode='all'),
+                               checkpoint_args=CFG)
+    assert not caplog.text
 
 
 def test_resolve_without_checkpoint_args_warns(caplog):
@@ -376,10 +415,12 @@ def test_checkpoint_model_args_legacy_flat():
     metadata.  Recovering the structural keys from there keeps those checkpoints
     validated rather than merely warned about.
     '''
-    run = dict(run=0, ntrain=10, neval=2, batch=1, name='xvunet', **CFG)
+    run = dict(run=0, ntrain=10, neval=2, batch=1, name='xvunet',
+               **dict(CFG, attn_mode='intra'))
     got = dnnio.checkpoint_model_args(dict(runs={0: run}),
-                                      Network.STRUCTURAL_KEYS)
+                                      Network.RECORDED_KEYS)
     assert got['freeze_unets'] is True
+    assert got['attn_mode'] == 'intra'   # advisory keys are recovered too
     assert 'name' not in got         # run metadata is not model config
     # and a real mismatch in a recovered record still stops the resume
     with pytest.raises(ValueError, match='freeze_unets'):

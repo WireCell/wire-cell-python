@@ -99,8 +99,16 @@ def load_model_state(path, model, strict=True):
     A "module." prefix on every key, as left by DistributedDataParallel, is
     stripped.
     '''
-    obj = load_checkpoint_raw(path)
+    return load_model_state_from(load_checkpoint_raw(path), model, strict=strict,
+                                 path=path)
 
+
+def load_model_state_from(obj, model, strict=True, path='<loaded>'):
+    '''
+    As load_model_state() but from an already-loaded object, so a caller that
+    had to read the file early (to reconcile it against a config) need not read
+    it again.  path is used only in log messages.
+    '''
     rest = dict()
     if isinstance(obj, dict) and "model_state_dict" in obj:
         rest = dict(obj)

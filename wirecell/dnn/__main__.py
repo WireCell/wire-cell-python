@@ -38,8 +38,14 @@ def resolve_model_config(cls, cfg, checkpoint):
     if checkpoint is None or resolver is None:
         return dict(cfg)
     args = dnn.io.checkpoint_model_args(checkpoint,
-                                        getattr(cls, 'STRUCTURAL_KEYS', ()))
-    return resolver(dict(cfg), checkpoint_args=args)
+                                        getattr(cls, 'RECORDED_KEYS', ()))
+    try:
+        return resolver(dict(cfg), checkpoint_args=args)
+    except ValueError as err:
+        # A rejected resume is a config mistake, not a crash: the model classes
+        # raise a plain ValueError so they stay independent of click, and it
+        # becomes an ordinary "Error: ..." here rather than a traceback.
+        raise click.ClickException(str(err)) from err
 
 @context("dnn")
 def cli(ctx):
@@ -631,7 +637,7 @@ def run_one(config, device, debug_torch, entry, load, output, app, manual_sigmoi
     Run a reco & true pair through a saved model.
     '''
     # delay importing this monster
-    from torch import load as torchload, save as torchsave, no_grad, device as torchdevice
+    from torch import save as torchsave, no_grad
     # import torch
     from torch.utils.data import DataLoader
     import wirecell.dnn.apps
@@ -652,16 +658,24 @@ def run_one(config, device, debug_torch, entry, load, output, app, manual_sigmoi
     app = getattr(wirecell.dnn.apps, name)
 
     with no_grad():
-        net, _ = obj_with_config(app.Network, config, 'model')
-        net = net.to(device)
-        net.eval()
-        
+        # As in train(): read first, so the seed-only keys can be dropped.  They
+        # are pure waste here too -- the state dict below replaces every weight
+        # they would have loaded -- and a cfg naming trunk checkpoints that have
+        # since moved would otherwise fail before this model is ever run.
+        ck = None
         if load:
             if not Path(load).exists():
                 raise click.FileError(load, 'warning: DNN module load file does not exist')
-            h = torchload(load, map_location=torchdevice('cpu'))
-            net.load_state_dict(h['model_state_dict'])
-            print('Loaded model state dict')
+            ck = dnn.io.load_checkpoint_raw(load)
+
+        model_args = resolve_model_config(app.Network, config.get('model') or {}, ck)
+        net = app.Network(**model_args)
+        net = net.to(device)
+        net.eval()
+
+        if ck is not None:
+            dnn.io.load_model_state_from(ck, net, path=load)
+            log.info(f'loaded model state from {load}')
 
         ds = app.Dataset(files, config=config.get("run_one_dataset", None), rec_only=rec_only)
         if len(ds) == 0:
