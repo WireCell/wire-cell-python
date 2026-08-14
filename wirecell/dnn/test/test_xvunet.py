@@ -5,9 +5,12 @@ Tests for the xvunet model and app wrapper.
 All tests run on CPU with small tensors.
 '''
 
+import logging
+
 import pytest
 import torch
 
+from wirecell.dnn import io as dnnio
 from wirecell.dnn.models.unet import UNet
 from wirecell.dnn.models.xvunet import (XViewUNet, BandedAttentionBlock,
                                         ATTN_MODES)
@@ -280,3 +283,145 @@ def test_network_wrapper_and_init_checkpoint(tmp_path):
     assert sd1.keys() == sd2.keys()
     for k in sd1:
         assert torch.equal(sd1[k], sd2[k]), k
+
+
+#
+# Resume resolution: Network.resolve_config() and the io helpers feeding it.
+#
+
+# a config and the same thing written as INI strings, as anyconfig delivers it
+CFG = dict(view_splits=VIEW_SPLITS, chunks=CHUNKS, d_model=32, n_heads=4,
+           n_layers=1, band=1, freeze_unets=True)
+CFG_INI = dict(view_splits='[[80],[80],[48,48]]', chunks='[8,8,8]',
+               d_model='32', n_heads='4', n_layers='1', band='1',
+               freeze_unets='true')
+
+
+def test_resolve_drops_init_keys(caplog, tmp_path):
+    '''
+    Resuming supersedes whatever the seed-only keys would have loaded, so they
+    are dropped rather than paid for -- three trunk files per rank under DDP.
+    '''
+    cfg = dict(CFG_INI, unet_checkpoints=[str(tmp_path / 'u.pt')] * 3,
+               init_checkpoint=str(tmp_path / 'stage1.pt'))
+    with caplog.at_level(logging.INFO, logger='wirecell.dnn'):
+        got = Network.resolve_config(cfg, checkpoint_args=CFG)
+    assert 'unet_checkpoints' not in got and 'init_checkpoint' not in got
+    assert got['d_model'] == '32'       # everything else is untouched
+    assert 'unet_checkpoints' in caplog.text and 'init_checkpoint' in caplog.text
+    # the caller's dict is not mutated
+    assert 'unet_checkpoints' in cfg
+
+
+def test_resolve_accepts_matching_config():
+    '''
+    INI strings and native values describe the same model, so neither the
+    string/int nor the string/bool difference may read as a mismatch.
+    '''
+    assert Network.resolve_config(CFG_INI, checkpoint_args=CFG) == dict(CFG_INI)
+    assert Network.resolve_config(CFG, checkpoint_args=CFG_INI) == dict(CFG)
+    # keys left to their defaults on both sides agree too
+    assert Network.resolve_config(dict(), checkpoint_args=dict()) == dict()
+
+
+def test_resolve_rejects_freeze_unets_change():
+    '''
+    The regime decides which parameters the optimizer is built over, so its
+    state cannot carry across.  The error must name freeze_unets and point at
+    init_checkpoint -- today this surfaces as an opaque param-group ValueError.
+    '''
+    cfg = dict(CFG_INI, freeze_unets='false')
+    with pytest.raises(ValueError, match='freeze_unets') as err:
+        Network.resolve_config(cfg, checkpoint_args=CFG)
+    assert 'init_checkpoint' in str(err.value)
+
+
+def test_resolve_rejects_shape_change():
+    cfg = dict(CFG_INI, d_model='64')
+    with pytest.raises(ValueError, match='d_model'):
+        Network.resolve_config(cfg, checkpoint_args=CFG)
+
+
+def test_resolve_ignores_non_structural_keys():
+    '''
+    Attention mode and activation checkpointing change neither parameter shapes
+    nor the parameter set, so one checkpoint stays resumable under any of them.
+    '''
+    cfg = dict(CFG_INI, attn_mode='legacy', use_checkpoint='false',
+               checkpoint_trunks='true')
+    assert Network.resolve_config(cfg, checkpoint_args=CFG) == cfg
+
+
+def test_resolve_without_checkpoint_args_warns(caplog):
+    '''
+    A checkpoint predating the recording of model config must still load; it
+    just cannot be validated.
+    '''
+    with caplog.at_level(logging.WARNING, logger='wirecell.dnn'):
+        got = Network.resolve_config(CFG_INI, checkpoint_args=None)
+    assert got == dict(CFG_INI)
+    assert 'cannot be validated' in caplog.text
+
+
+def test_checkpoint_model_args_nested():
+    ck = dict(runs={0: dict(run=0, name='xvunet', model_args=dict(CFG)),
+                    1: dict(run=1, name='xvunet', model_args=dict(CFG, band=2))})
+    got = dnnio.checkpoint_model_args(ck, Network.STRUCTURAL_KEYS)
+    assert got['band'] == 2          # the most recent run, not the first
+
+
+def test_checkpoint_model_args_legacy_flat():
+    '''
+    Runs written before model_args was nested spread it flat alongside the run
+    metadata.  Recovering the structural keys from there keeps those checkpoints
+    validated rather than merely warned about.
+    '''
+    run = dict(run=0, ntrain=10, neval=2, batch=1, name='xvunet', **CFG)
+    got = dnnio.checkpoint_model_args(dict(runs={0: run}),
+                                      Network.STRUCTURAL_KEYS)
+    assert got['freeze_unets'] is True
+    assert 'name' not in got         # run metadata is not model config
+    # and a real mismatch in a recovered record still stops the resume
+    with pytest.raises(ValueError, match='freeze_unets'):
+        Network.resolve_config(dict(CFG_INI, freeze_unets='false'),
+                               checkpoint_args=got)
+
+
+def test_checkpoint_model_args_unknown():
+    '''
+    None means "unknown", which a caller must not confuse with "trained at the
+    defaults".
+    '''
+    assert dnnio.checkpoint_model_args(dict()) is None
+    assert dnnio.checkpoint_model_args(dict(runs=dict())) is None
+    bare = dict(runs={0: dict(run=0, ntrain=10, name='xvunet')})
+    assert dnnio.checkpoint_model_args(bare, Network.STRUCTURAL_KEYS) is None
+
+
+def test_load_checkpoint_from_reuses_a_read(tmp_path):
+    '''
+    Resuming needs the checkpoint before the model is built and again to restore
+    it; load_checkpoint_from() takes the already-read dict so a large file is
+    read once, and must leave that dict usable afterwards.
+    '''
+    model = torch.nn.Linear(3, 2)
+    opt = torch.optim.SGD(model.parameters(), lr=0.1)
+    model(torch.rand(1, 3)).sum().backward()
+    opt.step()
+
+    path = tmp_path / 'ckpt.pt'
+    dnnio.save_checkpoint(path, model, opt, runs={0: dict(run=0)})
+
+    ck = dnnio.load_checkpoint_raw(path)
+    other = torch.nn.Linear(3, 2)
+    rest = dnnio.load_checkpoint_from(ck, other,
+                                      torch.optim.SGD(other.parameters(), lr=0.1))
+    assert rest == dict(runs={0: dict(run=0)})
+    assert torch.equal(other.weight, model.weight)
+    # the state dicts are still there for a second use of the same read
+    assert 'model_state_dict' in ck and 'optimizer_state_dict' in ck
+
+    # and the path-taking wrapper is unchanged in behaviour
+    again = torch.nn.Linear(3, 2)
+    assert dnnio.load_checkpoint(
+        path, again, torch.optim.SGD(again.parameters(), lr=0.1)) == rest

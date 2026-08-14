@@ -28,6 +28,21 @@ def load_checkpoint_raw(path):
     return torch.load(path, weights_only=True)
     
 
+def load_checkpoint_from(cp, model, optimizer):
+    '''
+    As load_checkpoint() but from an already-loaded checkpoint dict.
+
+    Resuming needs the checkpoint twice: once before the model is built, to
+    reconcile it against the config, and again to restore state.  These files
+    run to hundreds of MB, so read once and pass the dict here.  The caller's
+    dict is left intact.
+    '''
+    cp = dict(cp)
+    model.load_state_dict(cp.pop("model_state_dict"))
+    optimizer.load_state_dict(cp.pop("optimizer_state_dict"))
+    return cp
+
+
 def load_checkpoint(path, model, optimizer):
     '''
     Load a checkpoint.
@@ -35,10 +50,42 @@ def load_checkpoint(path, model, optimizer):
     The model and optimizer state dicts are updated and a dict of any additional
     parameters is returned.
     '''
-    cp = load_checkpoint_raw(path)
-    model.load_state_dict(cp.pop("model_state_dict"))
-    optimizer.load_state_dict(cp.pop("optimizer_state_dict"))
-    return cp
+    return load_checkpoint_from(load_checkpoint_raw(path), model, optimizer)
+
+
+def checkpoint_model_args(cp, structural_keys=()):
+    '''
+    Return the model configuration a checkpoint records for its most recent run,
+    or None if it records none.
+
+    Newer checkpoints nest it under "model_args".  Older ones spread it flat
+    into the run dict, as siblings of ntrain/batch/name, so as a fallback the
+    named structural_keys are picked back out of the run dict -- enough to
+    validate a resume, which is all a caller wants it for.  None of the keys a
+    model declares structural collide with the run metadata.
+
+    Returning None means "unknown", not "empty": a caller must not read it as
+    the checkpoint having been trained with default settings.
+    '''
+    if not isinstance(cp, dict):
+        return None
+    runs = cp.get("runs") or dict()
+    if not runs:
+        return None
+    run = runs[max(runs.keys())]
+    if not isinstance(run, dict):
+        return None
+
+    args = run.get("model_args")
+    if args is not None:
+        return dict(args)
+
+    args = {k: run[k] for k in structural_keys if k in run}
+    if args:
+        log.debug(f'checkpoint has no "model_args"; recovered '
+                  f'{sorted(args)} from the flat (pre-nesting) run record')
+        return args
+    return None
 
 
 def load_model_state(path, model, strict=True):

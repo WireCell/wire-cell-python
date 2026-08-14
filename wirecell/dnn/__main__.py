@@ -23,6 +23,24 @@ def obj_with_config(obj, config, key,  additional_args=[]):
     log.debug(f'{key} config: {args}')
     return obj(*additional_args, **args), args
 
+
+def resolve_model_config(cls, cfg, checkpoint):
+    '''
+    Let an app's Network reconcile its config section with a checkpoint being
+    resumed from, returning the config to build the model with.
+
+    What a resume must drop or agree on is model-specific -- which keys merely
+    seed a fresh model, which fix parameter shapes or the training regime -- so
+    a Network may declare a resolve_config() classmethod and own that decision.
+    Networks that do not are left alone, so an app opts in just by defining it.
+    '''
+    resolver = getattr(cls, 'resolve_config', None)
+    if checkpoint is None or resolver is None:
+        return dict(cfg)
+    args = dnn.io.checkpoint_model_args(checkpoint,
+                                        getattr(cls, 'STRUCTURAL_KEYS', ()))
+    return resolver(dict(cfg), checkpoint_args=args)
+
 @context("dnn")
 def cli(ctx):
     '''
@@ -131,8 +149,20 @@ def train(ctx, config, epochs, batch, eval_batch, device, cache, amp, amp_dtype,
         name = app
         app = getattr(wirecell.dnn.apps, name)
 
-        # net = app.Network()
-        net, model_args = obj_with_config(app.Network, config, 'model')
+        # Read the checkpoint before building anything: resolving the model
+        # config against it is what lets a resume skip the seed-only loads and
+        # catch a regime mismatch here rather than as an opaque param-group
+        # error from the optimizer.  Read once and reuse for the restore below --
+        # these files run to hundreds of MB and every rank reads its own copy.
+        ck = None
+        if load:
+            if not Path(load).exists():
+                raise click.FileError(load, 'warning: DNN module load file does not exist')
+            ck = dnn.io.load_checkpoint_raw(load)
+
+        model_args = resolve_model_config(app.Network, config.get('model') or {}, ck)
+        log.debug(f'model config: {model_args}')
+        net = app.Network(**model_args)
         # opt = app.Optimizer(net.parameters())
         opt, _ = obj_with_config(app.Optimizer, config, 'optimizer', [net.parameters()])
         if dnn.dist.is_main():
@@ -147,10 +177,8 @@ def train(ctx, config, epochs, batch, eval_batch, device, cache, amp, amp_dtype,
                      f'{amp_dtype or "float16"}')
 
         history = dict()
-        if load:
-            if not Path(load).exists():
-                raise click.FileError(load, 'warning: DNN module load file does not exist')
-            history = dnn.io.load_checkpoint(load, net, opt)
+        if ck is not None:
+            history = dnn.io.load_checkpoint_from(ck, net, opt)
 
         ds_dt = time.time()
         ds = app.Dataset(files, cache=cache, config=config.get("dataset", None))
@@ -200,7 +228,10 @@ def train(ctx, config, epochs, batch, eval_batch, device, cache, amp, amp_dtype,
             torch_seed = manual_seed,
             ddp_split_seed = ddp_split_seed,
             was_ddp = dnn.dist.is_dist(),
-            **model_args,
+            # nested, not spread: a resolver reading this back must be able to
+            # tell model config from run metadata, and spreading let a colliding
+            # key ("name" being the plausible one) silently win.
+            model_args = model_args,
         )
         run_history[this_run_number] = this_run
 
