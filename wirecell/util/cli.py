@@ -17,6 +17,38 @@ info = log.info
 warn = log.warn
 warning = log.warning
 critical = log.critical
+_cmap = {
+    'black':'30',
+    'red':'31',
+    'green':'32',
+    'yellow':'33',
+    'blue':'34',
+    'purple':'35',
+    'cyan':'36',
+    'white':'37',
+}
+
+def resolve_color(code):
+    if code.lower() in _cmap:
+        return _cmap[code.lower()]
+    else:
+        try:
+            if int(code) < 30 or int(code) > 37:
+                return 0
+            else: return code
+        except:
+            import sys
+            return 0
+
+_default_colors = {
+    'WCPY_STAMP_COLOR':'32',
+    'WCPY_LOG_COLOR':'0',
+}
+def get_color_code(var):
+    if ('NO_COLOR' in os.environ and os.environ['NO_COLOR'] == '1'):
+        return 0
+    else:
+        return _default_colors[var] if var not in os.environ else resolve_color(os.environ[var])
 
 # Every wire-cell-python __main__.py must use this to define the command group.
 def context(group_name, log_name="wirecell"):
@@ -60,12 +92,21 @@ def context(group_name, log_name="wirecell"):
         @click.group(group_name, **cmddef)
         @click.option("-l","--log-output", multiple=True,  help="log to a file [default:stdout]")
         @click.option("-L","--log-level", default="info", help="set logging level [default:info]")
+        @click.option('--stamp', is_flag=True, default=False,
+                      help='Whether to add timestamps to logging. ' \
+                           'Colored green unless environment variable NO_COLOR=1')
         @click.pass_context
         @functools.wraps(func)
-        def wrapper(ctx, log_output, log_level, *args, **kwds):
+        def wrapper(ctx, log_output, log_level, stamp, *args, **kwds):
             '''
             Wire-Cell Toolkit command 
             '''
+
+            FORMAT = f"\033[{get_color_code('WCPY_LOG_COLOR')}m%(message)s\033[0m"
+            if stamp:
+                FORMAT = f"\033[{get_color_code('WCPY_STAMP_COLOR')}m[wirecell:%(asctime)s]: " + FORMAT
+            logging.basicConfig(format=FORMAT, datefmt='%Y-%m-%d %H:%M:%S')
+
             log = logging.getLogger(log_name)
             try:
                 level = int(log_level)      # try for number
