@@ -60,12 +60,18 @@ def context(group_name, log_name="wirecell"):
         @click.group(group_name, **cmddef)
         @click.option("-l","--log-output", multiple=True,  help="log to a file [default:stdout]")
         @click.option("-L","--log-level", default="info", help="set logging level [default:info]")
+        @click.option('--stamp', is_flag=True, default=False, help='Whether to add timestamps to logging')
         @click.pass_context
         @functools.wraps(func)
-        def wrapper(ctx, log_output, log_level, *args, **kwds):
+        def wrapper(ctx, log_output, log_level, stamp, *args, **kwds):
             '''
             Wire-Cell Toolkit command 
             '''
+
+            if stamp:
+                FORMAT = '\033[32m[wirecell:%(asctime)s]:\033[0m %(message)s'
+                logging.basicConfig(format=FORMAT, datefmt='%Y-%m-%d %H:%M:%S')
+
             log = logging.getLogger(log_name)
             try:
                 level = int(log_level)      # try for number
