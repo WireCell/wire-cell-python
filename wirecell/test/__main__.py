@@ -141,8 +141,15 @@ def plot_ssss(channel_ranges, channel_offset, anode_number, nsigma, nbins, splat
         # Per channel range plots.
         for pln, ch in enumerate(channel_ranges):
 
-            spl = select_activity(splat.frame, ch, nsigma)
-            sig = select_activity(signal.frame, ch, nsigma)
+            # Per channel range plots.
+            try:
+                spl = select_activity(splat.frame, ch, nsigma)
+            except ValueError as err:
+                log.error(f'error: ({err}) no splat activity for {pln=} {ch=}; skipping plane plot')
+                continue
+            # Signal may have no activity of its own; we only sample its
+            # baseline-subtracted activity within the splat bbox.
+            sig = select_activity(signal.frame, ch, nsigma, required=False)
 
             # print(f'{pln=} {spl.channels=} {sig.channels=}')
 
@@ -190,8 +197,21 @@ def ssss_metrics(channel_ranges, channel_offset, anode_number, nsigma, nbins, sp
 
     metrics = list()
     for pln, ch in enumerate(channel_ranges):
-        spl = select_activity(splat.frame, ch, nsigma)
-        sig = select_activity(signal.frame, ch, nsigma)
+        # The splat is truth: if it has no activity in this plane we cannot
+        # define a comparison region, so emit an empty metric and move on.
+        try:
+            spl = select_activity(splat.frame, ch, nsigma)
+        except ValueError as err:
+            log.error(f'error: ({err}) no splat activity for {pln=} {ch=}; emitting empty metric')
+            metrics.append(dataclasses.asdict(ssss.Metrics()))
+            continue
+
+        # The signal may legitimately have no activity of its own in a plane
+        # (e.g. a track that projects onto a single channel or none at all in
+        # one view).  We only need the signal's baseline-subtracted activity
+        # sampled within the splat's bbox, not the signal's own plateaus, so do
+        # not require activity here.
+        sig = select_activity(signal.frame, ch, nsigma, required=False)
 
         biggest = spl.plats.sort_by("sums")[-1]
         bbox = spl.plats.bboxes[biggest]

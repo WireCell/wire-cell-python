@@ -397,7 +397,7 @@ class SelectActivity:
         act = self.activity
         return ma.array(act, mask = act <= self.plats.threshold)
 
-def select_activity(frame, ch, nsigma=3.0):
+def select_activity(frame, ch, nsigma=3.0, required=True):
     '''Select activity from a "frame" array spanning many channels.
 
     Given a full frame array, select channel rows given by ch, apply a threshold
@@ -405,15 +405,24 @@ def select_activity(frame, ch, nsigma=3.0):
 
     Return the selected frame that has below-threshold pixels masked.
 
+    If no activity is found above threshold and required is True (default) a
+    ValueError is raised.  If required is False, a SelectActivity is still
+    returned but with an empty .plats and a .bbox of None.  This is useful when
+    the caller only needs the baseline-subtracted .activity (e.g. to sample it
+    within a bounding box defined elsewhere) and can tolerate a selection that
+    happens to have no activity of its own.
+
     '''
     plane = frame[ch, :]    # select channels
     bln = baseline_noise(plane)
     thresh = bln.med + nsigma*bln.sigma
     plats = plateaus(plane, thresh)
     if plats.number <= 0:
-        raise ValueError(f'no activity in frame {frame.shape=} from {ch=}')
-    assert plats.number > 0
-    bbox = union_bbox(*plats.bboxes)
+        if required:
+            raise ValueError(f'no activity in frame {frame.shape=} from {ch=}')
+        bbox = None
+    else:
+        bbox = union_bbox(*plats.bboxes)
     return SelectActivity(
         selection = plane,
         channels = ch,
