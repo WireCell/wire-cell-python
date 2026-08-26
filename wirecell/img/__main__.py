@@ -6,7 +6,6 @@ import os
 import sys
 import json
 import click
-import numpy
 import pathlib
 from collections import Counter
 
@@ -311,13 +310,9 @@ def inspect(ctx, output, verbose, cluster_file):
                     out_stats(key, [n.get(key, 0) for n in ndat])
                 continue
 
-            def wash(thing):
-                if isinstance(thing, numpy.int64):
-                    return int(thing)
-                return thing
             if code == 'w':
                 for thing in ['seg', 'wpid']:
-                    c = Counter([wash(n.get(thing,-1)) for n in ndat])
+                    c = Counter([int(n.get(thing,-1)) for n in ndat])
                     out.write(f'\t\t{thing}: {c}\n')
 
             if code == 'm':
@@ -504,6 +499,9 @@ def bee_blobs(output, geom, rse, sampling, speed, t0, x0, density, cluster_files
     def nodes_oftype(gr, typecode):
         return [n for n,d in gr.nodes.data() if d['code'] == typecode]
 
+    # Keep cluster_id continuous across all input files so that merging several
+    # cluster files into one Bee instance does not collide colors between files.
+    cluster_id = 0
     for ctf in cluster_files:
         gr = list(tap.load(ctf))[0] # fixme: for now ignore subsequent graphs
         gr = converter.undrift_blobs(gr, speed, t0, x0)
@@ -513,7 +511,6 @@ def bee_blobs(output, geom, rse, sampling, speed, t0, x0, density, cluster_files
             continue
         bnodes = nodes_oftype(gr,'b')
         bgr = gr.subgraph(bnodes)
-        cluster_id = 0
         for bc in nx.connected_components(bgr):
             arr = converter.blobpoints(gr.subgraph(bc), sampling_func)
             if len(arr.shape) < 2:

@@ -1,0 +1,10 @@
+{
+    "role_patterns": {
+        "wire":     "volTPCWire[UVZ]\\d+",
+        "plane":    "volTPCPlane[UVZ]\\d+",
+        "face":     "volTPC\\d+",
+        "detector": "volCryostat"
+    },
+    "connectivity_mode": "vd",
+    "nearness_tolerance": 0.1
+}
