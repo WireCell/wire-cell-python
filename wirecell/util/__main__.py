@@ -1790,6 +1790,32 @@ def cmd_wire_to_vtk(output, blocking, wires_input):
     log.info(f"wrote {out}")
 
 
+@cli.command("logtimes")
+@click.option("-o", "--output", default="-", type=str,
+              help="Output JSON file, '-' for stdout (default).")
+@click.argument("logfile")
+def cmd_logtimes(output, logfile):
+    '''
+    Parse Wire-Cell "Timer" log lines from a logfile.
+
+    Each matching line yields an object with wall-sec, core-sec, class name and
+    instance name.  The collection is written as a JSON array.
+
+    Eg:
+
+        $ wcpy util logtimes -o times.json wire-cell.log
+    '''
+    from wirecell.util import logtimes
+    times = logtimes.parse_file(logfile)
+    text = json.dumps(times, indent=2)
+    if output in ("-", "/dev/stdout"):
+        print(text)
+    else:
+        with open(output, "w") as fp:
+            fp.write(text)
+        log.info(f"wrote {len(times)} timer records to {output}")
+
+
 def main():
     cli(obj=dict())
 
