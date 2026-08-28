@@ -129,7 +129,11 @@ def baseline_noise(array, bins=200, vrange=3):
     if isinstance(vrange, int):
         vrange = float(vrange*numpy.std(array))
     if isinstance(vrange, float):
-        vrange=(med-vrange, med+vrange)
+        # A scalar vrange is a symmetric extent about the median.  Express it as
+        # median-relative offsets; the median is added below (once).  Doing the
+        # +med here as well would center the window on 2*median, which is only
+        # harmless when the median is ~0.
+        vrange=(-vrange, vrange)
     vrange=(med+vrange[0], med+vrange[1])
 
     hist = numpy.histogram(array, bins=bins, range=vrange)
