@@ -692,10 +692,7 @@ def run_one(config, device, debug_torch, entry, load, output, app, manual_sigmoi
         if len(ds) == 0:
             raise click.BadArgumentUsage(f'no samples from {len(files)} files')
         feat, labels = ds.__getitem__(entry)
-        # print(feat.shape)
-        # print(labels.shape)
         x = feat.to(device).unsqueeze(0)
-        # y = net(feat.to(device).unsqueeze(0)).squeeze(0)
 
         #Set up profiling
         activities = [ProfilerActivity.CPU]
@@ -711,7 +708,7 @@ def run_one(config, device, debug_torch, entry, load, output, app, manual_sigmoi
             return y
             
         if profile:
-            with do_profile(activities=[ProfilerActivity.CPU]) as prof:
+            with do_profile(activities=activities, profile_memory=True) as prof:
                 with record_function("model_inference"):
                     y = call_net(net, x)
             print(prof.key_averages().table(sort_by=sort_by, row_limit=10))
@@ -727,7 +724,100 @@ def run_one(config, device, debug_torch, entry, load, output, app, manual_sigmoi
         if not rec_only: outdict['labels'] = labels
         torchsave(outdict, output)
 
-# run_one_defaults = dict(device='cpu', name='dnnroi')
+run_n_defaults = dict(device='cpu', name='dnnroi')
+@cli.command('run_n')
+
+@click.option("-d", "--device", default=None, type=str,
+              help="The compute device")
+@click.option("--debug-torch/--no-debug-torch", is_flag=True, default=False,
+              help="Debug torch-level problems")
+@click.option("--nskip", default=0, help="How many to skip")
+@click.option("-n", default=1, help="How many to run")
+@click.option("-l", "--load", default=None,
+              help="File name providing the initial model state dict (def=None - construct fresh)")
+@click.option("-o", "--output", default=None,
+              help="File name to output after training (def=None - results not saved). Use {entry} as a replacement for entry num")
+@click.option("-a", "--app", default=None, type=str,
+              help="The application name")
+@click.option('--manual-sigmoid/--no-manual-sigmoid', default=False, is_flag=True,
+              help='Run output through sigmoid by hand')
+@click.option('--rec-only', default=False, is_flag=True,
+              help='Only run rec')
+@anyconfig_file("wirecelldnn", section='run_one', defaults=run_n_defaults)
+@click.argument("files", type=str, nargs=-1)
+def run_one(config, device, debug_torch, nskip, n, load, output, app, manual_sigmoid, rec_only, files):
+    '''
+    Run a reco & true pair through a saved model.
+    '''
+
+    if output and 'entry' not in output:
+        raise click.BadArgumentUsage('Need to provide a output name with {entry} to be replaced by entry num')
+
+    # delay importing this monster
+    from torch import save as torchsave, no_grad, sigmoid, cuda
+    from torch.profiler import profile as do_profile, ProfilerActivity, record_function
+    
+    # import torch
+    from torch.utils.data import DataLoader
+    import wirecell.dnn.apps
+
+    # if not files:               # args not processed by anyconfig_files
+    #     try:
+    #         files = config['train']['files']
+    #     except KeyError:
+    #         files = None
+    if not files:
+        raise click.BadArgumentUsage("no training files given")
+    files = unglob(listify(files))
+    log.info(f'training files: {files}')
+
+    if device == 'gpu': device = 'cuda'
+
+    name = app
+    app = getattr(wirecell.dnn.apps, name)
+
+    with no_grad():
+        # As in train(): read first, so the seed-only keys can be dropped.  They
+        # are pure waste here too -- the state dict below replaces every weight
+        # they would have loaded -- and a cfg naming trunk checkpoints that have
+        # since moved would otherwise fail before this model is ever run.
+        ck = None
+        if load:
+            if not Path(load).exists():
+                raise click.FileError(load, 'warning: DNN module load file does not exist')
+            ck = dnn.io.load_checkpoint_raw(load)
+
+        model_args = resolve_model_config(app.Network, config.get('model') or {}, ck)
+        net = app.Network(**model_args)
+        net = net.to(device)
+        net.eval()
+
+        if ck is not None:
+            dnn.io.load_model_state_from(ck, net, path=load)
+            log.info(f'loaded model state from {load}')
+            ck = None           # see train(): load_state_dict copied already
+
+        ds = app.Dataset(files, config=config.get("run_one_dataset", None), rec_only=rec_only)
+        if len(ds) == 0:
+            raise click.BadArgumentUsage(f'no samples from {len(files)} files')
+
+        for entry in range(nskip, nskip+n):
+            feat, labels = ds.__getitem__(entry)
+            x = feat.to(device).unsqueeze(0)
+
+            y = net(x).squeeze(0)
+            if manual_sigmoid:
+                y = sigmoid(y)
+                
+
+            if output:
+                outdict = {
+                    'feat':feat,
+                    'y':y
+                }
+                if not rec_only: outdict['labels'] = labels
+                torchsave(outdict, output.replace('{entry}', str(entry)))
+
 @cli.command('viztrain')
 
 @click.option("-o", "--output", default=None,
