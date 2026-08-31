@@ -3,6 +3,7 @@
 Fixme: make this into a proper click main
 '''
 import os
+import re
 import sys
 import json
 from collections import defaultdict
@@ -356,6 +357,220 @@ def cmd_dotify(ctx, wpath, dpath, npath, epath, params, services, graph_options,
     proc = subprocess.Popen(dot, shell=True, stdin = subprocess.PIPE)
     proc.communicate(input=dtext.encode("utf-8"))
     return
+
+# --- importify: graph the Jsonnet "import" DAG -------------------------------
+#
+# Jsonnet import/importstr/importbin take STRING LITERALS only (computed import
+# paths are forbidden by the grammar), so a static ("lexical") scan yields the
+# complete import graph.  The "eval" mode instead hooks the Python jsonnet
+# import callback so only imports that are actually forced (jsonnet is lazy) are
+# recorded.  Both resolve paths the way jsonnet does: relative to the importing
+# file's directory first, then the search paths (WIRECELL_PATH / -J / -P).
+
+# import / importstr / importbin followed by a single- or double-quoted string.
+_IMPORT_RE = re.compile(r'\b(import|importstr|importbin)\s+("([^"]*)"|\'([^\']*)\')')
+_LINE_COMMENT_RE = re.compile(r'(//|#).*$', re.MULTILINE)
+_BLOCK_COMMENT_RE = re.compile(r'/\*.*?\*/', re.DOTALL)
+
+
+def scan_imports(path):
+    '''Return list of (kind, import-string) literals appearing in file at path.'''
+    with open(path, encoding="utf-8") as fp:
+        text = fp.read()
+    text = _BLOCK_COMMENT_RE.sub('', text)
+    text = _LINE_COMMENT_RE.sub('', text)
+    return [(m.group(1), m.group(3) if m.group(3) is not None else m.group(4))
+            for m in _IMPORT_RE.finditer(text)]
+
+
+def resolve_import(importer, rel, paths):
+    '''Resolve import string `rel` seen in file `importer` against jsonnet rules.
+
+    Tries the importing file's directory first then each search path, exactly as
+    jsio.ImportCallback does.  Returns an absolute path string or None.
+    '''
+    for base in [os.path.dirname(importer)] + [str(p) for p in paths]:
+        try:
+            full_path, content = jsio.try_path(base, rel)
+        except RuntimeError:
+            continue
+        if content:
+            return str(full_path.absolute())
+    return None
+
+
+def lexical_graph(root, paths):
+    '''Static import graph rooted at `root`.
+
+    Returns (edges, unresolved) where edges is a set of (src, dst, kind) with
+    absolute path endpoints and unresolved is a set of (src, rel, kind).
+    '''
+    edges = set()
+    unresolved = set()
+    seen = set()
+    stack = [os.path.abspath(root)]
+    while stack:
+        cur = stack.pop()
+        if cur in seen:
+            continue
+        seen.add(cur)
+        for kind, rel in scan_imports(cur):
+            dst = resolve_import(cur, rel, paths)
+            if dst is None:
+                unresolved.add((cur, rel, kind))
+                continue
+            edges.add((cur, dst, kind))
+            if dst not in seen:
+                stack.append(dst)
+    return edges, unresolved
+
+
+def eval_graph(root, paths, jkwds):
+    '''Import graph of only the imports jsonnet actually evaluates (lazily).
+
+    Evaluates `root` with a recording import callback to collect the set of
+    forced imports, then draws the lexical edges restricted to that set.  A
+    lexical edge is kept only when its target was actually evaluated, so
+    imported-but-never-forced branches (and their subtrees) are excluded.
+    Returns (edges, evaluated-node-set).
+    '''
+    root = os.path.abspath(root)
+    ic = jsio.ImportCallback(paths)
+    jsmod = jsio.jsonnet_module()
+    with open(root, encoding="utf-8") as fp:
+        text = fp.read()
+    jsmod.evaluate_snippet(root, text, import_callback=ic, **jkwds)
+
+    nodes = {os.path.abspath(p) for p in ic.found} | {root}
+    edges = set()
+    for src in nodes:
+        for kind, rel in scan_imports(src):
+            dst = resolve_import(src, rel, paths)
+            if dst is not None and os.path.abspath(dst) in nodes:
+                edges.add((src, os.path.abspath(dst), kind))
+    return edges, nodes
+
+
+def importify_dot(edges, roots, extra_nodes=(), unresolved=()):
+    '''Render (edges, roots) as graphviz dot text.
+
+    edges: iterable of (src, dst, kind) absolute paths.
+    roots: iterable of absolute root paths (highlighted).
+    extra_nodes: nodes to include even if they have no edges.
+    unresolved: iterable of (src, rel, kind) drawn as dashed red targets.
+    '''
+    roots = {os.path.abspath(r) for r in roots}
+    nodes = set(roots) | set(os.path.abspath(n) for n in extra_nodes)
+    for src, dst, _ in edges:
+        nodes.add(src)
+        nodes.add(dst)
+    common = os.path.commonpath(list(nodes)) if nodes else os.getcwd()
+
+    def lab(p):
+        return os.path.relpath(p, common)
+
+    lines = ["digraph jsonnet_imports {",
+             '  rankdir=LR; node [shape=box, fontname="monospace", fontsize=10];']
+    for n in sorted(nodes):
+        attrs = ' style=filled, fillcolor="#cde7ff"' if n in roots else ''
+        lines.append('  "%s" [%s];' % (lab(n), attrs.strip()))
+    for src, rel, _kind in sorted(set(unresolved)):
+        tgt = "%s (unresolved)" % rel
+        lines.append('  "%s" [style=filled, fillcolor="#ffd0d0"];' % tgt)
+        lines.append('  "%s" -> "%s" [style=dashed, color=red];' % (lab(src), tgt))
+    for src, dst, kind in sorted(edges):
+        style = "solid" if kind == "import" else "dashed"
+        lines.append('  "%s" -> "%s" [style=%s];' % (lab(src), lab(dst), style))
+    lines.append("}")
+    return "\n".join(lines) + "\n"
+
+
+@cli.command("importify")
+@click.option("-P", "--wpath", default="", type=str,
+              help="A :-separated path to add to WIRECELL_PATH")
+@click.option("-J", "--jpath", multiple=True, envvar="WIRECELL_PATH",
+              help="A file system path to locate Jsonnet files (repeatable)")
+@click.option("-A", "--tla", multiple=True,
+              help="Set a top-level argument as key=val, key=code or key=filename (eval mode)")
+@click.option("-V", "--ext", multiple=True,
+              help="Set an external var as key=val (eval mode)")
+@click.option("-m", "--mode", type=click.Choice(["lexical", "eval"]), default="lexical",
+              help="'lexical': static scan of all import literals (complete). "
+                   "'eval': only imports jsonnet actually forces (lazy).")
+@click.argument("in-file")
+@click.argument("out-file")
+@click.pass_context
+def cmd_importify(ctx, wpath, jpath, tla, ext, mode, in_file, out_file):
+    '''
+    Graph the Jsonnet "import" DAG of a config file as GraphViz dot.
+
+    This is the graph of files formed by import/importstr/importbin directives,
+    NOT the wire-cell node graph (see "dotify" for that).
+
+    Two modes:
+
+      - lexical (default): a static scan of every import string literal.  This
+        is the complete import graph and needs no evaluation, so it works even
+        when the config would fail to evaluate.  Imports that jsonnet would
+        never force (it is lazy) are still shown.  Unresolvable imports are
+        drawn as dashed red edges and also reported on stderr.
+
+      - eval: evaluate the config through the Python jsonnet import system and
+        record only the imports actually forced.  Imported-but-never-used
+        branches are excluded.  Requires any top-level arguments the config
+        needs (pass with -A), same as dotify.
+
+    Search paths honor WIRECELL_PATH plus any -J/--jpath and -P/--wpath.  The
+    output format follows the OUT-FILE extension (.dot writes dot text, anything
+    else is rendered with graphviz, e.g. .pdf/.png).  Use - for dot on stdout.
+
+    Examples
+
+      $ wcpy pgraph importify mycfg.jsonnet imports.pdf
+
+      $ wcpy pgraph importify --mode eval -A input=x.npz mycfg.jsonnet imports.dot
+    '''
+    # Assemble search paths: -J entries (default WIRECELL_PATH), then -P/--wpath.
+    raw = list(jpath)
+    if wpath:
+        raw.append(wpath)
+    paths = jsio.wash_path(raw)
+
+    root = str(jsio.resolve(in_file, paths))
+
+    unresolved = ()
+    extra_nodes = ()
+    if mode == "lexical":
+        edges, unresolved = lexical_graph(root, paths)
+        for src, rel, kind in sorted(unresolved):
+            log.warning('unresolved import: %s -> %s (%s)'
+                        % (os.path.relpath(src), rel, kind))
+    else:
+        jkwds = jsio.tla_pack(tla, paths)
+        jkwds.update(jsio.tla_pack(ext, paths, 'ext_'))
+        try:
+            edges, nodes = eval_graph(root, paths, jkwds)
+        except RuntimeError as err:
+            raise click.ClickException(
+                "eval mode failed to evaluate %s (missing -A top-level args?):\n%s"
+                % (root, err))
+        extra_nodes = nodes
+
+    dtext = importify_dot(edges, [root], extra_nodes=extra_nodes, unresolved=unresolved)
+
+    if out_file == "-":
+        click.echo(dtext, nl=False)
+        return
+    ext_out = os.path.splitext(out_file)[1][1:]
+    if ext_out == "dot":
+        with open(out_file, "w", encoding="utf-8") as fp:
+            fp.write(dtext)
+        return
+    dot = "dot -T %s -o %s" % (ext_out, out_file)
+    proc = subprocess.Popen(dot, shell=True, stdin=subprocess.PIPE)
+    proc.communicate(input=dtext.encode("utf-8"))
+    return
+
 
 def main():
     cli(obj=dict())
