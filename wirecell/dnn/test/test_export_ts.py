@@ -140,3 +140,59 @@ def test_load_model_state_returns_extra_entries(tmp_path):
     # the state dicts themselves are consumed, not handed back
     assert 'model_state_dict' not in rest
     assert 'optimizer_state_dict' not in rest
+
+
+#
+# xvunet's banded attention mask must ride along with the module, not be baked
+# into the traced graph.  See wcpy-oci.
+#
+
+XV_CFG = dict(view_splits='[[80],[80],[48,48]]', chunks='[8,8,8]',
+              d_model='32', n_heads='4', n_layers='2', band='1')
+XV_SHAPE = (1, 1, 80 + 80 + 48 + 48, 64)
+
+
+def _xvunet():
+    from wirecell.dnn.apps.xvunet.model import Network
+    torch.manual_seed(0)
+    return Network(**XV_CFG).eval()
+
+
+def test_band_mask_stays_out_of_state_dict():
+    '''
+    The masks are registered so they move with the module, but non-persistently
+    so they never reach state_dict -- otherwise every checkpoint written before
+    this change would fail to load with strict=True, and vice versa.
+    '''
+    net = _xvunet()
+    before = set(net.state_dict().keys())
+
+    with torch.no_grad():
+        net(_x(XV_SHAPE))
+
+    masks = [n for n, _ in net.named_buffers() if '_band_mask_' in n]
+    assert masks, 'the forward should have registered at least one mask buffer'
+    assert set(net.state_dict().keys()) == before
+
+
+@pytest.mark.skipif(torch.cuda.device_count() < 2, reason='needs two GPUs')
+def test_traced_xvunet_runs_on_another_device(tmp_path):
+    '''
+    A .ts traced on one GPU must load and run on a different one.  Tracing bakes
+    any tensor that is not a parameter or buffer into the graph at the device it
+    was built on, so a mask held in a plain dict left the file stuck on cuda:0,
+    failing elsewhere with "two devices ... argument attn_bias".
+    '''
+    net = _xvunet().to('cuda:0')
+    x = _x(XV_SHAPE)
+    path = tmp_path / 'xv.ts'
+    dio.save_torchscript(net, path, shape=XV_SHAPE, method='trace',
+                         device='cuda:0')
+
+    outs = dict()
+    for dev in ('cuda:0', 'cuda:1'):
+        mod = torch.jit.load(str(path), map_location=dev)
+        with torch.no_grad():
+            outs[dev] = mod(x.to(dev)).cpu()
+    # same graph, same constants, only the device differs
+    assert torch.equal(outs['cuda:0'], outs['cuda:1'])
