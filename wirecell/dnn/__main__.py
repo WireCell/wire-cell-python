@@ -727,6 +727,44 @@ def run_one(config, device, debug_torch, entry, load, output, app, manual_sigmoi
         if not rec_only: outdict['labels'] = labels
         torchsave(outdict, output)
 
+
+run_ts_defaults = dict(device='cpu', name='dnnroi')
+@cli.command('run-ts')
+@click.option('-t', '--torchscript', type=str)
+@click.option("--shape", type=str,
+              help="Input shape, e.g. '1,3,800,1500'.  Required for --method trace, "
+              "otherwise used to verify the export.  Def: [export] shape.")
+@click.option("-d", "--device", default=None, type=str,
+              help="The compute device")
+@click.option("--debug-torch/--no-debug-torch", is_flag=True, default=False,
+              help="Debug torch-level problems")
+# @click.option("-n", "--entry", default=0, help="Which entry to supply to DataLoader's __get_item__")
+# @click.option("-l", "--load", default=None,
+#               help="File name providing the initial model state dict (def=None - construct fresh)")
+@click.option("-o", "--output", default=None,
+              help="File name to output after training (def=None - results not saved)")
+@click.option("--force-off-gpu", is_flag=True, default=False, help="Force a .to('cpu') when outputing. Nothing done if no output requested")
+# @click.option('--profile', default=None, type=str,
+            #   help='Run profiling. Provide filename to store results. Default = None --> off')
+@anyconfig_file("wirecelldnn", section='run_one', defaults=run_one_defaults)
+def run_ts(config, torchscript, shape, device, debug_torch, output, force_off_gpu):
+    import torch
+    log.info(f'Loading {torchscript}')
+    model = torch.jit.load(torchscript).to(device)
+    model.eval()
+    
+    shape = _parse_shape(shape)
+    input = torch.randn(*shape).to(device)
+    with torch.no_grad():
+        log.info('Running')
+        y = model(input)
+        log.info('Done')
+    if output:
+        log.info(f'Saving output to {output}')
+        torch.save((y.to('cpu') if force_off_gpu else y), output)
+        log.info('Saved')
+        
+
 # run_one_defaults = dict(device='cpu', name='dnnroi')
 @cli.command('viztrain')
 
