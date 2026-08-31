@@ -50,10 +50,14 @@ Compute it before training rather than reading it off epoch 0, since the
 optimizer perturbs the model from the first step.
 
 This model cannot be TorchScript-*scripted*, though the other apps can be: the
-runtime-int indexing of nn.ModuleList, the callable-plus-args signature of
-_ckpt and the tuple-keyed _mask_cache are all compile-time blockers, so eval()
-mode does not avoid them.  Export by tracing instead ("wcpy dnn export-ts -m
-trace"), which is bit-exact.
+runtime-int indexing of nn.ModuleList and the callable-plus-args signature of
+_ckpt are compile-time blockers, so eval() mode does not avoid them.  Export by
+tracing instead ("wcpy dnn export-ts -m trace"), which is bit-exact.
+
+Tracing bakes every non-parameter, non-buffer tensor into the graph at the
+device it was built on, which is why the banded attention mask is held as a
+registered buffer (see _band_mask); a traced .ts is otherwise stuck on the one
+device it was exported from.
 
 References for the zero-init residual gating:
 
@@ -149,8 +153,6 @@ class BandedAttentionBlock(nn.Module):
         )
         self.gamma2 = nn.Parameter(torch.zeros(d_model))
 
-        self._mask_cache = dict()  # (T, N) -> (T, (2*band+1)*N) bool, True = attend
-
         # Attention scope.  Plain attributes, not buffers or parameters, so
         # switching mode never touches state_dict and one trained checkpoint
         # can be evaluated under every mode.  segments is filled in by
@@ -179,18 +181,40 @@ class BandedAttentionBlock(nn.Module):
         columns hold keys from the opposite end of the image, which are not
         real neighbours in time.
 
-        Cached per (T, N) since the mask depends only on shape.
+        Cached per (T, N) since the mask depends only on shape.  The cache is a
+        registered buffer rather than a plain dict because only parameters and
+        buffers are moved by .to() and remapped by torch.jit.load(map_location=).
+        A dict entry is neither, and torch.jit.trace evaluates the Python-level
+        device test just once, so a dict-held mask was baked into the traced
+        graph as a constant on whatever device the export ran on -- the .ts then
+        failed on every other device with "two devices ... argument attn_bias",
+        this mask being what reaches attention as attn_mask.  persistent=False
+        keeps these out of state_dict, so checkpoints are unaffected in both
+        directions.
+
+        A block holds one buffer per (T, N): the key-set size varies by segment
+        and attention mode.  They are built on first use, since T is not known
+        until a forward -- which means a trace must be preceded by one eager
+        forward at the same shape, as registering during the trace bakes a
+        constant just the same.  save_torchscript() does that warmup whenever it
+        has a shape, and -m trace requires one.
         '''
-        key = (T, N)
-        mask = self._mask_cache.get(key)
-        if mask is None or mask.device != device:
+        name = f'_band_mask_{T}_{N}'
+        mask = getattr(self, name, None)
+        if mask is None:
             t = torch.arange(T)
             cols = list()
             for s in range(-self.band, self.band + 1):
                 valid = ((t + s) >= 0) & ((t + s) < T)   # (T,)
                 cols.append(valid.unsqueeze(1).expand(T, N))
-            mask = torch.cat(cols, dim=1).to(device)     # (T, (2b+1)*N)
-            self._mask_cache[key] = mask
+            self.register_buffer(name, torch.cat(cols, dim=1).to(device),
+                                 persistent=False)       # (T, (2b+1)*N)
+            mask = getattr(self, name)
+        elif mask.device != device:
+            # Eager fallback: .to() carries buffers with the module, so this only
+            # fires if a block is handed input from somewhere else.
+            mask = mask.to(device)
+            setattr(self, name, mask)
         return mask
 
     def forward(self, x):
