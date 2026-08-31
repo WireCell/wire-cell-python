@@ -400,6 +400,24 @@ class XViewUNet(nn.Module):
             nn.Parameter(torch.empty(1, d_model, 1, 1).normal_(std=0.02))
             for _ in range(nseg_total))
 
+        ### Prototype for fixed embedings. Using same waves from attn paper
+        ### Not sure what to use for the frequency "base" i.e. 1e4 like in paper
+        # self.pos_embed = torch.empty(1, d_model, ntok, 1)
+        # for i in range(d_model/2):
+        #     self.pos_embed[1, 2*i, :, 1] = torch.sin(torch.arange(ntok) / (1e4**((2*i)/d_model)))
+        #     self.pos_embed[1, (2*i) + 1, :, 1] = torch.cos(torch.arange(ntok) / (1e4**((2*i)/d_model)))
+        # self.seg_embeds = []
+        # for i in range(nseg_total):
+        #     self.seg_embeds.append(
+        #         torch.empty(1, d_model, 1, 1)
+        #     )
+        #     self.seg_embeds[-1][1,0::2,1,1] = torch.sin(i / (1e4**(2*torch.arange(d_model))))
+        #     self.seg_embeds[-1][1,1::2,1,1] = torch.cos(i / (1e4**(2*torch.arange(d_model))))
+        # self.time_embed = (
+        #     0 if band < 1
+        #     else torch.arange(-band, band+1).view(1,1,1,-1) / ((2*band + 1))
+        # )
+        
         '''
         Attention blocks
         '''
@@ -538,6 +556,7 @@ class XViewUNet(nn.Module):
 
         '''Run through attention'''
         tok = torch.cat(tokens, dim=2) + self.pos_embed      # (B, d, N, T)
+        # tok += self.time_embed
         tok = tok.permute(0, 3, 2, 1)                        # (B, T, N, d)
         for blk in self.blocks:
             tok = self._ckpt(self.use_checkpoint, blk, tok)
