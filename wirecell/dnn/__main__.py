@@ -742,9 +742,11 @@ run_n_defaults = dict(device='cpu', name='dnnroi')
               help='Run output through sigmoid by hand')
 @click.option('--rec-only', default=False, is_flag=True,
               help='Only run rec')
+@click.option('--discard-input', default=False, is_flag=True,
+              help='Do not save input as "feat" within output file')
 @anyconfig_file("wirecelldnn", section='run_one', defaults=run_n_defaults)
 @click.argument("files", type=str, nargs=-1)
-def run_one(config, device, debug_torch, nskip, n, load, output, app, manual_sigmoid, rec_only, files):
+def run_one(config, device, debug_torch, nskip, n, load, output, app, manual_sigmoid, rec_only, discard_input, files):
     '''
     Run a reco & true pair through a saved model.
     '''
@@ -811,9 +813,9 @@ def run_one(config, device, debug_torch, nskip, n, load, output, app, manual_sig
 
             if output:
                 outdict = {
-                    'feat':feat,
                     'y':y
                 }
+                if not discard_input: outdict['feat'] = feat
                 if not rec_only: outdict['labels'] = labels
                 torchsave(outdict, output.replace('{entry}', str(entry)))
 
