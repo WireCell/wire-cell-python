@@ -75,7 +75,7 @@ class Dataset(hdf.Multi):
     '''
     The full DNNROI dataset is effectively zip(Rec,Tru).
     '''
-    def __init__(self, paths, threshold=0.5, cache=False, config=None):
+    def __init__(self, paths, threshold=0.5, cache=False, config=None, rec_only=False):
 
         log.debug(f'ddnroi dataset: {config=}')
         config = config or dict()
@@ -119,11 +119,17 @@ class Dataset(hdf.Multi):
 
         print('Tru params:', tru_params)
         print('Rec params:', rec_params)
-        super().__init__(Rec(paths, cache=cache,
-                             trparams=rec_params,
-                             file_re=wash('rec_file_re'),
-                             path_res=wash('rec_path_res')),
-                         Tru(paths, threshold, cache=cache,
-                             trparams=tru_params,
-                             file_re=wash('tru_file_re'),
-                             path_res=wash('tru_path_res')))
+        if rec_only:
+          super().__init__(Rec(paths, cache=cache,
+                               trparams=rec_params,
+                               file_re=wash('rec_file_re'),
+                               path_res=wash('rec_path_res')))
+        else:
+          super().__init__(Rec(paths, cache=cache,
+                               trparams=rec_params,
+                               file_re=wash('rec_file_re'),
+                               path_res=wash('rec_path_res')),
+                           Tru(paths, threshold, cache=cache,
+                               trparams=tru_params,
+                               file_re=wash('tru_file_re'),
+                               path_res=wash('tru_path_res')))
