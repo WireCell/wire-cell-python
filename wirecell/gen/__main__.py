@@ -494,7 +494,7 @@ def morse_splat(output, summary):
             dfs = dict(smear_long = [r['tick_sigma'] for r in res],
                        smear_tran = [r['pitch_sigma'] for r in res])
             out.write(json.dumps(dfs, indent=4))
-        if '.org' in output:
+        elif '.org' in output:
             lines=[
                 '|plane|tick|pitch|',
                 '|-----|----|-----|'
