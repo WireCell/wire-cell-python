@@ -146,9 +146,49 @@ def align_channel_ranges(fr1, fr2):
     return _pad(fr1, c0, cf), _pad(fr2, c0, cf)
 
 
-def plot_frame(gs, fr, channel_ranges=None, which="splat", tit="", channel_offset=0):
+def active_time_window(arrays, extent, tick, qlo=5e-3, qhi=0.995, pad_frac=0.1):
+    '''Return (t0,tf) in system-of-units bounding the ticks holding the bulk of
+    the activity of the given frame arrays.
+
+    - arrays :: iterable of 2D (channel, tick) arrays sharing the given extent.
+    - extent :: (t0, tf, cmin, cmax+1) as on a Frame.
+    - tick :: sample period in system of units.
+    - qlo, qhi :: the window brackets this quantile range of the cumulative
+      |value| profile.  A cumulative (energy) window is used rather than a simple
+      per-tick threshold so scattered low-level ringing far from the signal does
+      not widen the window back out to the whole readout.
+    - pad_frac :: pad the found window by this fraction of its width on each side.
+
+    Falls back to the full extent if no activity is found.
+    '''
+    t0, tf, _, _ = extent
+    prof = None
+    for arr in arrays:
+        col = numpy.abs(arr).sum(axis=0)
+        prof = col if prof is None else prof + col
+    if prof is None or prof.size == 0:
+        return (t0, tf)
+    total = prof.sum()
+    if total <= 0:
+        return (t0, tf)
+    cum = numpy.cumsum(prof)
+    lo = int(numpy.searchsorted(cum, qlo*total))
+    hi = int(numpy.searchsorted(cum, qhi*total))
+    if hi <= lo:
+        hi = min(prof.size - 1, lo + 1)
+    pad = int(round(pad_frac*(hi - lo + 1)))
+    lo = max(0, lo - pad)
+    hi = min(prof.size - 1, hi + pad)
+    return (t0 + lo*tick, t0 + (hi + 1)*tick)
+
+
+def plot_frame(gs, fr, channel_ranges=None, which="splat", tit="", channel_offset=0,
+               xlim_us=None):
     '''
     Plot one Frame as 2D and 2x1D projections.
+
+    If xlim_us is given as a (t0,tf) pair in microseconds, the time axis (and thus
+    the 2D and time-projection views) are restricted to that window.
     '''
     import matplotlib.pyplot as plt
     from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
@@ -182,8 +222,16 @@ def plot_frame(gs, fr, channel_ranges=None, which="splat", tit="", channel_offse
     if which=="splat":
         plt.setp(tax.get_xticklabels(), visible=False)
 
+    # Diverging "seismic" map centred at zero: white=0, red=positive, blue=the
+    # rare negative signal.  Symmetric limits keep zero pinned to white.
+    vext = 500
     im = fax.imshow(fr.frame, extent=extent_us, origin=fr.origin,
-                    aspect='auto', vmax=500, cmap='hot_r', interpolation='none')
+                    aspect='auto', vmin=-vext, vmax=vext, cmap='seismic',
+                    interpolation='none')
+
+    # Anchor per-plane labels within the visible time window so they stay on the
+    # 2D axes even when the time axis is cropped to the activity.
+    tlo_us, thi_us = xlim_us if xlim_us is not None else (t0_us, tf_us)
 
     tval = fr.frame.sum(axis=0)
     t = numpy.linspace(t0_us, tf_us, fr.frame.shape[1]+1,endpoint=True)
@@ -196,13 +244,16 @@ def plot_frame(gs, fr, channel_ranges=None, which="splat", tit="", channel_offse
             c2 = chans.stop + channel_offset
             tax.plot(t[:-1], val, label=p)
             fax.plot([t0_us,tf_us], [c1,c1])
-            fax.text(t0_us + 0.1*(tf_us-t0_us), c1 + 0.5*(c2-c1), p)
+            fax.text(tlo_us + 0.05*(thi_us-tlo_us), c1 + 0.5*(c2-c1), p)
         fax.plot([t0_us,tf_us], [c2-1,c2-1])
         tax.legend()
     
     cval = fr.frame.sum(axis=1)
     c = numpy.linspace(fr.extent[2],fr.extent[3],fr.frame.shape[0]+1,endpoint=True)
     cax.plot(cval, c[:-1])
+
+    if xlim_us is not None:
+        fax.set_xlim(*xlim_us)      # tax shares x with fax
 
     return im
 
@@ -221,8 +272,17 @@ def plot_frames(spl, sig, channel_ranges, title="", channel_offset=0):
     fig = plt.figure()
     pgs = GridSpec(1,2, figure=fig, width_ratios = [7,0.2])
     gs = GridSpecFromSubplotSpec(2, 1, pgs[0,0])
-    im1 = plot_frame(gs[0], spl, channel_ranges, which="splat", channel_offset=channel_offset)
-    im2 = plot_frame(gs[1], sig, channel_ranges, which="signal", channel_offset=channel_offset)
+
+    # Restrict the time axis to where either frame has activity so the (usually
+    # brief) signal is not lost in a mostly-empty readout window.  Both frames
+    # share the same time extent, so use a common window.
+    tw = active_time_window([spl.frame, sig.frame], spl.extent, spl.tick)
+    xlim_us = (tw[0]/units.us, tw[1]/units.us)
+
+    im1 = plot_frame(gs[0], spl, channel_ranges, which="splat",
+                     channel_offset=channel_offset, xlim_us=xlim_us)
+    im2 = plot_frame(gs[1], sig, channel_ranges, which="signal",
+                     channel_offset=channel_offset, xlim_us=xlim_us)
     fig.colorbar(im2, cax=plt.subplot(pgs[0,1]))
     if title:
         plt.suptitle(title)
@@ -271,6 +331,64 @@ def plot_plane(spl_act, sig_act, nsigma=3.0, title=""):
     axes[1,1].set_xlabel(tick_tit)
 
     fig.subplots_adjust(right=0.85)
+    plt.tight_layout()
+
+
+def plot_channels(spl, sig, ch, bbox, letter="", title="", channel_offset=0,
+                  fracs=(0.25, 0.50, 0.75), tick_pad_frac=0.25):
+    '''Plot signal and splat waveforms for a few channels sampled along a track.
+
+    One page of len(fracs) rows.  Each row is the waveform (vs time) of both the
+    splat and signal frames for a single channel taken at the given fractional
+    position along the channel span of the track activity.
+
+    - spl, sig :: the full (aligned) splat and signal Frame objects.
+    - ch :: the plane's channel slice into the frame arrays.
+    - bbox :: (channel_slice, tick_slice) of the biggest splat plateau, in
+      plane-local coordinates (as returned by select_activity()/plateaus()).
+    - letter :: plane label for titles.
+    - channel_offset :: added to a row index to form the channel ID for labels.
+    - fracs :: fractional positions along the activity channel span to sample.
+    - tick_pad_frac :: pad the plotted time window by this fraction of the
+      activity tick span on each side.
+    '''
+    import matplotlib.pyplot as plt
+
+    chan_slice, tick_slice = bbox[0], bbox[1]
+    cstart, cstop = chan_slice.start, chan_slice.stop
+    span = cstop - cstart
+
+    ncols = spl.frame.shape[1]
+    t0_us = spl.extent[0] / units.us
+    tick_us = spl.tick / units.us
+    t = t0_us + numpy.arange(ncols) * tick_us
+
+    # Time window bounding the track activity, padded.
+    tpad = int(round(tick_pad_frac * (tick_slice.stop - tick_slice.start)))
+    tlo = max(0, tick_slice.start - tpad)
+    thi = min(ncols, tick_slice.stop + tpad)
+    xlim_us = (t0_us + tlo*tick_us, t0_us + thi*tick_us)
+
+    fig, axes = plt.subplots(nrows=len(fracs), ncols=1, sharex=True)
+    if len(fracs) == 1:
+        axes = [axes]
+
+    for ax, frac in zip(axes, fracs):
+        # plane-local row -> absolute frame row
+        row_local = cstart + int(round(frac * (span - 1))) if span > 1 else cstart
+        abs_row = ch.start + row_local
+        chan_id = abs_row + channel_offset
+
+        ax.plot(t, sig.frame[abs_row, :], label='signal')
+        ax.plot(t, spl.frame[abs_row, :], label='splat')
+        ax.set_xlim(*xlim_us)
+        ax.set_ylabel('electrons')
+        ax.set_title(f'{letter}-plane chan {chan_id} ({int(round(100*frac))}% along track)')
+        ax.legend()
+
+    axes[-1].set_xlabel('time [us]')
+    if title:
+        plt.suptitle(title)
     plt.tight_layout()
 
 
@@ -393,5 +511,7 @@ def plot_metrics(splat_signal_activity_pairs, nbins=50, title="", letters="UVW")
     if title:
         plt.suptitle(title)
     else:
-        plt.suptitle('(splat - signal) / splat')
+        # The row-2 histogram fits the symmetric relative difference actually
+        # computed in calc_metrics(), not (splat-signal)/splat.
+        plt.suptitle('(splat - signal) / (splat + signal)')
     plt.tight_layout()

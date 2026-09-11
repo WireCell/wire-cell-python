@@ -137,6 +137,9 @@ def plot_ssss(channel_ranges, channel_offset, anode_number, nsigma, nbins, splat
         out.savefig()
 
         byplane = list()
+        # Per-plane info retained to draw channel-waveform pages after the
+        # plane pages: (plane letter, channel slice, activity bbox).
+        chan_pages = list()
 
         # Per channel range plots.
         for pln, ch in enumerate(channel_ranges):
@@ -164,6 +167,8 @@ def plot_ssss(channel_ranges, channel_offset, anode_number, nsigma, nbins, splat
                             title=f'{letter}-plane {title}')
             out.savefig()
 
+            chan_pages.append((letter, ch, bbox))
+
             spl_qch = numpy.sum(spl.activity[bbox], axis=1)
             sig_qch = numpy.sum(sig.activity[bbox], axis=1)
 
@@ -175,9 +180,14 @@ def plot_ssss(channel_ranges, channel_offset, anode_number, nsigma, nbins, splat
 
             byplane.append((spl_qch, sig_qch))
 
+        # One page per plane of single-channel waveforms sampled along the track.
+        for letter, ch, bbox in chan_pages:
+            ssss.plot_channels(splat, signal, ch, bbox, letter=letter,
+                               title=title, channel_offset=channel_offset)
+            out.savefig()
 
         ssss.plot_metrics(byplane, nbins=nbins,
-                          title=f'(splat - signal)/splat {title}')
+                          title=f'(splat - signal)/(splat + signal) {title}'.strip())
 
         out.savefig()
 
