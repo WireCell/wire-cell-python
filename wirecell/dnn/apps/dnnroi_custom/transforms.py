@@ -6,6 +6,8 @@ The dataset transforms relevant to DNNROI
 from dataclasses import dataclass
 from typing import Type, Tuple
 import torch                    # for float32 dtype
+import logging
+log = logging.getLogger("wirecell.dnn")
 
 
 @dataclass
@@ -85,6 +87,7 @@ class Rec:
         x = self.crop(x)
         x = self.rebin(x)
         x = x/self._params.norm
+        log.debug('Norm:', self._params.norm)
         return x
 
 

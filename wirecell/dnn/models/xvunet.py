@@ -321,8 +321,11 @@ class BandedAttentionBlock(nn.Module):
         kb = kb.reshape(B*T, M, h, dh).transpose(1, 2)   # (B*T, h, M, dh)
         vb = vb.reshape(B*T, M, h, dh).transpose(1, 2)
 
-        mask = self._band_mask(T, Nk, q.device)          # (T, M)
-        mask = mask.repeat(B, 1).view(B*T, 1, 1, M)
+        if self.band == 0:
+          mask = None
+        else:
+          mask = self._band_mask(T, Nk, q.device)          # (T, M)
+          mask = mask.repeat(B, 1).view(B*T, 1, 1, M)
 
         o = F.scaled_dot_product_attention(q, kb, vb, attn_mask=mask)
         return o.transpose(1, 2).reshape(B, T, Nq, d)

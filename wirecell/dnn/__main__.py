@@ -638,9 +638,11 @@ run_one_defaults = dict(device='cpu', name='dnnroi')
               help='Only run rec')
 @click.option('--profile', default=None, type=str,
               help='Run profiling. Provide filename to store results. Default = None --> off')
+@click.option('--cfg-dataset', default='run_one_dataset',
+              help='Name of dataset in cfg file -- default run_one_dataset')
 @anyconfig_file("wirecelldnn", section='run_one', defaults=run_one_defaults)
 @click.argument("files", type=str, nargs=-1)
-def run_one(config, device, debug_torch, entry, load, output, app, manual_sigmoid, rec_only, profile, files):
+def run_one(config, device, debug_torch, entry, load, output, app, manual_sigmoid, rec_only, profile, cfg_dataset, files):
     '''
     Run a reco & true pair through a saved model.
     '''
@@ -688,7 +690,7 @@ def run_one(config, device, debug_torch, entry, load, output, app, manual_sigmoi
             log.info(f'loaded model state from {load}')
             ck = None           # see train(): load_state_dict copied already
 
-        ds = app.Dataset(files, config=config.get("run_one_dataset", None), rec_only=rec_only)
+        ds = app.Dataset(files, config=config.get(cfg_dataset, None), rec_only=rec_only)
         if len(ds) == 0:
             raise click.BadArgumentUsage(f'no samples from {len(files)} files')
         feat, labels = ds.__getitem__(entry)
@@ -744,9 +746,11 @@ run_n_defaults = dict(device='cpu', name='dnnroi')
               help='Only run rec')
 @click.option('--discard-input', default=False, is_flag=True,
               help='Do not save input as "feat" within output file')
+@click.option('--cfg-dataset', default='run_one_dataset',
+              help='Name of dataset in cfg file -- default run_one_dataset')
 @anyconfig_file("wirecelldnn", section='run_one', defaults=run_n_defaults)
 @click.argument("files", type=str, nargs=-1)
-def run_one(config, device, debug_torch, nskip, n, load, output, app, manual_sigmoid, rec_only, discard_input, files):
+def run_n(config, device, debug_torch, nskip, n, load, output, app, manual_sigmoid, rec_only, discard_input, cfg_dataset, files):
     '''
     Run a reco & true pair through a saved model.
     '''
@@ -798,7 +802,7 @@ def run_one(config, device, debug_torch, nskip, n, load, output, app, manual_sig
             log.info(f'loaded model state from {load}')
             ck = None           # see train(): load_state_dict copied already
 
-        ds = app.Dataset(files, config=config.get("run_one_dataset", None), rec_only=rec_only)
+        ds = app.Dataset(files, config=config.get(cfg_dataset, None), rec_only=rec_only)
         if len(ds) == 0:
             raise click.BadArgumentUsage(f'no samples from {len(files)} files')
 

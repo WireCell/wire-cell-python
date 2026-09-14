@@ -13,7 +13,7 @@ from wirecell.dnn.data import hdf
 from .transforms import Rec as Rect, Tru as Trut, Params as TrParams, DimParams
 
 import logging
-log = logging.getLogger("wirecell.dnn")
+log = logging.getLogger(__name__)
 
 class Rec(hdf.Single):
     '''
@@ -95,6 +95,7 @@ class Dataset(hdf.Multi):
         rec_norm = wash('rec_norm')
         rec_tick_binning = wash('rec_tick_binning')
         rec_elech_binning = wash('rec_elech_binning')
+        threshold = float(config.get('threshold', threshold))
         
         if ((tru_norm is None) or (tru_tick_binning is None) or (tru_elech_binning is None)):
             tru_params = Trut.default_params
@@ -125,6 +126,7 @@ class Dataset(hdf.Multi):
                                file_re=wash('rec_file_re'),
                                path_res=wash('rec_path_res')))
         else:
+          print('Theshold', threshold)
           super().__init__(Rec(paths, cache=cache,
                                trparams=rec_params,
                                file_re=wash('rec_file_re'),

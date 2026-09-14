@@ -90,7 +90,8 @@ class Tru(Rec):
     The "tru" data transformation: as "rec" but with thresholding to {0,1}.
     '''
 
-    default_params = Params(DimParams((0, 800), 1), DimParams((0, 1500), 1), 0.05)
+    default_params = Params(
+        DimParams((0, 800), 1), DimParams((0, 1500), 1), 0.05)
 
     def __init__(self, params: Params = None, transpose: bool = False,
                  threshold: float = 0.5):
