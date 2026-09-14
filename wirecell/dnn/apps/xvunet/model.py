@@ -60,17 +60,22 @@ class Network(nn.Module):
     #: attn_mode is not here either -- see ADVISORY_KEYS.
     STRUCTURAL_KEYS = ('view_splits', 'chunks', 'd_model', 'n_heads', 'n_layers',
                        'band', 'ffn_mult', 'n_input_channels', 'n_classes',
-                       'freeze_unets')
+                       'freeze_unets', 'time_bias')
 
     #: cfg keys that change what the model computes without changing its shape,
     #: so a mismatch loads cleanly and would otherwise pass unremarked.  Warn
     #: rather than fail: nothing is mechanically broken, and evaluating one
     #: checkpoint under each mode in turn is the point of the ablation.
-    ADVISORY_KEYS = ('attn_mode',)
+    #: freeze_trunk_bn is advisory rather than structural: batch-norm running
+    #: statistics are persistent buffers present in state_dict either way, so it
+    #: adds and removes nothing and cannot strand a checkpoint.  But resuming
+    #: under a different policy silently changes what happens to the trunks, and
+    #: no learning rate controls it, so it should not pass unremarked.
+    ADVISORY_KEYS = ('attn_mode', 'freeze_trunk_bn')
 
     #: defaults for the advisory keys.  These are not in _kwds(): attn_mode is
     #: runtime state the wrapper sets after construction, not a shape argument.
-    ADVISORY_DEFAULTS = dict(attn_mode='all')
+    ADVISORY_DEFAULTS = dict(attn_mode='all', freeze_trunk_bn=True)
 
     #: what is worth recovering from a run record written before model_args was
     #: nested, where the model config sat flat among the run metadata.
@@ -98,6 +103,8 @@ class Network(nn.Module):
             init_checkpoint=cfg.get('init_checkpoint'),
             use_checkpoint=_boolish(cfg.get('use_checkpoint', True)),
             checkpoint_trunks=_boolish(cfg.get('checkpoint_trunks', False)),
+            time_bias=_boolish(cfg.get('time_bias', False)),
+            freeze_trunk_bn=_boolish(cfg.get('freeze_trunk_bn', True)),
         )
 
     @classmethod
@@ -165,7 +172,10 @@ class Network(nn.Module):
         for key in cls.ADVISORY_KEYS:
             dflt = cls.ADVISORY_DEFAULTS.get(key)
             was, now = (checkpoint_args.get(key, dflt), cfg.get(key, dflt))
-            if str(was) == str(now):
+            # A boolean key arrives as True from a checkpoint but as "true" from
+            # an INI config, so compare on the interpreted value, not the text.
+            norm = _boolish if isinstance(dflt, bool) else str
+            if norm(was) == norm(now):
                 continue
             log.warning(
                 f'xvunet: resuming a checkpoint trained with {key}={was!r} but '

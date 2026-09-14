@@ -485,3 +485,211 @@ def test_load_checkpoint_from_reuses_a_read(tmp_path):
     again = torch.nn.Linear(3, 2)
     assert dnnio.load_checkpoint(
         path, again, torch.optim.SGD(again.parameters(), lr=0.1)) == rest
+
+
+def test_band_offset_is_invisible():
+    '''
+    PINS CURRENT BEHAVIOUR, and is meant to be inverted when wcpy-0mj lands.
+
+    _attend concatenates the rolled key and value copies in the same offset
+    order, so permuting the offset blocks permutes keys and values together.
+    Attention is permutation-equivariant over key positions, so the offset a key
+    came from is not merely unencoded -- it is structurally invisible.
+
+    Concretely: swap the content at ticks t-1 and t+1.  The query at t sees the
+    same SET of keys with their offsets exchanged, so its output cannot move.
+    Other ticks do move, which is what shows the swap was real.
+
+    Once a per-offset encoding or logit bias exists, tick t must move too, and
+    this assertion flips.  Note the gates are opened by hand: LayerScale is
+    zero-init, which makes the block the identity and would pass any test.
+    '''
+    torch.manual_seed(0)
+    dtype = torch.float64          # so float noise cannot mask a real effect
+    B, T, N, d = 1, 5, 4, 16
+    blk = BandedAttentionBlock(d, n_heads=4, band=1).to(dtype).eval()
+    with torch.no_grad():
+        blk.gamma1.fill_(1.0)
+        blk.gamma2.fill_(1.0)
+
+    x = torch.randn(B, T, N, d, dtype=dtype)
+    t = 2                          # interior: no circular wraparound at t+-1
+    swapped = x.clone()
+    swapped[:, t-1], swapped[:, t+1] = x[:, t+1].clone(), x[:, t-1].clone()
+
+    with torch.no_grad():
+        y, ys = blk(x), blk(swapped)
+
+    assert torch.allclose(y[:, t], ys[:, t], rtol=0, atol=1e-12), \
+        'the query at t distinguishes offset -1 from +1, so wcpy-0mj has ' \
+        'landed and this test should be inverted'
+    other = [i for i in range(T) if i != t]
+    assert not torch.allclose(y[:, other], ys[:, other]), \
+        'the swap did nothing, so the test proves nothing'
+
+
+#
+# Relative-time bias (wcpy-0mj): a fixed signed ramp over the band scaled by one
+# learned, zero-initialised gain.
+#
+
+def test_time_bias_is_inert_at_init():
+    '''
+    gain=0 must reproduce the un-biased block BIT FOR BIT.  The float mask path
+    replaces a bool mask with where(valid, 0, -inf), which is exactly equivalent,
+    so turning the feature on cannot perturb a run until the gain moves off zero.
+    This is what lets the frozen-trunk baseline survive the change.
+    '''
+    torch.manual_seed(0)
+    dtype = torch.float64
+    x = torch.randn(1, 6, 4, 16, dtype=dtype)
+
+    def build(time_bias):
+        torch.manual_seed(1234)
+        blk = BandedAttentionBlock(16, n_heads=4, band=1,
+                                   time_bias=time_bias).to(dtype).eval()
+        with torch.no_grad():
+            blk.gamma1.fill_(1.0)
+            blk.gamma2.fill_(1.0)
+        return blk
+
+    with torch.no_grad():
+        plain, biased = build(False)(x), build(True)(x)
+    assert torch.equal(plain, biased)
+
+
+def test_time_bias_breaks_offset_invariance():
+    '''
+    The point of the feature: with the gain off zero, the query at t must now
+    distinguish a key at offset -1 from one at +1.  This is the inverse of
+    test_band_offset_is_invisible, which pins the behaviour without the bias.
+    '''
+    torch.manual_seed(0)
+    dtype = torch.float64
+    blk = BandedAttentionBlock(16, n_heads=4, band=1,
+                               time_bias=True).to(dtype).eval()
+    with torch.no_grad():
+        blk.gamma1.fill_(1.0)
+        blk.gamma2.fill_(1.0)
+        blk.time_gain.fill_(2.0)          # a decided preference
+
+    x = torch.randn(1, 5, 4, 16, dtype=dtype)
+    t = 2
+    swapped = x.clone()
+    swapped[:, t-1], swapped[:, t+1] = x[:, t+1].clone(), x[:, t-1].clone()
+    with torch.no_grad():
+        y, ys = blk(x), blk(swapped)
+    assert not torch.allclose(y[:, t], ys[:, t], rtol=0, atol=1e-12)
+
+
+def test_time_bias_direction():
+    '''
+    A positive gain must favour LATER ticks: s runs -band..+band and roll(k, -s)
+    puts k[t+s] at offset s, so a positive ramp raises the logits of the future.
+    Pinning the sign matters -- drift direction is the physical reason for the
+    prior, and an off-by-one-sign here would silently invert it.
+
+    Each tick carries a distinct one-hot feature, so the attended output reveals
+    which tick was weighted.  It must be one-hot rather than a constant: norm1 is
+    a LayerNorm, and a constant feature vector normalises to exactly zero.
+    '''
+    torch.manual_seed(0)
+    dtype = torch.float64
+    d = 8
+    blk = BandedAttentionBlock(d, n_heads=1, band=1,
+                               time_bias=True).to(dtype).eval()
+    with torch.no_grad():
+        blk.gamma1.fill_(1.0)
+        blk.gamma2.zero_()                 # isolate the attention branch
+        blk.qkv.weight.zero_(); blk.qkv.bias.zero_()
+        blk.qkv.weight[2*d:].copy_(torch.eye(d))    # v = norm1(x), q = k = 0
+        blk.proj.weight.copy_(torch.eye(d)); blk.proj.bias.zero_()
+
+        x = torch.zeros(1, 5, 1, d, dtype=dtype)
+        for t in range(5):
+            x[0, t, 0, t] = 1.0            # tick t is one-hot at index t
+
+        def weights(gain):
+            blk.time_gain.fill_(gain)
+            y = blk(x)[0, 2, 0]            # query at tick 2
+            return y[1].item(), y[3].item()  # past (t=1) vs future (t=3)
+
+        past_lo, future_lo = weights(-3.0)
+        past_0, future_0 = weights(0.0)
+        past_hi, future_hi = weights(3.0)
+
+    assert future_hi > past_hi, 'positive gain must favour the future'
+    assert past_lo > future_lo, 'negative gain must favour the past'
+    assert abs(future_0 - past_0) < 1e-12, 'gain=0 must be symmetric in time'
+
+
+#
+# freeze_trunk_bn (wcpy-07a): unfreezing the trunk WEIGHTS must not have to
+# unfreeze their batch-norm statistics, which no learning rate controls.
+#
+
+def _bn_buffers(model):
+    return {n: b.clone() for n, b in model.named_buffers()
+            if 'trunks.' in n and 'running_' in n}
+
+
+@pytest.mark.parametrize('freeze_bn,expect_moved', [(True, False), (False, True)])
+def test_freeze_trunk_bn(freeze_bn, expect_moved):
+    '''
+    With the trunks unfrozen, freeze_trunk_bn decides whether their running
+    statistics drift.  The conv weights must train either way -- otherwise the
+    flag would be freezing the trunk outright rather than just its statistics.
+    '''
+    torch.manual_seed(0)
+    model = small_model(freeze_unets=False, freeze_trunk_bn=freeze_bn)
+    model.train()
+    before = _bn_buffers(model)
+    assert before, 'the trunks should have batch-norm buffers'
+    w0 = model.trunks[0].segmap.weight.detach().clone()
+
+    opt = torch.optim.SGD([p for p in model.parameters() if p.requires_grad], lr=0.1)
+    crit = torch.nn.BCEWithLogitsLoss()
+    for _ in range(3):
+        x = torch.rand(2, 1, TOTAL, T)
+        y = (torch.rand(2, 1, TOTAL, T) > 0.5).float()
+        opt.zero_grad()
+        crit(model(x), y).backward()
+        opt.step()
+
+    after = _bn_buffers(model)
+    moved = any(not torch.equal(before[k], after[k]) for k in before)
+    assert moved is expect_moved
+    # the weights train regardless: the flag freezes statistics, not the trunk
+    assert not torch.equal(w0, model.trunks[0].segmap.weight)
+
+
+def test_freeze_trunk_bn_is_advisory_not_structural():
+    '''
+    Running statistics are persistent buffers under both settings, so the flag
+    can never strand a checkpoint -- it must not be structural.  But a resume
+    that changes it is a silent change of regime, so it must warn.
+    '''
+    assert 'freeze_trunk_bn' not in Network.STRUCTURAL_KEYS
+    assert 'freeze_trunk_bn' in Network.ADVISORY_KEYS
+
+    cfg = dict(CFG_INI, freeze_unets='false')
+    a = Network(**cfg).state_dict()
+    b = Network(**dict(cfg, freeze_trunk_bn='false')).state_dict()
+    assert set(a) == set(b)
+
+
+def test_freeze_trunk_bn_bool_vs_ini_string_is_not_a_mismatch(caplog):
+    '''
+    A checkpoint records True while an INI config says "true"; comparing the
+    text would warn on every single resume.
+    '''
+    with caplog.at_level(logging.WARNING, logger='wirecell.dnn'):
+        Network.resolve_config(dict(CFG_INI, freeze_trunk_bn='true'),
+                               checkpoint_args=dict(CFG, freeze_trunk_bn=True))
+    assert not caplog.text
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger='wirecell.dnn'):
+        Network.resolve_config(dict(CFG_INI, freeze_trunk_bn='false'),
+                               checkpoint_args=dict(CFG, freeze_trunk_bn=True))
+    assert 'freeze_trunk_bn' in caplog.text

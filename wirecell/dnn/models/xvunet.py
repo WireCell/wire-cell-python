@@ -132,13 +132,37 @@ class BandedAttentionBlock(nn.Module):
     the block is the identity at construction.
     '''
 
-    def __init__(self, d_model, n_heads, band=1, ffn_mult=4):
+    def __init__(self, d_model, n_heads, band=1, ffn_mult=4, time_bias=False):
         super().__init__()
         if d_model % n_heads:
             raise ValueError(f'd_model={d_model} not divisible by n_heads={n_heads}')
         self.d_model = d_model
         self.n_heads = n_heads
         self.band = int(band)
+
+        # Relative-time bias.  Without it the offset a key came from is not just
+        # unencoded but structurally invisible: _attend concatenates the rolled
+        # keys and values in the same order, and attention is permutation-
+        # equivariant over key positions, so swapping the s=-1 and s=+1 blocks
+        # leaves the output bit-identical.  The block therefore cannot hold a
+        # time-asymmetric preference, which drift direction makes physically
+        # plausible.
+        #
+        # The shape is fixed and the strength is learned: a signed ramp over the
+        # band, scaled by one zero-initialised scalar.  So the prior ("monotone
+        # in time offset") is asserted while its magnitude -- and sign -- are
+        # left to the data, and at init the bias is identically zero, which
+        # keeps the block bit-exact with the un-biased one and preserves the
+        # frozen-trunk baseline.  Off by default: turning it on adds a parameter
+        # and so changes state_dict, hence time_bias is a structural key.
+        self.time_bias = bool(time_bias) and self.band > 0
+        if self.time_bias:
+            self.register_buffer(
+                'time_ramp',
+                torch.arange(-self.band, self.band + 1, dtype=torch.float32)
+                / self.band,                       # [-1 .. 0 .. +1]
+                persistent=False)
+            self.time_gain = nn.Parameter(torch.zeros(1))
 
         self.norm1 = nn.LayerNorm(d_model)
         self.qkv = nn.Linear(d_model, 3*d_model)
@@ -324,7 +348,19 @@ class BandedAttentionBlock(nn.Module):
         if self.band == 0:
           mask = None
         else:
-          mask = self._band_mask(T, Nk, q.device)          # (T, M)
+          mask = self._band_mask(T, Nk, q.device)          # (T, M) bool
+          if self.time_bias:
+              # attn_mask is one argument that is EITHER a bool mask OR a float
+              # bias added to the logits, so a bias means folding the masking
+              # into the float tensor as -inf.  That is exact: where(valid, 0,
+              # -inf) reproduces the bool mask bit for bit, so gain=0 changes
+              # nothing.  Built per call, not cached with the mask, because the
+              # gain moves during training.
+              #
+              # repeat_interleave spreads one value per offset across that
+              # offset's Nk columns, matching how kb concatenates the rolls.
+              bias = (self.time_gain * self.time_ramp).repeat_interleave(Nk)
+              mask = torch.where(mask, bias.to(q.dtype), -torch.inf)
           mask = mask.repeat(B, 1).view(B*T, 1, 1, M)
 
         o = F.scaled_dot_product_attention(q, kb, vb, attn_mask=mask)
@@ -356,7 +392,7 @@ class XViewUNet(nn.Module):
                  unet_checkpoints=None, freeze_unets=False,
                  init_checkpoint=None,
                  use_checkpoint=True, checkpoint_trunks=False,
-                 attn_mode='all'):
+                 attn_mode='all', time_bias=False, freeze_trunk_bn=True):
         super().__init__()
 
         # Activation checkpointing (recompute in backward) to fit full-plane
@@ -449,7 +485,8 @@ class XViewUNet(nn.Module):
         Attention blocks
         '''
         self.blocks = nn.ModuleList(
-            BandedAttentionBlock(d_model, n_heads, band=band, ffn_mult=ffn_mult)
+            BandedAttentionBlock(d_model, n_heads, band=band, ffn_mult=ffn_mult,
+                                 time_bias=time_bias)
             for _ in range(n_layers))
 
         # Token spans per segment, tagged with the owning view, in the same
@@ -481,6 +518,10 @@ class XViewUNet(nn.Module):
                 self.load_trunk_checkpoint(trunk, path)
 
         self._freeze_unets = bool(freeze_unets)
+        # Separate from the above: freezing the weights and freezing the
+        # batch-norm statistics are different things, and the statistics move
+        # whatever the learning rate.  See train().
+        self._freeze_trunk_bn = bool(freeze_trunk_bn)
         if self._freeze_unets:
             for trunk in self.trunks:
                 trunk.requires_grad_(False)
@@ -537,11 +578,25 @@ class XViewUNet(nn.Module):
 
     def train(self, mode=True):
         '''
-        As nn.Module.train() but frozen trunks stay in eval mode so their
+        As nn.Module.train() but the trunks may stay in eval mode so their
         batch-norm running statistics are not perturbed.
+
+        Freezing the weights and freezing the statistics are separate things.
+        The statistics are buffers, so the optimizer never touches them: they
+        track batch statistics by momentum whenever the trunk is in train mode,
+        which makes unfreezing an abrupt change to the trunks that no learning
+        rate controls.  Measured over 16 steps at lr=1e-4 and batch 1, the trunk
+        parameters all moved within AdamW's ~1.6e-3 bound while the running
+        statistics moved by up to 0.97 -- at momentum 0.1 they are 0.9^16 = 18%
+        old after 16 batches, and a single 2560x1500 image is a noisy estimate.
+
+        So freeze_trunk_bn keeps the statistics fixed while the weights train,
+        which is the usual way to fine-tune a pretrained backbone.  It only has
+        an effect when the trunks are unfrozen -- freeze_unets already puts them
+        in eval().
         '''
         super().train(mode)
-        if self._freeze_unets:
+        if self._freeze_unets or self._freeze_trunk_bn:
             for trunk in self.trunks:
                 trunk.eval()
         return self
