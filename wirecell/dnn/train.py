@@ -30,6 +30,28 @@ def dump(name, data):
     return
 
 
+def to_device(obj, device):
+    '''
+    Move a tensor, or a tuple/list/dict of them, to a device.
+
+    Labels used to be a single tensor and for most apps still are, in which
+    case this is exactly the .to() it replaces.  An app carrying more than one
+    target -- xvunet with trios, where a sample's labels are the truth image
+    plus a ragged correspondence list -- needs the whole structure moved, and
+    doing it here keeps that general rather than special-casing one app.  None
+    passes through, as rec_only datasets have no labels at all.
+    '''
+    if obj is None:
+        return None
+    if isinstance(obj, torch.Tensor):
+        return obj.to(device, non_blocking=True)
+    if isinstance(obj, dict):
+        return {k: to_device(v, device) for k, v in obj.items()}
+    if isinstance(obj, (tuple, list)):
+        return type(obj)(to_device(v, device) for v in obj)
+    return obj
+
+
 # Autocast dtypes accepted for --amp.  fp16 carries a much narrower exponent
 # range than fp32 (max ~65504); bf16 keeps fp32's range at the same speed.  That
 # matters for models whose activations can overflow: with xvunet's cross-view
@@ -75,7 +97,7 @@ class Classifier:
 
         features = features.to(self._device, non_blocking=True)
         dump('features', features)
-        labels = labels.to(self._device, non_blocking=True)
+        labels = to_device(labels, self._device)
         dump('labels', labels)
 
         # Only the model forward runs under autocast (the heavy conv work goes

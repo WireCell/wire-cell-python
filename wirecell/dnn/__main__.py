@@ -214,8 +214,13 @@ def train(ctx, config, epochs, batch, eval_batch, device, cache, amp, amp_dtype,
         if dnn.dist.is_dist():
             samplers = [DistributedSampler(dses[0], shuffle=True),
                         DistributedSampler(dses[1], shuffle=False)]
+        # A dataset whose samples are ragged (xvunet with trios configured)
+        # sets .collate_fn; everything else leaves it unset and keeps the
+        # default collation, so this is a no-op for the other apps.
+        collate_fn = getattr(ds, 'collate_fn', None)
         dles = [DataLoader(one, batch_size=bb, shuffle=(sampler is None),
-                           sampler=sampler, pin_memory=True)
+                           sampler=sampler, pin_memory=True,
+                           collate_fn=collate_fn)
                 for one, bb, sampler in zip(dses, [tbatch, ebatch], samplers)]
 
         ntrain = len(dses[0])

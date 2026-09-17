@@ -16,6 +16,8 @@ from torch.utils.data import Dataset as TorchDataset
 from wirecell.dnn.data import hdf
 
 from .transforms import Rec as Rect, Tru as Trut, Params as TrParams, DimParams
+from .trios import (Trios, collate as trio_collate,
+                    select_by_tru as trio_select_by_tru)
 
 import logging
 log = logging.getLogger("wirecell.dnn")
@@ -83,6 +85,29 @@ class Dataset(TorchDataset):
     view's files carry the same IDs in the same order.  _check_alignment
     enforces that at construction rather than letting mispaired views train
     quietly.
+
+    TRIOS are off unless the config names them, and the switch is one key:
+
+        trio_file_re      regex matching the trio files, with the file-ID group
+        trio_require_tru  keep only trios whose three pixels are all above
+                          threshold in tru (default True)
+
+    With trio_file_re unset this class behaves exactly as before -- no trio
+    files are opened, __getitem__ returns the same (rec, tru) pair, and
+    .collate_fn is None so the DataLoader keeps its default collation.  With it
+    set, __getitem__ returns (rec, tru, (uvwt, q)) and .collate_fn must be
+    handed to the DataLoader, since K varies per sample and the default cannot
+    stack it.  That makes the feature selectable per training config and
+    revertible by deleting one line, rather than something the dataset does
+    unconditionally.
+
+    The trio files hold every trio the geometry produced, including those
+    naming pixels whose truth charge falls below the ROI threshold.  Measured
+    on one sample, only 32.8% of trios have all three target pixels positive.
+    Filtering here rather than in the file keeps that a training-time choice
+    and keeps the file independent of threshold, norm, crop and rebin -- all of
+    which are dataset config, and any of which would silently invalidate a
+    pre-filtered file if it changed.
     '''
 
     default_rec_file_res = tuple(
@@ -136,8 +161,20 @@ class Dataset(TorchDataset):
                                   trparams=TrParams(elech, tick, tru_norm),
                                   cache=cache))
 
+        # Trios are opt-in: no key, no trio files opened, no change in what
+        # __getitem__ returns or how the DataLoader collates.
+        trio_file_re = wash('trio_file_re')
+        self._trios = None
+        self._trio_require_tru = bool(config.get('trio_require_tru', True))
+        self.collate_fn = None
+        if trio_file_re:
+            self._trios = Trios(paths, file_re=trio_file_re,
+                                path_res=wash('trio_path_res'), cache=cache)
+            self.collate_fn = trio_collate
+
         self._check_alignment()
-        log.info(f'xvunet dataset: {nviews} views, {len(self)} samples')
+        log.info(f'xvunet dataset: {nviews} views, {len(self)} samples'
+                 + (f', trios from {trio_file_re!r}' if self._trios else ''))
 
     def _check_alignment(self):
         '''
@@ -148,7 +185,7 @@ class Dataset(TorchDataset):
         ref = _sample_keys(singles[0])
         if not ref:
             raise ValueError('xvunet dataset is empty: check files and regexes')
-        
+
         if not self.rec_only:
             for single in singles[1:]:
                 got = _sample_keys(single)
@@ -161,6 +198,19 @@ class Dataset(TorchDataset):
                         f'first difference: '
                         f'{next((a, b) for a, b in zip(got, ref) if a != b) if got else None}')
 
+        # The trios are indexed independently of the views, so they get the
+        # same check: a trio file silently one sample out would attach every
+        # sample's correspondence to its neighbour's image.
+        if self._trios is not None:
+            got = self._trios.sample_keys()
+            if got != ref:
+                fr = self._trios.match.file_re.pattern
+                raise ValueError(
+                    f'misaligned samples in xvunettrio ({fr}): '
+                    f'{len(got)} samples vs {len(ref)} expected; '
+                    f'first difference: '
+                    f'{next(((a, b) for a, b in zip(got, ref) if a != b), None)}')
+
     def __len__(self):
         return len(self._recs[0])
 
@@ -170,4 +220,17 @@ class Dataset(TorchDataset):
             None if self.rec_only
             else torch.cat([one[idx] for one in self._trus], dim=1)
         )
-        return rec, tru
+        if self._trios is None:
+            return rec, tru
+        return rec, tru, self._select(self._trios[idx], tru)
+
+    def _select(self, trio, tru):
+        '''
+        Apply the ROI selection, if configured.
+
+        With rec_only there is no tru to test against, and nothing consumes the
+        trios anyway, so they pass through.
+        '''
+        if not self._trio_require_tru or tru is None:
+            return trio
+        return trio_select_by_tru(trio, tru)
