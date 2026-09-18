@@ -11,7 +11,10 @@ from torch import optim
 from .model import Network
 from .data import Dataset
 from wirecell.dnn.train import Classifier as Trainer
-from torch.nn import BCEWithLogitsLoss as Criterion
+# Not torch's BCEWithLogitsLoss directly: this one also carries the cross-plane
+# correspondence term, and falls back to exactly BCEWithLogitsLoss when the
+# dataset supplies no trios.  See loss.py.
+from .loss import Criterion
 
 
 import logging

@@ -173,7 +173,10 @@ def train(ctx, config, epochs, batch, eval_batch, device, cache, amp, amp_dtype,
         opt, _ = obj_with_config(app.Optimizer, config, 'optimizer', [net.parameters()])
         if dnn.dist.is_main():
             print(opt.state_dict())
-        crit = app.Criterion()
+        # From a [criterion] section, so an app whose loss takes parameters
+        # (xvunet's trio_strength) can be configured per run.  Absent the
+        # section this is app.Criterion() as before.
+        crit, _ = obj_with_config(app.Criterion, config, 'criterion')
 
         # [train] amp_dtype is honoured via the config section fill-in; default
         # fp16 keeps existing runs bit-for-bit unchanged.

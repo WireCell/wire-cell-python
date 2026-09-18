@@ -16,6 +16,7 @@ from torch.utils.data import Dataset as TorchDataset
 from wirecell.dnn.data import hdf
 
 from .transforms import Rec as Rect, Tru as Trut, Params as TrParams, DimParams
+from .model import _boolish
 from .trios import (Trios, collate as trio_collate,
                     select_by_tru as trio_select_by_tru)
 
@@ -92,6 +93,16 @@ class Dataset(TorchDataset):
         trio_require_tru  keep only trios whose three pixels are all above
                           threshold in tru (default True)
 
+    As with rec_file_re and tru_file_re, the ID group usually has to come from
+    the DIRECTORY rather than the file name, because a campaign gives every
+    directory a file of the same name:
+
+        trio_file_re=.*/(\\d+)_0/cosmics.*-g4-trio.h5
+
+    Keying on the name alone makes every directory claim the same ID.  The
+    alignment check below rejects that, but the message will talk about sample
+    counts rather than about the regex.
+
     With trio_file_re unset this class behaves exactly as before -- no trio
     files are opened, __getitem__ returns the same (rec, tru) pair, and
     .collate_fn is None so the DataLoader keeps its default collation.  With it
@@ -165,7 +176,10 @@ class Dataset(TorchDataset):
         # __getitem__ returns or how the DataLoader collates.
         trio_file_re = wash('trio_file_re')
         self._trios = None
-        self._trio_require_tru = bool(config.get('trio_require_tru', True))
+        # _boolish, not bool: these values arrive from an INI file as strings,
+        # and bool('false') is True, so trio_require_tru=false would silently
+        # leave the filter on.
+        self._trio_require_tru = _boolish(config.get('trio_require_tru', True))
         self.collate_fn = None
         if trio_file_re:
             self._trios = Trios(paths, file_re=trio_file_re,
@@ -205,11 +219,22 @@ class Dataset(TorchDataset):
             got = self._trios.sample_keys()
             if got != ref:
                 fr = self._trios.match.file_re.pattern
+                # Matching nothing at all is nearly always the regex, not a
+                # genuine misalignment, and the count alone does not say that.
+                # In an INI, trio_file_re is a BARE string and is used
+                # verbatim, while rec_file_res/tru_file_res are list literals
+                # that go through ast.literal_eval -- so the escaping differs:
+                # \\d in the lists, \d here.
+                why = ('; it matched no files at all, so check the pattern '
+                       'before suspecting the data.  trio_file_re is a bare '
+                       r'INI string, so write \d, not \\d as in the '
+                       'rec_file_res/tru_file_res list literals'
+                       if not got else
+                       f'; first difference: '
+                       f'{next(((a, b) for a, b in zip(got, ref) if a != b), None)}')
                 raise ValueError(
                     f'misaligned samples in xvunettrio ({fr}): '
-                    f'{len(got)} samples vs {len(ref)} expected; '
-                    f'first difference: '
-                    f'{next(((a, b) for a, b in zip(got, ref) if a != b), None)}')
+                    f'{len(got)} samples vs {len(ref)} expected{why}')
 
     def __len__(self):
         return len(self._recs[0])

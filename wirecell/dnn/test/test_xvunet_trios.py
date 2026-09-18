@@ -203,3 +203,14 @@ def test_gather_all_is_differentiable():
     assert z.grad[0, 0, 900, 5] == 1.
     assert z.grad[0, 0, 1700, 5] == 1.
     assert z.grad.abs().sum() == 3.
+
+
+def test_require_tru_accepts_ini_strings(tmp_path):
+    '''
+    Config values arrive from an INI file as strings, and bool('false') is True,
+    so a plain bool() would leave the filter on when it was asked to be off.
+    '''
+    from wirecell.dnn.apps.xvunet.model import _boolish
+    assert _boolish('false') is False
+    assert _boolish('true') is True
+    assert _boolish(False) is False
